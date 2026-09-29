@@ -692,6 +692,7 @@
         if (state.me && state.me.is_admin) {
           menuItems.push({ label: "Zugriff", handler: () => entryAccessDialog(e) });
         }
+        menuItems.push({ label: "Verschieben", handler: () => moveEntryDialog(e) });
         menuItems.push({ label: "Umbenennen", handler: () => rename(e) });
 
         const more = document.createElement("button");
@@ -2499,6 +2500,35 @@
       const ids = [...state.selected];
       if (!ids.length) return;
       await startArchiveJob(ids, "auswahl.zip");
+    }
+
+    async function moveEntryDialog(entry) {
+      try {
+        const folders = await apiJson("GET", "/api/folders");
+        // Ziel darf nicht der Eintrag selbst noch ein Nachfahre sein.
+        const prefix = entry.path === "/" ? "/" : entry.path + "/";
+        const targets = folders.filter(f =>
+          f.id !== entry.id &&
+          (entry.type !== "folder" || !(f.path === entry.path || f.path.startsWith(prefix)))
+        );
+        const options = targets.map(f => `<option value="${f.id}">${esc(f.path)}</option>`).join("");
+        openModal(`
+          <h2>Verschieben – ${esc(entry.name)}</h2>
+          <div class="field"><label>Zielordner</label><select id="mv-target">${options}</select></div>
+          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+          <button class="btn" onclick="submitMoveEntry('${entry.id}')">Verschieben</button></div>`);
+      } catch (e) { toast("Ordner laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function submitMoveEntry(entryId) {
+      const target = document.getElementById("mv-target").value;
+      if (!target) return;
+      try {
+        await apiJson("POST", "/api/entries/" + entryId + "/move", { parent_id: target });
+        closeModal();
+        toast("Verschoben.", "ok");
+        await load();
+      } catch (e) { toast("Verschieben fehlgeschlagen: " + e.message, "err"); }
     }
 
     async function bulkMoveDialog() {

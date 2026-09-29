@@ -52,7 +52,8 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
   (Aufbewahrungsfrist konfigurierbar)
 - **Betrieb**: Docker Compose, Worker für Events/Papierkorb/Blob-GC, Health/Metriken
 - **Web-UI**: Dateimanager unter `/` (Browsen, Ordner, Drag-&-Drop-Upload mit Fortschritt,
-  resumable Upload, Download, **ZIP-Download für Ordner mit minimierbarer Fortschrittsanzeige**, Umbenennen, Löschen, Details,
+  resumable Upload, Download, **ZIP-Download für Ordner mit minimierbarer Fortschrittsanzeige**,
+  **Verschieben** (einzeln und mehrfach), Umbenennen, Löschen, Details,
   Freigabelinks, **Vorschau** für Text/Code, HTML, PDF, Bilder, Video und Audio)
 
 ---

@@ -4,6 +4,14 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+- **Web-UI:** Einzelnes **„Verschieben"** im Zeilenmenü des Dateimanagers
+  wiederhergestellt (der Endpunkt `POST /api/entries/{id}/move` war unverändert
+  vorhanden). Die Zielauswahl schließt den Eintrag selbst und seinen Teilbaum aus;
+  mehrfaches Verschieben über die Bulk-Leiste bleibt erhalten.
+
 ## [0.1.1] – 2026-09-29
 
 ### Fixed
