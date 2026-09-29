@@ -15,6 +15,7 @@ deploy/known_hosts
 
 ## Interne Übergaben/Notizen (nicht im öffentlichen Repo)
 UEBERGABE-*.md
+AGENTEN-UEBERSICHT.md
 
 ## Python
 __pycache__/
