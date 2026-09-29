@@ -6,6 +6,15 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+- **Deploy/Build beschleunigt:** Das `Dockerfile` installiert die Laufzeit-Abhängigkeiten
+  zuerst in einer eigenen, cache-fähigen Schicht (`requirements.txt`, BuildKit-Pip-Cache)
+  und bindet den Code über `PYTHONPATH=/app/src` ein – reine Code-/UI-Änderungen lösen
+  damit **keine** pip-Installation mehr aus. `docker-compose.yml` nutzt ein **gemeinsames
+  Image** (`ifs-local:latest`) für `api`/`ftp`/`worker`. Gemessen auf dem Testsystem:
+  Build nach reiner Code-Änderung **~135 s → ~3 s**; `requirements.txt` wird durch
+  `tests/test_packaging.py` mit `pyproject.toml` synchron gehalten.
+
 ### Fixed
 - **Web-UI:** Einzelnes **„Verschieben"** im Zeilenmenü des Dateimanagers
   wiederhergestellt (der Endpunkt `POST /api/entries/{id}/move` war unverändert

@@ -1,0 +1,15 @@
+# Laufzeit-Abhängigkeiten – MUSS mit [project].dependencies in pyproject.toml übereinstimmen.
+# (Der Test tests/test_packaging.py erzwingt die Synchronität.)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0.30
+psycopg[binary]>=3.2
+alembic>=1.13
+pydantic>=2.7
+pydantic-settings>=2.3
+python-multipart>=0.0.9
+argon2-cffi>=23.1
+PyJWT>=2.8
+boto3>=1.34
+pyftpdlib>=1.5.10
+pyopenssl>=24.0

@@ -18,12 +18,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 REMOTE = "/home/ifs/ifs"
 EXCLUDE_DIRS = {".venv", ".git", ".github", ".pytest_cache", ".ruff_cache", "__pycache__", "certs", "deploy"}
 INCLUDE_SUFFIXES = {".py", ".md", ".html", ".toml", ".yml", ".yaml", ".ini", ".mako", ".sql"}
-INCLUDE_NAMES = {".env.example"}
+INCLUDE_NAMES = {".env.example", "Dockerfile", "requirements.txt", ".dockerignore"}
 REMOTE_FIND = (
     "cd /home/ifs/ifs && find . -type f "
     "\\( -name '*.py' -o -name '*.md' -o -name '*.html' -o -name '*.toml' "
     "-o -name '*.yml' -o -name '*.ini' -o -name '*.mako' -o -name '*.sql' "
-    "-o -name '.env.example' \\) "
+    "-o -name '.env.example' -o -name 'Dockerfile' -o -name 'requirements.txt' "
+    "-o -name '.dockerignore' \\) "
     "-not -path './.venv/*' -not -path './.pytest_cache/*' -not -path './.ruff_cache/*' "
     "-not -path './deploy/*' | sort | xargs -r sha256sum"
 )

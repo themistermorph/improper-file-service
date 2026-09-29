@@ -58,6 +58,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: ifs-local:latest
     build: .
     command: ["python", "-m", "ifs.cli", "run-api"]
     env_file: .env
@@ -76,7 +77,7 @@ services:
     restart: unless-stopped
 
   ftp:
-    build: .
+    image: ifs-local:latest
     command: ["python", "-m", "ifs.cli", "run-ftp"]
     env_file: .env
     environment:
@@ -95,7 +96,7 @@ services:
     restart: unless-stopped
 
   worker:
-    build: .
+    image: ifs-local:latest
     command: ["python", "-m", "ifs.cli", "run-worker"]
     env_file: .env
     environment:
