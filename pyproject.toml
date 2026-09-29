@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ifs"
+version = "0.1.0"
+description = "Webbasiertes Dateisystem mit HTTP(S)- und FTPS-Zugriff auf einen S3-kompatiblen Speicher"
+requires-python = ">=3.11"
+keywords = ["file-manager", "filesystem", "s3", "ftps", "fastapi", "self-hosted"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0.30",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.13",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-multipart>=0.0.9",
+    "argon2-cffi>=23.1",
+    "PyJWT>=2.8",
+    "boto3>=1.34",
+    "pyftpdlib>=1.5.10",
+    "pyopenssl>=24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+ifs = "ifs.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OWNER/REPO"
+Repository = "https://github.com/OWNER/REPO"
+Changelog = "https://github.com/OWNER/REPO/blob/main/CHANGELOG.md"
+Security = "https://github.com/OWNER/REPO/blob/main/SECURITY.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ifs = ["web/*.html"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Bewusste, dokumentierte Abweichungen:
+#  B008    – FastAPI nutzt Depends()/Header() als Default-Argument (Standardmuster)
+#  BLE001  – breite Exception-Fänge sind in Worker/Adapter bewusst (Robustheit)
+#  SIM115  – Dateihandles werden in Streaming-Pfaden bewusst offen gehalten
+#  ASYNC230– synchrone Core-Aufrufe in Streaming-Endpunkten sind für den MVP gewollt
+#  S110    – einzelne Aufräumfehler werden bewusst ignoriert
+ignore = ["B008", "BLE001", "SIM115", "ASYNC230", "S110"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

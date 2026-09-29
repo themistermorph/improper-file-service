@@ -1,0 +1,43 @@
+# .gitignore – IFS
+
+## Secrets & lokale Konfiguration
+.env
+.env.*
+!.env.example
+certs/
+ADMIN_CREDENTIALS.txt
+seaweedfs/s3.json
+seaweedfs/Caddyfile
+deploy/known_hosts
+*.pem
+*.key
+*.crt
+
+## Interne Übergaben/Notizen (nicht im öffentlichen Repo)
+UEBERGABE-*.md
+
+## Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.whl
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.sqlite3
+spool/
+
+## Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+## Logs / temporär
+*.log
+tmp/

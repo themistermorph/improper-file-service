@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Sicherheitslücke melden
+    url: https://github.com/OWNER/REPO/security/advisories/new
+    about: Bitte Sicherheitslücken vertraulich melden (siehe SECURITY.md).
+  - name: Dokumentation
+    url: https://github.com/OWNER/REPO/blob/main/docs/README.md
+    about: Handbücher zu Installation, API, Betrieb und Sicherheit.

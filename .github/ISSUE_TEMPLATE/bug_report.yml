@@ -1,0 +1,65 @@
+name: Bug report
+description: Einen reproduzierbaren Fehler melden
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke fürs Melden! Bitte **keine** Sicherheitslücken hier melden → siehe SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version / Commit
+      placeholder: z. B. 0.1.0 oder Commit-Hash
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Betroffener Bereich
+      options:
+        - HTTP-API
+        - Web-UI
+        - FTPS
+        - Rechte/Freigaben
+        - Deployment/Docker
+        - Sonstiges
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Beobachtetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Schritte zur Reproduktion
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Fehlermeldungen (optional)
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: env
+    attributes:
+      label: Umgebung
+      placeholder: Betriebssystem, Python-/Docker-Version, S3-Backend, Reverse-Proxy …
+    validations:
+      required: false
