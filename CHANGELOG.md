@@ -4,7 +4,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.1.1] – 2026-09-29
 
 ### Fixed
 - **FTP:** Downloads > 64 KiB wurden still abgeschnitten (`RETR`/`REST`); der
@@ -86,4 +86,5 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Login-Rate-Limit ist pro Prozess (In-Memory); für den vorgesehenen Maßstab
   (eine API-Instanz) ausgelegt.
 
+[0.1.1]: https://github.com/themistermorph/informal-file-system/releases/tag/v0.1.1
 [0.1.0]: https://github.com/themistermorph/informal-file-system/releases/tag/v0.1.0
