@@ -18,9 +18,16 @@ from pyftpdlib.filesystems import AbstractedFS
 from ..config import get_settings
 from ..core import authz, content, namespace
 from ..db import session_scope
+from ..errors import IFSError
 from ..models import Entry, EntryType, User
+from ..utils import as_utc
 
 _MAX_BUFFER = 1024 * 1024
+
+
+def _as_fs_error(exc: IFSError) -> FilesystemError:
+    """Übersetzt einen Domänenfehler in den pyftpdlib-Fehlertyp (Antwort „550“)."""
+    return FilesystemError(str(exc))
 
 
 def _norm(path: str) -> str:
@@ -87,20 +94,34 @@ class _S3Reader:
     def read(self, size: int = -1) -> bytes:
         if self._closed:
             raise ValueError("I/O operation on closed file")
-        if self._pos >= self._blob.size:
-            return b""
-        if self._body is None:
-            end = None
-            if size is not None and size >= 0:
-                end = min(self._pos + size - 1, self._blob.size - 1)
-            response = content.get_object(self._blob.storage_key, self._pos, end)
-            self._body = response["Body"]
-        data = self._body.read(size if size is not None and size >= 0 else _MAX_BUFFER)
-        if not data:
-            self._reset()
-        else:
-            self._pos += len(data)
-        return data
+        # size < 0 bzw. None bedeutet „bis EOF“; size == 0 liefert sofort b"".
+        remaining = size if size is not None and size >= 0 else -1
+        chunks: list[bytes] = []
+        # Ein einzelner S3-Range deckt nur einen Teil des Objekts ab (pyftpdlib
+        # liest in 64-KiB-Schritten). Ist der Body erschöpft, obwohl der Blob
+        # noch Bytes meldet, wird ab `self._pos` ein neuer Range geöffnet.
+        while self._pos < self._blob.size and remaining != 0:
+            fresh = self._body is None
+            if fresh:
+                end = None
+                if remaining >= 0:
+                    end = min(self._pos + remaining - 1, self._blob.size - 1)
+                response = content.get_object(self._blob.storage_key, self._pos, end)
+                self._body = response["Body"]
+            chunk = self._body.read(remaining if remaining >= 0 else _MAX_BUFFER)
+            if not chunk:
+                self._reset()
+                # Ein soeben geöffneter Body ohne Daten heißt: Das Objekt ist
+                # kürzer als im Blob vermerkt. Abbrechen statt erneut öffnen
+                # (sonst droht eine Endlosschleife an derselben Position).
+                if fresh:
+                    break
+                continue
+            chunks.append(chunk)
+            self._pos += len(chunk)
+            if remaining > 0:
+                remaining -= len(chunk)
+        return b"".join(chunks)
 
     def close(self) -> None:
         self._reset()
@@ -248,7 +269,7 @@ class IFSFilesystem(AbstractedFS):
 
     def _stat_for(self, entry: Entry) -> os.stat_result:
         mode = 0o40755 if entry.type == EntryType.folder else 0o100644
-        mtime = entry.updated_at.timestamp() if entry.updated_at else time.time()
+        mtime = as_utc(entry.updated_at).timestamp() if entry.updated_at else time.time()
         return os.stat_result((mode, 0, 0, 1, 0, 0, entry.size, mtime, mtime, mtime))
 
     def stat(self, path):
@@ -282,7 +303,7 @@ class IFSFilesystem(AbstractedFS):
         entry = self._resolve_authorized(_norm(path))
         if entry is None:
             raise FilesystemError("Datei nicht gefunden")
-        return entry.updated_at.timestamp() if entry.updated_at else time.time()
+        return as_utc(entry.updated_at).timestamp() if entry.updated_at else time.time()
 
     # --- Mutationen ------------------------------------------------------
 
@@ -290,78 +311,96 @@ class IFSFilesystem(AbstractedFS):
         path = _norm(path)
         parent_path = posixpath.dirname(path) or "/"
         name = posixpath.basename(path)
-        with session_scope() as db:
-            user = self._user(db)
-            parent = self._resolve(db, parent_path)
-            if parent is None:
-                raise FilesystemError("Zielverzeichnis nicht gefunden")
-            authz.authorize(db, user, "write", parent)
-            namespace.create_folder(db, parent, name, user.id)
+        try:
+            with session_scope() as db:
+                user = self._user(db)
+                parent = self._resolve(db, parent_path)
+                if parent is None:
+                    raise FilesystemError("Zielverzeichnis nicht gefunden")
+                authz.authorize(db, user, "write", parent)
+                namespace.create_folder(db, parent, name, user.id)
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
 
     def rmdir(self, path):
         path = _norm(path)
-        with session_scope() as db:
-            user = self._user(db)
-            entry = self._resolve(db, path)
-            if entry is None or entry.type != EntryType.folder:
-                raise FilesystemError("Verzeichnis nicht gefunden")
-            if namespace.list_children(db, entry):
-                raise FilesystemError("Verzeichnis nicht leer")
-            authz.authorize(db, user, "delete", entry)
-            namespace.soft_delete(db, entry, user.id)
+        try:
+            with session_scope() as db:
+                user = self._user(db)
+                entry = self._resolve(db, path)
+                if entry is None or entry.type != EntryType.folder:
+                    raise FilesystemError("Verzeichnis nicht gefunden")
+                if namespace.list_children(db, entry):
+                    raise FilesystemError("Verzeichnis nicht leer")
+                authz.authorize(db, user, "delete", entry)
+                namespace.soft_delete(db, entry, user.id)
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
 
     def remove(self, path):
         path = _norm(path)
-        with session_scope() as db:
-            user = self._user(db)
-            entry = self._resolve(db, path)
-            if entry is None or entry.type != EntryType.file:
-                raise FilesystemError("Datei nicht gefunden")
-            authz.authorize(db, user, "delete", entry)
-            namespace.soft_delete(db, entry, user.id)
+        try:
+            with session_scope() as db:
+                user = self._user(db)
+                entry = self._resolve(db, path)
+                if entry is None or entry.type != EntryType.file:
+                    raise FilesystemError("Datei nicht gefunden")
+                authz.authorize(db, user, "delete", entry)
+                namespace.soft_delete(db, entry, user.id)
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
 
     def rename(self, src, dst):
         src = _norm(src)
         dst = _norm(dst)
         dst_parent_path = posixpath.dirname(dst) or "/"
         dst_name = posixpath.basename(dst)
-        with session_scope() as db:
-            user = self._user(db)
-            entry = self._resolve(db, src)
-            if entry is None:
-                raise FilesystemError("Quelle nicht gefunden")
-            target = self._resolve(db, dst_parent_path)
-            if target is None:
-                raise FilesystemError("Zielverzeichnis nicht gefunden")
-            authz.authorize(db, user, "read", entry)
-            authz.authorize(db, user, "write", entry)
-            authz.authorize(db, user, "write", target)
-            if entry.parent_id != target.id:
-                namespace.move(db, entry, target)
-            if entry.name != dst_name:
-                namespace.rename(db, entry, dst_name)
+        try:
+            with session_scope() as db:
+                user = self._user(db)
+                entry = self._resolve(db, src)
+                if entry is None:
+                    raise FilesystemError("Quelle nicht gefunden")
+                target = self._resolve(db, dst_parent_path)
+                if target is None:
+                    raise FilesystemError("Zielverzeichnis nicht gefunden")
+                authz.authorize(db, user, "read", entry)
+                authz.authorize(db, user, "write", entry)
+                authz.authorize(db, user, "write", target)
+                if entry.parent_id != target.id:
+                    namespace.move(db, entry, target)
+                if entry.name != dst_name:
+                    namespace.rename(db, entry, dst_name)
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
 
     def utime(self, path, timeval):
         from datetime import datetime
 
         path = _norm(path)
-        with session_scope() as db:
-            user = self._user(db)
-            entry = self._resolve(db, path)
-            if entry is None:
-                raise FilesystemError("Datei nicht gefunden")
-            authz.authorize(db, user, "write", entry)
-            entry.updated_at = datetime.fromtimestamp(timeval, tz=UTC)
+        try:
+            with session_scope() as db:
+                user = self._user(db)
+                entry = self._resolve(db, path)
+                if entry is None:
+                    raise FilesystemError("Datei nicht gefunden")
+                authz.authorize(db, user, "write", entry)
+                entry.updated_at = datetime.fromtimestamp(timeval, tz=UTC)
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
 
     def chmod(self, path, mode):
         # Rechte werden ausschließlich über den IFS-Kern verwaltet.
         path = _norm(path)
-        with session_scope() as db:
-            user = self._user(db)
-            entry = self._resolve(db, path)
-            if entry is None:
-                raise FilesystemError("Datei nicht gefunden")
-            authz.authorize(db, user, "write", entry)
+        try:
+            with session_scope() as db:
+                user = self._user(db)
+                entry = self._resolve(db, path)
+                if entry is None:
+                    raise FilesystemError("Datei nicht gefunden")
+                authz.authorize(db, user, "write", entry)
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
 
     def mkstemp(self, suffix="", prefix="", dir=None, mode="wb"):
         raise FilesystemError("STOU wird nicht unterstützt")
@@ -392,7 +431,7 @@ class IFSFilesystem(AbstractedFS):
                 storage_key=blob.storage_key,
                 size=blob.size,
                 mime=entry.mime,
-                mtime=entry.updated_at.timestamp() if entry.updated_at else time.time(),
+                mtime=as_utc(entry.updated_at).timestamp() if entry.updated_at else time.time(),
             )
         return _S3Reader(ref, path)
 
@@ -408,6 +447,15 @@ class IFSFilesystem(AbstractedFS):
             if parent is None or parent.type != EntryType.folder:
                 raise FilesystemError("Zielverzeichnis nicht gefunden")
             authz.authorize(db, user, "write", parent)
+            # Absehbare Fehler (Namenskonflikt mit einem Ordner, ungültiger Name)
+            # bereits vor dem Spool-Anlegen melden. Quota- und Größenlimitfehler
+            # können erst beim Finalisieren auffallen, weil pyftpdlib die
+            # 226-Antwort vor `on_file_received` sendet – das ist nachträglich
+            # nicht mehr korrigierbar.
+            try:
+                namespace.ensure_writable(db, parent, name, user.id, 0)
+            except IFSError as exc:
+                raise _as_fs_error(exc) from exc
 
         writer = _UploadWriter(
             content.new_spool_path(), path, limit=get_settings().max_upload_size
@@ -449,6 +497,11 @@ class IFSFilesystem(AbstractedFS):
                 content.remove_spool(writer._path)
                 raise
 
+        old = self._pending.pop(path, None)
+        if old is not None:
+            # Ein alter, nicht finalisierter Upload auf denselben Pfad darf keinen
+            # verwaisten Spool hinterlassen.
+            content.remove_spool(old[2])
         self._pending[path] = (parent_path, name, writer._path)
         return writer
 
@@ -482,8 +535,16 @@ class IFSFilesystem(AbstractedFS):
                 namespace.ensure_writable(db, parent, name, user.id, size)
                 blob = content.store_blob(db, spool, None)
                 namespace.apply_write(db, parent, name, user.id, blob, None)
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
         finally:
             content.remove_spool(spool)
+
+    def discard_pending(self, path: str) -> None:
+        """Verwirft einen unvollständigen Upload und löscht dessen Spool."""
+        info = self._pending.pop(_norm(path), None)
+        if info is not None:
+            content.remove_spool(info[2])
 
     def cleanup(self) -> None:
         for _, _, spool in list(self._pending.values()):

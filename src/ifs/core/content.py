@@ -18,6 +18,7 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -103,23 +104,54 @@ def store_blob(db: Session, local_path: str, mime: str | None = None) -> Blob:
     settings = get_settings()
     mime = safe_mime(mime) if mime else None
     sha256 = sha256_file(local_path)
+    storage_key = f"cas/{sha256[:2]}/{sha256}"
 
-    if settings.cas_dedup:
-        existing = db.execute(
-            select(Blob).where(Blob.sha256 == sha256, Blob.status == BlobStatus.ready)
-        ).scalars().first()
-        if existing is not None and object_exists(existing.storage_key):
-            return existing
+    # Die CAS-Zeile ist über storage_key eindeutig. Deshalb gezielt danach
+    # suchen (nicht über sha256), damit ein zweiter Upload nie eine zweite
+    # Zeile mit demselben UNIQUE-Key anlegt.
+    existing = db.execute(
+        select(Blob).where(Blob.storage_key == storage_key)
+    ).scalars().first()
+
+    if (
+        settings.cas_dedup
+        and existing is not None
+        and existing.status == BlobStatus.ready
+        and object_exists(storage_key)
+    ):
+        return existing
 
     info = upload_file(local_path, sha256, mime)
+
+    if existing is not None:
+        # Objekt fehlte (oder Dedup deaktiviert): vorhandene Zeile aktualisieren,
+        # statt mit identischem storage_key zu inserten (sonst IntegrityError).
+        existing.sha256 = info.sha256
+        existing.size = info.size
+        existing.status = BlobStatus.ready
+        db.flush()
+        return existing
+
     blob = Blob(
         storage_key=info.storage_key,
         sha256=info.sha256,
         size=info.size,
         status=BlobStatus.ready,
     )
-    db.add(blob)
-    db.flush()
+    try:
+        # Savepoint: Ein paralleler identischer Upload kann die Zeile zwischen
+        # Suche und Insert angelegt haben. Dann den IntegrityError abfangen und
+        # die bereits vorhandene Zeile zurückgeben (idempotenter Upload).
+        with db.begin_nested():
+            db.add(blob)
+            db.flush()
+    except IntegrityError:
+        existing = db.execute(
+            select(Blob).where(Blob.storage_key == storage_key)
+        ).scalars().first()
+        if existing is None:
+            raise
+        return existing
     return blob
 
 

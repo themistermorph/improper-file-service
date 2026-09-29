@@ -57,6 +57,21 @@ def _add_entry(
     on_file(int(blob.size or 0))
 
 
+def _unique_prefix(used: set[str], name: str) -> str:
+    """Sucht einen freien Namen (``name``, ``name (2)``, ``name (3)`` …) und merkt ihn vor.
+
+    Dadurch kollidiert auch eine Eingabe wie ``a (2)`` nicht mit einem zuvor für
+    ein anderes ``a`` vergebenen Ausweichnamen.
+    """
+    prefix = name
+    suffix = 2
+    while prefix in used:
+        prefix = f"{name} ({suffix})"
+        suffix += 1
+    used.add(prefix)
+    return prefix
+
+
 def summarize(db: Session, entries: list[Entry]) -> tuple[int, int]:
     """Zählt Dateien und deren Gesamtgröße im Teilbaum (für die Fortschrittsanzeige)."""
     files = 0
@@ -94,16 +109,11 @@ def build_zip(
         if progress is not None:
             progress(counter["files"], counter["bytes"])
 
-    used: dict[str, int] = {}
+    used: set[str] = set()
     try:
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
             for entry in entries:
-                prefix = entry.name
-                if prefix in used:
-                    used[prefix] += 1
-                    prefix = f"{entry.name} ({used[prefix]})"
-                else:
-                    used[prefix] = 1
+                prefix = _unique_prefix(used, entry.name)
                 _add_entry(db, zf, entry, prefix, on_file)
     except Exception:
         remove_zip(path)

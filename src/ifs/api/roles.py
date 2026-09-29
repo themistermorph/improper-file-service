@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..core import audit, authz, namespace, roles
 from ..errors import PermissionDenied
-from ..models import PrincipalType, Role, RoleAssignment, RoleScope, User
+from ..models import Entry, PrincipalType, Role, RoleAssignment, RoleScope, User
 from .deps import client_ip, get_current_user, get_db, require_admin
 from .schemas import (
     EntryRoleAssign,
@@ -184,6 +184,15 @@ def delete_assignment(
     actor: User = Depends(require_admin),
 ) -> Response:
     assignment = roles.get_assignment(db, assignment_id)
+    if assignment.entry_id is not None:
+        entry = db.get(Entry, assignment.entry_id)
+        if entry is not None:
+            # Entry-gebundene Zuweisungen darf nur entfernen, wer `admin` am
+            # Eintrag hat – sonst könnte ein Systemadmin fremde Bäume ändern
+            # (Doku §5/§17: Systemadmins haben keinen Dateizugriff).
+            authz.authorize(db, actor, "admin", entry)
+        # Ist der Eintrag bereits gelöscht (verwaiste Zuweisung), darf der
+        # Systemadmin sie aufräumen; die Autorisierung ist dann nicht mehr möglich.
     role_name = assignment.role.name if assignment.role else None
     roles.remove_assignment(db, assignment)
     audit.record(

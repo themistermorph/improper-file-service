@@ -79,6 +79,17 @@ def begin_append(db: Session, session: UploadSession, offset: int) -> str:
         raise Conflict("Upload-Session ist nicht mehr offen")
     if offset != session.offset:
         raise Conflict(f"Offset {offset} stimmt nicht mit erwartetem {session.offset} überein")
+    # Spool auf den erwarteten Offset normalisieren: Ein fehlender Spool (z. B.
+    # nach externem Aufräumen) oder ein zu kleiner Spool würde sonst still zu
+    # kurze Dateien erzeugen; überzählige Bytes aus abgebrochenen Versuchen
+    # werden verworfen, damit ein Retry keine doppelten Bytes anhängt.
+    if not os.path.exists(session.spool_path):
+        raise Conflict("Upload-Spool fehlt")
+    spool_size = os.path.getsize(session.spool_path)
+    if spool_size < offset:
+        raise Conflict("Spool kleiner als der bekannte Offset")
+    if spool_size > offset:
+        os.truncate(session.spool_path, offset)
     return session.spool_path
 
 
@@ -125,9 +136,20 @@ def complete(db: Session, user: User, session: UploadSession, mime: str | None =
             f"Empfangene Größe {session.offset} != erwartete Größe {session.size_expected}"
         )
 
+    # Der Offset ist die verlässliche Quelle für die tatsächlich akzeptierte
+    # Größe: ein manipulierter oder teilweise geschriebener Spool (z. B. nach
+    # Client-Abbruch) darf nicht als vollständige Datei durchgehen.
+    spool_size = (
+        os.path.getsize(session.spool_path) if os.path.exists(session.spool_path) else -1
+    )
+    if spool_size != session.offset:
+        raise BadRequest(
+            f"Spool-Größe {spool_size} stimmt nicht mit dem Upload-Offset "
+            f"{session.offset} überein"
+        )
+
     # SHA- und Vorabprüfungen **vor** dem S3-Upload, damit bei erwartbaren
     # Fehlern kein verwaistes Objekt im Objektspeicher zurückbleibt.
-    spool_size = os.path.getsize(session.spool_path)
     if session.sha256_expected:
         actual = content.sha256_file(session.spool_path)
         if actual.lower() != session.sha256_expected.lower():

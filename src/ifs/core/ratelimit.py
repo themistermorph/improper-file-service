@@ -197,10 +197,15 @@ def record_failure(account_key: str, ip_key: str) -> None:
     by_ip.record_failure(ip_key)
 
 
-def record_success(account_key: str, ip_key: str) -> None:
-    account, by_ip = _limiters()
+def record_success(account_key: str, ip_key: str | None = None) -> None:
+    """Löscht nur den Konto-Zähler, nicht den IP-Zähler.
+
+    Der IP-Zähler bremst Credential-Spraying über viele Benutzernamen und darf
+    nicht durch einen erfolgreichen Login (ggf. mit gültigem Konto) zurückgesetzt
+    werden. ``ip_key`` bleibt nur aus Kompatibilität erhalten und wird nicht genutzt.
+    """
+    account, _ = _limiters()
     account.record_success(account_key)
-    by_ip.record_success(ip_key)
 
 
 def _share_limiter() -> FixedWindowLimiter:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC
 from email.utils import format_datetime
 from uuid import UUID
 
@@ -22,7 +21,7 @@ from ..models import (
     User,
     Version,
 )
-from ..utils import content_disposition, safe_mime
+from ..utils import as_utc, content_disposition, safe_mime
 from .deps import client_ip, get_current_user, get_db
 from .schemas import (
     CopyRequest,
@@ -347,7 +346,7 @@ def stream_blob(
     base_headers = {
         "ETag": f'"{blob.sha256}"',
         "Accept-Ranges": "bytes",
-        "Last-Modified": format_datetime(entry.updated_at.astimezone(UTC)),
+        "Last-Modified": format_datetime(as_utc(entry.updated_at)),
         "Content-Type": content_type,
         "X-Content-Type-Options": "nosniff",
     }

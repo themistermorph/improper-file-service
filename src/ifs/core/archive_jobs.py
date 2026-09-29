@@ -88,6 +88,7 @@ def start(
 
 
 def _run(token: str, entry_ids: list[str]) -> None:
+    path: str | None = None
     try:
         with session_scope() as db:
             entries = []
@@ -106,11 +107,18 @@ def _run(token: str, entry_ids: list[str]) -> None:
             path = archive.build_zip(db, entries, progress)
         with _lock:
             job = _jobs.get(token)
-            if job is not None:
+            if job is None:
+                # Abgebrochen (cancel/TTL/Sweep): Die Datei darf nicht im Spool
+                # zurückbleiben, der nächste Sweep findet sie nicht mehr.
+                archive.remove_zip(path)
+            else:
                 job.path = path
                 job.state = "ready"
                 job.files_done = job.total_files
     except Exception as exc:  # Fehler an den Client melden
+        if path is not None:
+            # Nach dem Build aufgetretener Fehler: keine Leiche hinterlassen.
+            archive.remove_zip(path)
         with _lock:
             job = _jobs.get(token)
             if job is not None:

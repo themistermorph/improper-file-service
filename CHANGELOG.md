@@ -4,6 +4,36 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+- **FTP:** Downloads > 64 KiB wurden still abgeschnitten (`RETR`/`REST`); der
+  S3-Range-Reader lädt jetzt bis zur Blob-Größe nach. Domänenfehler bei
+  `MKD`/`RMD`/`DELE`/`RENAME`/`MFMT`/`SITE CHMOD` liefern „550“ statt eines
+  Verbindungsabbruchs; abgebrochene bzw. wiederholte Uploads räumen ihren Spool auf;
+  Zeitstempel werden als UTC interpretiert.
+- **Uploads:** `413` bricht die resumable Session jetzt dauerhaft ab (Commit statt
+  Rollback); vor jedem Chunk wird der Spool auf den bestätigten Offset gekürzt und
+  beim Abschluss gegen den Offset geprüft – Client-Abbrüche erzeugen keine doppelten
+  oder zu kurzen Dateien mehr. Upload-Sessions sind strikt besitzergebunden.
+- **Namespace:** Ordner-Kopien enthalten jetzt den vollständigen aktiven Teilbaum;
+  die Quota wird beim Überschreiben fremder Dateien dem ursprünglichen Besitzer
+  angerechnet und beim Versions-Rollback geprüft; `Last-Modified` nutzt UTC.
+- **Freigaben:** Bei `overwrite=false` können parallele Drop-Link-Uploads keine
+  vorhandene Datei mehr ersetzen (TOCTOU); Widerrufe werden als `share.revoke`
+  auditiert; negative `max_downloads`/`size` werden mit `422` abgelehnt.
+- **Rollen:** Entry-gebundene Zuweisungen lassen sich nur noch mit `admin` am Eintrag
+  entfernen.
+- **Archiv:** Abgebrochene/abgelaufene ZIP-Jobs hinterlassen keine Spool-Dateien;
+  ZIP-Ausweichnamen kollidieren nicht mehr.
+- **Content/Login:** CAS-Dedup aktualisiert vorhandene Blob-Zeilen statt sie zu
+  duplizieren; ein erfolgreicher Login setzt den IP-weiten Fehlversuchszähler nicht
+  mehr zurück.
+- **Web-UI:** Nicht-OK-Antworten werden nicht mehr als Erfolg angezeigt; der
+  „Zugriff“-Dialog ist auf Systemadmins beschränkt; Logout räumt Auswahl, ZIP-Poll
+  und Modals auf; mehrere Anzeigefehler behoben.
+- **Tests:** 52 neue Regressionstests (`tests/test_review5_*.py`); Gesamtsuite 173 Tests.
+
 ## [0.1.0] – 2026-09-29
 
 Erster öffentlicher **Pre-Release**. Funktionsumfang des MVP einschließlich

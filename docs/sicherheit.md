@@ -377,3 +377,61 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 - **S4 – Eingabelimits:** `POST /api/shares/bulk/revoke` begrenzt Tokens auf 64 Zeichen
   pro Eintrag; `POST /api/uploads` akzeptiert `sha256` nur noch als 64 Hex-Zeichen und
   begrenzt `mime` auf 255 Zeichen (Body-/CPU-Schutz vor der Prüfung).
+
+---
+
+## 18. Maßnahmen aus dem fünften Review (Bugfixes)
+
+- **FTP-Downloads > 64 KiB (kritisch):** `_S3Reader` öffnete nur einen S3-Range und
+  meldete nach dessen Erschöpfung EOF – `RETR`/`REST` wurden dadurch ab 64 KiB still
+  abgeschnitten („226 Transfer complete“). Der Reader öffnet jetzt ab der aktuellen
+  Position weitere Ranges, bis die Blob-Größe erreicht ist (Abbruch, falls das
+  S3-Objekt kürzer ist als im Blob vermerkt).
+- **FTP-Fehlerantworten:** Domänenfehler (`Conflict`/`BadRequest`/…) wurden nicht auf
+  `FilesystemError` abgebildet und beendeten die Verbindung statt „550“ zu senden
+  (`MKD`/`RMD`/`DELE`/`RNFR`/`RNTO`/`MFMT`/`SITE CHMOD`). Absehbare Konflikte (z. B.
+  vorhandener Zielordner-Name beim `STOR`) werden zusätzlich **vor** dem Spool-Anlegen
+  geprüft. Quota- und Größenlimitfehler können wegen der pyftpdlib-Reihenfolge
+  (226-Antwort vor `on_file_received`) weiterhin erst beim Finalisieren auffallen.
+- **FTP-Spools:** Abgebrochene Transfers (`ABOR`/Disconnect) sowie ein erneutes
+  `STOR` auf denselben Pfad räumen den zugehörigen Spool auf – keine verwaisten
+  Dateien im Spool-Verzeichnis mehr.
+- **FTP-Zeitstempel:** `stat`, `getmtime` und `RETR` interpretieren naive
+  SQLite-Zeitstempel korrekt als UTC (`as_utc`) statt als Lokalzeit.
+- **Resumable Uploads:** Der 413-Pfad in `PATCH /api/uploads/{id}` committet den
+  Session-Abbruch jetzt explizit (zuvor verwarf der Request-Rollback den Status
+  `aborted`, der Spool war teils bereits gelöscht). `begin_append` kürzt den Spool auf
+  den bestätigten Offset, `complete` erzwingt `Spool-Größe == Offset` **vor** dem
+  S3-Upload. Client-Abbrüche können damit weder doppelte noch zu kurze Dateien
+  erzeugen; die Session bleibt nach 413 dauerhaft `aborted` (`404`/`409`).
+- **Upload-Sessions:** `HEAD`/`PATCH`/`complete`/`DELETE` sind strikt besitzergebunden;
+  Systemadmins können fremde Sessions nicht mehr abfragen oder abbrechen.
+- **Ordner-Kopie:** `POST /api/entries/{id}/copy` kopiert den aktiven Teilbaum jetzt
+  rekursiv (iterativ, ohne Rekursionstiefenproblem; Dateien teilen den Blob, jeweils
+  Version 1). Die Quota wird einmalig für die Summe des Teilbaums geprüft.
+- **Quota:** Beim Überschreiben fremder Dateien wird das Delta dem **ursprünglichen
+  Besitzer** angerechnet (vorher wurde die Quota des Schreibenden geprüft, während die
+  Bytes dem Besitzer zufielen). Das Wiederherstellen einer Dateiversion
+  (`/versions/{id}/restore`) prüft die Quota jetzt ebenfalls. Negative Größen-/
+  Downloadwerte (`size`, `max_downloads`) werden mit `422` abgelehnt.
+- **Share-Upload (TOCTOU):** Bei `overwrite=false` wird der Zielname unmittelbar vor
+  dem Schreiben erneut bestimmt – ein parallel angelegter gleichnamiger Eintrag wird
+  nicht mehr ersetzt, sondern umbenannt. `DELETE /api/shares/{token}` wird als
+  `share.revoke` auditiert (nur Token-Präfix).
+- **Rollen:** `DELETE /api/roles/assignments/{id}` verlangt bei Entry-gebundenen
+  Zuweisungen `admin` am Eintrag – konsistent zur Zuweisung (S2a). Verwaiste
+  Zuweisungen darf der Systemadmin weiterhin aufräumen.
+- **Archiv:** Abgebrochene/abgelaufene ZIP-Jobs hinterlassen keine Dateien mehr im
+  Spool; die Namensausweichung im ZIP kollidiert nicht mehr (`a`, `a`, `a (2)` →
+  drei unterscheidbare Einträge).
+- **Content/Login:** `store_blob` aktualisiert bei fehlendem S3-Objekt die vorhandene
+  CAS-Zeile statt eine zweite mit gleichem `storage_key` anzulegen (kein UNIQUE-Fehler);
+  parallele identische Uploads werden idempotent behandelt. Ein erfolgreicher Login
+  setzt den IP-weiten Fehlversuchszähler nicht mehr zurück (Credential-Spraying-Schutz).
+- **Header/Audit:** `Last-Modified` interpretiert naive Zeitstempel als UTC;
+  `POST /api/entries/{id}/acl` wird als `acl.set` auditiert.
+- **Web-UI:** `api()` wirft bei Nicht-OK-Antworten (keine falschen Erfolgsmeldungen
+  mehr, u. a. beim Passwortwechsel und Löschen); der „Zugriff“-Dialog ist nur noch für
+  Systemadmins sichtbar (die genutzten Endpunkte sind admin-only); `logout()` räumt
+  Auswahl, ZIP-Poll und Modals auf; Breadcrumb-Doppel-Escaping, 416 bei leeren
+  Textvorschauen, 429-Loginmeldung und der Rollen-Zuweisungsdialog sind korrigiert.

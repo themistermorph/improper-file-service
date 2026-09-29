@@ -169,8 +169,12 @@ def ensure_writable(
     existing = find_child(db, parent.id, name)
     if existing is not None and existing.type == EntryType.folder:
         raise Conflict(f"'{name}' ist ein Verzeichnis")
+    # Beim Überschreiben gehören die ersetzten Bytes dem ursprünglichen Besitzer;
+    # angerechnet wird ihm (bzw. dem Schreibenden, falls kein Besitzer existiert)
+    # daher nur das Delta.
+    quota_owner = owner_id if existing is None else (existing.owner_id or owner_id)
     existing_size = existing.size if existing is not None else 0
-    quota.enforce(db, owner_id, int(size) - existing_size)
+    quota.enforce(db, quota_owner, int(size) - existing_size)
 
 
 def apply_write(
@@ -258,6 +262,11 @@ def restore_version(
     """Stellt eine frühere Version als *neue* aktuelle Version wieder her (append-only)."""
     if entry.type != EntryType.file:
         raise BadRequest("Nur Dateien haben Versionen")
+    # Auch ein Rollback verändert die belegte Speichermenge und muss daher wie
+    # jedes andere Schreiben gegen die Quota des Besitzers geprüft werden.
+    owner = entry.owner_id or actor_id
+    if owner is not None:
+        quota.enforce(db, owner, int(version.size) - int(entry.size))
     last_seq = db.execute(
         select(func.coalesce(func.max(Version.seq), 0)).where(Version.entry_id == entry.id)
     ).scalar_one()
@@ -518,18 +527,31 @@ def purge(db: Session, entry: Entry) -> int:
     return files
 
 
-def copy(db: Session, entry: Entry, new_parent: Entry, new_name: str, owner_id: UUID) -> Entry:
-    validate_name(new_name)
-    if new_parent.type != EntryType.folder:
-        raise BadRequest("Ziel ist kein Verzeichnis")
-    if entry.type == EntryType.folder and (
-        new_parent.id == entry.id or _is_descendant(new_parent, entry.id)
-    ):
-        raise BadRequest("Ein Ordner kann nicht in sich selbst kopiert werden")
-    if find_child(db, new_parent.id, new_name) is not None:
-        raise Conflict(f"'{new_name}' existiert bereits")
-    # Kopien zählen auf die Quota des Kopierenden (Blob-Dedup hin oder her).
-    quota.enforce(db, owner_id, int(entry.size or 0))
+def _active_subtree_size(db: Session, entry: Entry) -> int:
+    """Summe der aktiven Dateigrößen im Teilbaum (iterativ, Papierkorb ausgenommen)."""
+    total = 0
+    stack = [entry]
+    seen: set[UUID] = set()
+    while stack:
+        node = stack.pop()
+        if node.id in seen:
+            continue
+        seen.add(node.id)
+        if node.type == EntryType.file:
+            total += int(node.size or 0)
+            continue
+        stack.extend(
+            db.execute(
+                select(Entry).where(Entry.parent_id == node.id, Entry.trashed_at.is_(None))
+            ).scalars().all()
+        )
+    return total
+
+
+def _clone_entry(
+    db: Session, entry: Entry, new_parent: Entry, new_name: str, owner_id: UUID
+) -> Entry:
+    """Legt eine einzelne Kopie an – ohne Quota-Prüfung (siehe ``copy``)."""
     clone = Entry(
         name=new_name,
         type=entry.type,
@@ -557,5 +579,43 @@ def copy(db: Session, entry: Entry, new_parent: Entry, new_name: str, owner_id: 
             db.flush()
             clone.current_version_id = clone_version.id
             db.flush()
+    return clone
+
+
+def _copy_subtree(
+    db: Session, entry: Entry, new_parent: Entry, new_name: str, owner_id: UUID
+) -> Entry:
+    """Kopiert einen Eintrag samt aktivem Teilbaum – ohne Quota-Prüfung.
+
+    Iterativ statt rekursiv, damit auch sehr tiefe Bäume nicht in einen
+    RecursionError laufen (analog zu ``_trash_subtree``).
+    """
+    root_clone = _clone_entry(db, entry, new_parent, new_name, owner_id)
+    stack: list[tuple[Entry, Entry]] = [(entry, root_clone)]
+    while stack:
+        source, clone = stack.pop()
+        if source.type != EntryType.folder:
+            continue
+        for child in list_children(db, source):
+            child_clone = _clone_entry(db, child, clone, child.name, owner_id)
+            stack.append((child, child_clone))
+    return root_clone
+
+
+def copy(db: Session, entry: Entry, new_parent: Entry, new_name: str, owner_id: UUID) -> Entry:
+    validate_name(new_name)
+    if new_parent.type != EntryType.folder:
+        raise BadRequest("Ziel ist kein Verzeichnis")
+    if entry.type == EntryType.folder and (
+        new_parent.id == entry.id or _is_descendant(new_parent, entry.id)
+    ):
+        raise BadRequest("Ein Ordner kann nicht in sich selbst kopiert werden")
+    if find_child(db, new_parent.id, new_name) is not None:
+        raise Conflict(f"'{new_name}' existiert bereits")
+    # Kopien zählen auf die Quota des Kopierenden (Blob-Dedup hin oder her). Bei
+    # Ordnern wird der aktive Teilbaum vorab summiert und genau einmal geprüft,
+    # damit die einzelnen Kopien die Quota nicht mehrfach anrechnen.
+    quota.enforce(db, owner_id, _active_subtree_size(db, entry))
+    clone = _copy_subtree(db, entry, new_parent, new_name, owner_id)
     events.emit(db, "entry.copied", {"entry_id": str(clone.id)})
     return clone

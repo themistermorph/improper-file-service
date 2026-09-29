@@ -403,6 +403,15 @@ async def upload_shared(
     finally:
         content.remove_spool(spool)
 
+    if not share.overwrite:
+        # Das Streamen des Bodys kann lange dauern: In der Zwischenzeit kann
+        # parallel eine gleichnamige Datei entstanden sein (TOCTOU). Ohne
+        # Überschreibrecht den finalen Namen deshalb erst unmittelbar vor dem
+        # Schreiben erneut bestimmen und prüfen. Ein Restrisiko bleibt nur für
+        # den kurzen Moment zwischen Prüfung und INSERT bestehen.
+        target_name = _available_name(db, entry, name)
+        namespace.ensure_writable(db, entry, target_name, creator.id, size)
+
     stored = namespace.apply_write(db, entry, target_name, creator.id, blob, mime)
     audit.record(
         db, "share.upload", actor_id=creator.id, target_entry=stored.id,
@@ -440,6 +449,7 @@ def _authorize_manage(
 @router.delete("/shares/{token}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_share(
     token: str,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
@@ -447,7 +457,12 @@ def delete_share(
     if share is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Freigabe nicht gefunden")
     _authorize_manage(db, user, share, admin_override=True)
+    entry_id = share.entry_id
     db.delete(share)
+    audit.record(
+        db, "share.revoke", actor_id=user.id, target_entry=entry_id,
+        protocol="http", ip=client_ip(request), details={"token_prefix": token[:8]},
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

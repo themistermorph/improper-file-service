@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core import accounts, authz, namespace
+from ..core import accounts, audit, authz, namespace
 from ..models import ACL, AuditLog, Group, User
-from .deps import get_current_user, get_db, require_admin
+from .deps import client_ip, get_current_user, get_db, require_admin
 from .schemas import AclCreate, AclOut, GroupCreate, GroupOut, MemberAdd
 
 router = APIRouter(tags=["admin"])
@@ -58,6 +58,7 @@ def add_member(
 def set_acl(
     entry_id: UUID,
     payload: AclCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ACL:
@@ -78,6 +79,11 @@ def set_acl(
     )
     db.add(acl)
     db.flush()
+    audit.record(
+        db, "acl.set", actor_id=user.id, target_entry=entry.id, protocol="http",
+        ip=client_ip(request),
+        details={"principal": str(payload.principal_id), "perms": payload.perms},
+    )
     return acl
 
 

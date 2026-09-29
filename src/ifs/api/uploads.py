@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..core import audit, authz, content, namespace, uploads
+from ..errors import QuotaExceeded
 from ..models import User
 from .deps import client_ip, get_current_user, get_db
 from .schemas import UploadCreate, UploadOut
@@ -17,7 +18,9 @@ router = APIRouter(tags=["uploads"])
 
 
 def _check_owner(session, user: User) -> None:
-    if not user.is_admin and session.owner_id != user.id:
+    # Upload-Sessions sind strikt nutzergebunden; auch Systemadmins haben
+    # keinen Dateizugriff. `complete`/`PATCH` prüfen zusätzlich `write` am Ziel.
+    if session.owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Upload-Session gehört einem anderen Nutzer")
 
 
@@ -93,16 +96,32 @@ async def patch_upload(
     path = uploads.begin_append(db, session, offset)
     written = 0
     limit = get_settings().max_upload_size
+    exceeded = False
     with open(path, "ab") as handle:
         async for chunk in request.stream():
             if not chunk:
                 continue
             if limit and session.offset + written + len(chunk) > limit:
-                uploads.abort(db, session)
-                raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Datei zu groß")
+                # Nicht mehr schreiben; Abbruch passiert nach dem Schließen.
+                exceeded = True
+                break
             handle.write(chunk)
             written += len(chunk)
-    uploads.finish_append(db, session, written)
+
+    if exceeded:
+        # Abbruch explizit committen: get_db rollt bei der HTTPException zurück,
+        # sonst bliebe die Session "pending" und der Spool wäre bereits gelöscht.
+        uploads.abort(db, session)
+        db.commit()
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Datei zu groß")
+
+    try:
+        uploads.finish_append(db, session, written)
+    except QuotaExceeded:
+        # finish_append hat die Session bereits abgebrochen; der Commit sichert
+        # den Abbruch gegen den Rollback in get_db. 413 kommt vom IFSError-Handler.
+        db.commit()
+        raise
 
     return Response(
         status_code=status.HTTP_204_NO_CONTENT,

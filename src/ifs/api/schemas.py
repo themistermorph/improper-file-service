@@ -123,7 +123,8 @@ class CopyRequest(BaseModel):
 class UploadCreate(BaseModel):
     parent_id: UUID
     name: str = Field(min_length=1, max_length=255)
-    size: int | None = None
+    # Negative Größen würden eine Session erzeugen, die nie abschließbar ist.
+    size: int | None = Field(default=None, ge=0)
     # SHA-256 als 64 Hex-Zeichen (Body-/CPU-Schutz vor der Prüfung).
     sha256: str | None = Field(default=None, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
     mime: str | None = Field(default=None, max_length=255)
@@ -139,7 +140,8 @@ class ShareCreate(BaseModel):
     entry_id: UUID
     expires_at: datetime | None = None
     password: str | None = Field(default=None, max_length=1024)
-    max_downloads: int | None = None
+    # Negatives Limit würde die Freigabe sofort dauerhaft auf 410 setzen.
+    max_downloads: int | None = Field(default=None, ge=0)
     allow_upload: bool = False
     # Überschreiben nur bei ausdrücklich erlaubter Freigabe (Default aus).
     overwrite: bool = False
@@ -169,7 +171,7 @@ class ShareUpdate(BaseModel):
     # Nicht gesetzte Felder bleiben unverändert; explizit null/leer löscht.
     password: str | None = Field(default=None, max_length=1024)
     expires_at: datetime | None = None
-    max_downloads: int | None = None
+    max_downloads: int | None = Field(default=None, ge=0)
     allow_upload: bool | None = None
     overwrite: bool | None = None
 

@@ -118,6 +118,14 @@ class IFSFTPHandler(TLS_FTPHandler):
             logger.exception("Finalisieren des FTP-Uploads fehlgeschlagen: %s", file)
             super().on_file_received(file)
 
+    def on_incomplete_file_received(self, file):
+        # Abgebrochene Uploads (ABOR/Disconnect) hinterlassen sonst einen
+        # verwaisten Spool; Fehler dürfen die Verbindung nicht sprengen.
+        try:
+            self.fs.discard_pending(file)
+        except Exception:
+            logger.exception("Verwerfen des abgebrochenen FTP-Uploads fehlgeschlagen: %s", file)
+
     def close(self):
         fs = getattr(self, "fs", None)
         try:

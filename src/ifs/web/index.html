@@ -513,12 +513,15 @@
         method, headers, body: body === undefined ? undefined : JSON.stringify(body),
       });
       if (res.status === 401) { logout(); throw new Error("Sitzung abgelaufen"); }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error("HTTP " + res.status + (text ? ": " + text : ""));
+      }
       return res;
     }
     async function apiJson(method, path, body) {
-      const res = await api(method, path, body);
+      const res = await api(method, path, body); // wirft bereits bei Nicht-OK
       const text = await res.text();
-      if (!res.ok) throw new Error("HTTP " + res.status + ": " + text);
       return text ? JSON.parse(text) : null;
     }
 
@@ -532,6 +535,11 @@
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password }),
         });
+        if (res.status === 429) {
+          document.getElementById("login-error").textContent =
+            "Zu viele Fehlversuche – bitte später erneut versuchen.";
+          return;
+        }
         if (!res.ok) { document.getElementById("login-error").textContent = "Benutzername oder Passwort falsch."; return; }
         state.token = (await res.json()).access_token;
         sessionStorage.setItem("ifs_token", state.token);
@@ -555,6 +563,14 @@
       clearSystemTimer();
       closeAccountMenu();
       closeRowMenu();
+      // Zustand auslaufen lassen: keine Phantom-Auswahl, kein ZIP-Poll,
+      // kein offenes Modal auf dem Login-Bildschirm.
+      state.selected.clear();
+      clearArchivePoll();
+      archiveJob = null;
+      archiveModalOpen = false;
+      hideArchiveMini();
+      closeModal();
     }
 
     async function start() {
@@ -671,7 +687,11 @@
           menuItems.push({ label: "Versionen", handler: () => versionsDialog(e) });
         }
         menuItems.push({ label: "Link", handler: () => shareDialog(e) });
-        menuItems.push({ label: "Zugriff", handler: () => entryAccessDialog(e) });
+        // Eigentümer-Verwaltung ist derzeit nur mit Systemadmin möglich:
+        // der Dialog nutzt admin-only Endpunkte (GET /api/roles, /api/users, /api/groups).
+        if (state.me && state.me.is_admin) {
+          menuItems.push({ label: "Zugriff", handler: () => entryAccessDialog(e) });
+        }
         menuItems.push({ label: "Umbenennen", handler: () => rename(e) });
 
         const more = document.createElement("button");
@@ -714,7 +734,7 @@
         nav.appendChild(sep);
         const b = document.createElement("button");
         b.className = "crumb" + (i === state.stack.length - 1 ? " current" : "");
-        b.textContent = esc(entry.name);
+        b.textContent = entry.name;
         b.onclick = () => goto(i);
         nav.appendChild(b);
       });
@@ -742,6 +762,7 @@
       if (!confirm(`'${entry.name}' wirklich löschen?`)) return;
       try {
         await api("DELETE", "/api/entries/" + entry.id);
+        state.selected.delete(entry.id);
         await load();
         await refreshTrashBadge();
         toast("In den Papierkorb verschoben.", "ok");
@@ -750,7 +771,6 @@
     async function download(entry) {
       try {
         const res = await api("GET", "/api/entries/" + entry.id + "/content");
-        if (!res.ok) throw new Error("HTTP " + res.status);
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -801,8 +821,12 @@
             if (archiveJob.status === "ready") {
               const name = st.name || archiveJob.name;
               const url = "/api/archive/" + archiveJob.token;
+              // Nur schließen, wenn wirklich noch das ZIP-Fenster offen ist –
+              // ein zwischenzeitlich geöffnetes fremdes Modal bleibt stehen.
+              const zipModalOpen = archiveModalOpen && !!document.getElementById("zip-bar");
               clearArchivePoll();
               finishArchive();
+              if (zipModalOpen) closeModal();
               triggerDownload(url, name);
               toast("ZIP bereit.", "ok");
               return;
@@ -908,7 +932,6 @@
       clearArchivePoll();
       archiveJob = null;
       archiveModalOpen = false;
-      closeModal();
       hideArchiveMini();
     }
 
@@ -1701,7 +1724,7 @@
         return;
       }
       try {
-        await api("POST", "/api/me/password", {
+        await apiJson("POST", "/api/me/password", {
           current_password: current,
           new_password: next,
         });
@@ -1856,7 +1879,10 @@
       } catch (e) { /* z. B. wenn keine Adminrechte bestehen */ }
     }
 
+    let roleAssignmentsRole = null; // zuletzt betrachtete Rolle (Neu-Laden nach Entfernen)
+
     async function roleAssignmentsDialog(role) {
+      roleAssignmentsRole = role;
       try {
         const assignments = await apiJson("GET", "/api/roles/" + role.id + "/assignments");
         const list = assignments.length
@@ -1898,6 +1924,8 @@
       try {
         await api("DELETE", "/api/roles/assignments/" + assignmentId);
         toast("Entfernt.", "ok");
+        // Liste neu laden, damit die entfernte Zuweisung verschwindet.
+        if (roleAssignmentsRole) roleAssignmentsDialog(roleAssignmentsRole);
       } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -2078,12 +2106,10 @@
     }
 
     async function openTextPreview(entry, asHtml) {
-      const response = await fetch("/api/entries/" + entry.id + "/content", {
-        headers: {
-          "Authorization": "Bearer " + state.token,
-          "Range": "bytes=0-" + (PREVIEW_TEXT_LIMIT - 1),
-        },
-      });
+      const headers = { "Authorization": "Bearer " + state.token };
+      // Bei 0-Byte-Dateien kein Range senden – der Server antwortet sonst mit 416.
+      if (entry.size > 0) headers["Range"] = "bytes=0-" + (PREVIEW_TEXT_LIMIT - 1);
+      const response = await fetch("/api/entries/" + entry.id + "/content", { headers });
       if (!response.ok) throw new Error("HTTP " + response.status);
       const text = await response.text();
       const truncated = response.status === 206;
@@ -2314,8 +2340,7 @@
     async function revokeShare(share, after = null) {
       if (!confirm("Diese Freigabe widerrufen?")) return;
       try {
-        const response = await api("DELETE", "/api/shares/" + share.token);
-        if (!response.ok) throw new Error("HTTP " + response.status);
+        await api("DELETE", "/api/shares/" + share.token);
         toast("Freigabe widerrufen.", "ok");
         if (after) after(); else loadShares();
       } catch (e) { toast("Widerrufen fehlgeschlagen: " + e.message, "err"); }

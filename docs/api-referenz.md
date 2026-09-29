@@ -196,7 +196,10 @@ dass ein write-only-Eintrag in einen lesbaren Ordner verschoben und dort gelesen
 
 ### `POST /api/entries/{entry_id}/copy`
 
-Kopiert einen Eintrag (gleiche Version, kein Datenkopieren). `201`.
+Kopiert einen Eintrag. Dateien teilen den Blob des Originals (kein Datenkopieren im
+Objektspeicher, eigene Version 1); **Ordner werden samt aktivem Teilbaum rekursiv
+kopiert** (Papierkorb-Einträge ausgenommen). Die Quota des Kopierenden wird einmalig
+für die Summe aller kopierten Dateien geprüft (`413` bei Überschreitung). `201`.
 
 | Feld | Typ | Pflicht |
 |---|---|---|
@@ -389,6 +392,13 @@ Antwort `201`: `{ "id": "<upload-id>", "offset": 0, "status": "pending" }`
 Body = Chunk-Bytes. Antwort `204` mit Header `Upload-Offset` = neuer Offset.
 Bei falschem Offset: `409`.
 
+> **Abbruch und Konsistenz:** Überschreitet der Upload `IFS_MAX_UPLOAD_SIZE`, antwortet
+> der Endpunkt mit `413` und die Session ist danach **dauerhaft abgebrochen**
+> (`HEAD`/`PATCH` → `404`/`409`). Vor jedem Chunk wird der Spool auf den bestätigten
+> Offset gekürzt; beim Abschluss muss die Spool-Größe exakt dem Offset entsprechen
+> (`400` sonst). Upload-Sessions sind strikt nutzergebunden – auch Systemadmins können
+> fremde Sessions weder abfragen noch abbrechen.
+
 **Schritt 3 – Status abfragen (optional):** `HEAD /api/uploads/{upload_id}`
 → `204` mit `Upload-Offset` und `Upload-Length`.
 
@@ -422,7 +432,7 @@ erneut. `201`.
 | `entry_id` | UUID | ja | Freizugebender Eintrag |
 | `expires_at` | datetime | nein | Ablaufzeitpunkt (UTC) |
 | `password` | string | nein | Passwortschutz |
-| `max_downloads` | int | nein | Maximale Downloadzahl |
+| `max_downloads` | int | nein | Maximale Downloadzahl (muss ≥ `0` sein, sonst `422`) |
 | `allow_upload` | bool | nein | Upload über den Link erlauben (nur für Ordner; erfordert `write` am Eintrag, siehe `POST /api/shares/{token}/upload`) |
 | `overwrite` | bool | nein | Anonymen Uploads das Überschreiben vorhandener Dateien erlauben (nur wirksam mit `allow_upload=true`); Standard `false` |
 
@@ -508,7 +518,9 @@ Anfrage-Body ist der Dateiinhalt (wie `PUT /api/uploads/simple`). Erlaubt sind
 | `X-Share-Password` | bei Passwortschutz | wie beim Download |
 
 Ohne `overwrite=true` an der **Freigabe** wird bei einem Namenskonflikt automatisch auf
-`name (2).ext` ausgewichen, damit **nichts überschrieben** wird. Das frühere
+`name (2).ext` ausgewichen, damit **nichts überschrieben** wird; der endgültige Zielname
+wird dazu unmittelbar vor dem Schreiben erneut bestimmt – auch **parallele** Uploads
+ersetzen dadurch keine vorhandene Datei. Das frühere
 Request-Flag `?overwrite=true` hat keine Wirkung mehr; Überschreiben erlaubt nur die
 Freigabe-Eigenschaft `overwrite` (siehe `POST /api/shares` und `PATCH /api/shares/{token}`).
 Der Endpunkt prüft bei jedem Aufruf erneut, ob der Ersteller der Freigabe noch `write`
@@ -531,7 +543,8 @@ curl -T bericht.pdf -H "X-Share-Password: geheim" \
 
 Widerruft die Freigabe. `204`. Erfordert Anmeldung und `share`-Recht – **auch wenn der
 zugehörige Eintrag bereits im Papierkorb liegt** (Ersteller, `share`-Berechtigte sowie
-Systemadmins zum Missbrauchsschutz dürfen widerrufen).
+Systemadmins zum Missbrauchsschutz dürfen widerrufen). Der Widerruf wird als
+`share.revoke` auditiert (nur Token-Präfix).
 
 > **Automatischer Widerruf:** Beim Löschen (`DELETE /api/entries/{id}`) werden alle
 > Freigabelinks des Eintrags und seines Teilbaums **automatisch widerrufen**.
@@ -648,7 +661,7 @@ Rollen sind benannte Rechtebündel mit `scope` **`system`** (global) oder **`res
 | `GET/PATCH/DELETE /api/roles/{id}` | Lesen/ändern/löschen (eingebaute: `409` beim Ändern der Rechte/Löschen) |
 | `GET /api/roles/{id}/assignments` | Zuweisungen der Rolle |
 | `POST /api/roles/{id}/assignments` | Zuweisen (`principal_type`, `principal_id`, `entry_id?`) → `201`; bei gesetztem `entry_id` ist `admin` am Eintrag erforderlich (`403` sonst) |
-| `DELETE /api/roles/assignments/{id}` | Zuweisung entfernen → `204` |
+| `DELETE /api/roles/assignments/{id}` | Zuweisung entfernen → `204`; bei Entry-gebundenen Zuweisungen ist zusätzlich `admin` am Eintrag erforderlich (`403` sonst) |
 | `GET /api/entries/{id}/roles` | Rollen eines Eintrags (Recht `admin` am Eintrag) |
 | `POST /api/entries/{id}/roles` | Ressourcenrolle zuweisen (`role_id`, `principal_type`, `principal_id`) |
 | `DELETE /api/entries/{id}/roles/{assignment_id}` | Eintragsrollen-Zuweisung entfernen |
