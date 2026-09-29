@@ -46,10 +46,10 @@ dev = [
 ifs = "ifs.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/REPO"
-Repository = "https://github.com/OWNER/REPO"
-Changelog = "https://github.com/OWNER/REPO/blob/main/CHANGELOG.md"
-Security = "https://github.com/OWNER/REPO/blob/main/SECURITY.md"
+Homepage = "https://github.com/themistermorph/informal-file-system"
+Repository = "https://github.com/themistermorph/informal-file-system"
+Changelog = "https://github.com/themistermorph/informal-file-system/blob/main/CHANGELOG.md"
+Security = "https://github.com/themistermorph/informal-file-system/blob/main/SECURITY.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]

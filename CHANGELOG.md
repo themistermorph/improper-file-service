@@ -56,4 +56,4 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Login-Rate-Limit ist pro Prozess (In-Memory); für den vorgesehenen Maßstab
   (eine API-Instanz) ausgelegt.
 
-[0.1.0]: https://github.com/OWNER/REPO/releases/tag/v0.1.0
+[0.1.0]: https://github.com/themistermorph/informal-file-system/releases/tag/v0.1.0
