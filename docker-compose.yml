@@ -1,0 +1,115 @@
+# IFS – Stack mit lokal gehostetem, persistentem Objektspeicher (SeaweedFS, S3-API).
+#
+# Vor dem ersten Start:
+#   bash deploy/setup-seaweedfs.sh     # erzeugt S3-Zugangsdaten + Storage-UI-Login
+#   bash deploy/preflight-s3.sh        # prüft S3 (Head/Put/Get/Range/Multipart)
+#   docker compose up -d --build
+#
+# Storage-UI (nur Admins, Basic Auth): http://<server>:9010
+
+name: ifs
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ifs
+      # In Produktion IFS_DB_PASSWORD setzen; der Start verweigert Default-Werte.
+      POSTGRES_PASSWORD: ${IFS_DB_PASSWORD:-ifs}
+      POSTGRES_DB: ifs
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ifs -d ifs"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    command: >
+      server -dir=/data
+      -ip=127.0.0.1
+      -ip.bind=0.0.0.0
+      -master.raftBootstrap=true
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+      -filer -filer.port=8888
+      -master.volumeSizeLimitMB=1024
+    volumes:
+      - s3-data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8888/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  s3-ui:
+    image: caddy:2
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
+    volumes:
+      - ./seaweedfs/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "9010:9010"
+    depends_on:
+      - s3
+    restart: unless-stopped
+
+  api:
+    build: .
+    command: ["python", "-m", "ifs.cli", "run-api"]
+    env_file: .env
+    environment:
+      IFS_DATABASE_URL: postgresql+psycopg://ifs:${IFS_DB_PASSWORD:-ifs}@db:5432/ifs
+      IFS_AUTO_CREATE_SCHEMA: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - spool:/var/lib/ifs/spool
+    depends_on:
+      db:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ftp:
+    build: .
+    command: ["python", "-m", "ifs.cli", "run-ftp"]
+    env_file: .env
+    environment:
+      IFS_DATABASE_URL: postgresql+psycopg://ifs:${IFS_DB_PASSWORD:-ifs}@db:5432/ifs
+    ports:
+      - "21:21"
+      - "30000-30100:30000-30100"
+    volumes:
+      - spool:/var/lib/ifs/spool
+      - ./certs:/etc/ifs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "-m", "ifs.cli", "run-worker"]
+    env_file: .env
+    environment:
+      IFS_DATABASE_URL: postgresql+psycopg://ifs:${IFS_DB_PASSWORD:-ifs}@db:5432/ifs
+    volumes:
+      - spool:/var/lib/ifs/spool
+    depends_on:
+      db:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  s3-data:
+  spool:

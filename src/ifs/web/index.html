@@ -1,0 +1,2699 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IFS – Dateisystem</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #161a22; --panel2: #1b2029; --border: #2a3040;
+      --text: #e6e8ec; --muted: #9aa4b2; --accent: #3b82f6; --accent2: #2563eb;
+      --danger: #b91c1c; --ok: #16a34a; --warn: #d97706;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background: var(--bg); color: var(--text); }
+    button { font: inherit; }
+    .btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+           padding: 8px 14px; cursor: pointer; }
+    .btn:hover { background: var(--accent2); }
+    .btn.secondary { background: #2b3342; }
+    .btn.secondary:hover { background: #364155; }
+    .btn.danger { background: var(--danger); }
+    .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn.small { padding: 4px 9px; font-size: 13px; }
+    input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+                    background: #0b0e13; color: var(--text); font: inherit; }
+    a { color: #93c5fd; }
+
+    header { display: flex; align-items: center; justify-content: space-between;
+             padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+             position: sticky; top: 0; z-index: 20; }
+    header .brand { font-weight: 700; letter-spacing: .3px; }
+    header .brand span { color: var(--accent); }
+    header .who { color: var(--muted); font-size: 13px; }
+    .account { position: relative; display: flex; align-items: center; gap: 8px; }
+    .menu { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+            padding: 4px; display: flex; flex-direction: column; gap: 2px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 180px; }
+    .menu button { background: none; border: 0; color: var(--text); text-align: left;
+                   padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+    .menu button:hover { background: #222a36; }
+    .menu button.danger { color: #fca5a5; }
+    .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+    #account-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; }
+    .menu.floating { z-index: 60; }
+
+    main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .hidden { display: none !important; }
+
+    #login { max-width: 380px; margin: 8vh auto; background: var(--panel);
+             border: 1px solid var(--border); border-radius: var(--radius); padding: 24px;
+             display: flex; flex-direction: column; gap: 12px; }
+    #login h1 { margin: 0 0 6px; font-size: 20px; }
+    #login .sub { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+
+    .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+              margin-bottom: 12px; min-height: 28px; }
+    .crumb { background: none; border: 0; color: #93c5fd; cursor: pointer;
+             padding: 3px 6px; border-radius: 6px; }
+    .crumb:hover { background: #1d2532; }
+    .crumb.current { color: var(--text); font-weight: 600; }
+    .sep { color: var(--muted); }
+
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+               margin-bottom: 12px; }
+    .toolbar .grow { flex: 1; }
+    .nav { display: flex; gap: 8px; margin-bottom: 14px; }
+    .nav .btn.active { background: var(--accent); color: #fff; }
+    .badge { background: var(--accent); color: #fff; border-radius: 10px; padding: 1px 7px;
+             font-size: 12px; margin-left: 4px; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .field label { font-size: 13px; color: var(--muted); }
+    .checkline { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .chip { display: inline-block; background: #23303f; border: 1px solid var(--border);
+            border-radius: 999px; padding: 1px 8px; font-size: 12px; margin: 1px 2px; }
+    .state { font-size: 12px; border-radius: 999px; padding: 1px 8px; }
+    .state.on { background: #14351f; color: #86efac; }
+    .state.off { background: #3a1d1d; color: #fca5a5; }
+
+    .card { background: var(--panel); border: 1px solid var(--border);
+            border-radius: var(--radius); overflow: hidden; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px; }
+    .card.stat { padding: 14px 16px; }
+    .card.stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase;
+                        letter-spacing: .4px; }
+    .card.stat .value { font-size: 22px; font-weight: 700; margin: 6px 0 4px; }
+    .card.stat .sub { color: var(--muted); font-size: 12px; }
+    .card.stat .bar { margin: 6px 0; }
+    .spark { width: 100%; height: 42px; display: block; margin: 6px 0 2px; }
+    .dropzone { position: relative; }
+    .dropzone.drag { outline: 2px dashed var(--accent); outline-offset: -6px; }
+    .dropzone .hint { position: absolute; inset: 0; display: none; align-items: center;
+                      justify-content: center; background: rgba(59,130,246,.12);
+                      color: #cfe0ff; font-size: 15px; pointer-events: none; z-index: 5; }
+    .dropzone.drag .hint { display: flex; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border);
+             font-size: 14px; }
+    th { cursor: pointer; user-select: none; color: var(--muted); font-weight: 600;
+         background: var(--panel2); position: sticky; top: 0; }
+    th .arrow { color: var(--accent); font-size: 11px; }
+    tbody tr:hover { background: #171c25; }
+    td.name { cursor: pointer; }
+    .ficon { margin-right: 8px; }
+    .row-actions { display: flex; gap: 6px; justify-content: flex-end; opacity: .35;
+                   transition: opacity .1s; }
+    tr:hover .row-actions { opacity: 1; }
+    .empty { padding: 28px; text-align: center; color: var(--muted); }
+    .muted { color: var(--muted); }
+    .right { text-align: right; }
+    .nowrap { white-space: nowrap; }
+
+    #uploads { margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .uprog { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+             padding: 8px 12px; font-size: 13px; }
+    .uprog .top { display: flex; justify-content: space-between; gap: 10px; }
+    .bar { height: 6px; background: #0b0e13; border-radius: 4px; margin-top: 6px;
+           overflow: hidden; }
+    .bar i { display: block; height: 100%; width: 0; background: var(--accent);
+             transition: width .15s; }
+    .bar.ok i { background: var(--ok); }
+    .bar.err i { background: var(--danger); }
+
+    .archive-mini { position: fixed; right: 18px; bottom: 18px; width: 300px; max-width: calc(100vw - 24px);
+                    z-index: 45; background: var(--panel); border: 1px solid var(--border);
+                    border-radius: 10px; padding: 12px 14px; cursor: pointer;
+                    box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+    .archive-mini:hover { border-color: var(--accent); }
+    .archive-mini .top { display: flex; justify-content: space-between; align-items: center;
+                         gap: 8px; font-size: 13px; }
+    .archive-mini .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+                          white-space: nowrap; }
+    .archive-mini .close { background: transparent; border: 0; color: var(--muted);
+                           cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+    .archive-mini .close:hover { color: var(--text); }
+
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55);
+                      display: flex; align-items: center; justify-content: center;
+                      z-index: 50; padding: 20px; }
+    .modal { background: var(--panel); border: 1px solid var(--border);
+             border-radius: var(--radius); max-width: 520px; width: 100%; padding: 20px; }
+    .modal h2 { margin: 0 0 12px; font-size: 18px; }
+    .modal .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .modal .field label { font-size: 13px; color: var(--muted); }
+    .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 14px; }
+    .kv div { overflow-wrap: anywhere; }
+    .kv .k { color: var(--muted); }
+    .linkbox { display: flex; gap: 8px; }
+    .linkbox input { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; }
+
+    #toasts { position: fixed; right: 16px; bottom: 16px; display: flex;
+              flex-direction: column; gap: 8px; z-index: 60; }
+    .toast { background: var(--panel); border: 1px solid var(--border);
+             border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px;
+             max-width: 380px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+    .toast.err { border-left-color: var(--danger); }
+    .toast.ok { border-left-color: var(--ok); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">IFS<span>.</span> Dateisystem</div>
+    <div class="account">
+      <button class="btn ghost small hidden" id="btn-refresh" onclick="refreshCurrent()" title="Aktualisieren">⟳</button>
+      <button class="btn secondary small hidden" id="account-btn" onclick="toggleAccountMenu(event)">
+        <span id="who">…</span> ▾
+      </button>
+      <div id="account-menu" class="menu hidden">
+        <button onclick="showView('trash')">🗑 Papierkorb <span id="trash-badge" class="badge hidden"></span></button>
+        <button onclick="showView('shares')">🔗 Freigaben</button>
+        <button onclick="showView('profile')">👤 Profil</button>
+        <button id="menu-users" class="hidden" onclick="showView('users')">👥 Benutzer</button>
+        <button id="menu-roles" class="hidden" onclick="showView('roles')">🎭 Rollen</button>
+        <button id="menu-system" class="hidden" onclick="showView('system')">📊 System</button>
+        <button id="menu-audit" class="hidden" onclick="showView('audit')">🧾 Audit</button>
+        <hr />
+        <button class="danger" onclick="logout()">Abmelden</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="login">
+      <h1>Anmelden</h1>
+      <div class="sub">Weboberfläche des IFS-Dateisystems</div>
+      <input id="username" type="text" placeholder="Benutzername" autocomplete="username" />
+      <input id="password" type="password" placeholder="Passwort" autocomplete="current-password" />
+      <button class="btn" id="btn-login" onclick="login()">Anmelden</button>
+      <div id="login-error" class="muted"></div>
+    </section>
+
+    <section id="app" class="hidden">
+      <div class="nav">
+        <button class="btn small active" id="nav-files" onclick="showView('files')">📁 Dateien</button>
+        <button class="btn small secondary" id="nav-shared" onclick="showView('shared')">📥 Mit mir geteilt</button>
+      </div>
+
+      <div id="files-view">
+      <div class="crumbs" id="crumbs"></div>
+
+      <div class="toolbar">
+        <button class="btn secondary" onclick="newFolder()">＋ Neuer Ordner</button>
+        <button class="btn" onclick="fileInput.click()">⬆ Hochladen</button>
+        <input type="file" id="fileInput" multiple class="hidden" />
+        <input class="grow" id="search" type="text" placeholder="Im aktuellen Ordner filtern…" oninput="render()" />
+      </div>
+
+      <div id="uploads"></div>
+
+      <div id="bulkbar" class="toolbar hidden">
+        <strong id="bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
+        <button class="btn secondary" onclick="bulkDownload()">Download (.zip)</button>
+        <button class="btn secondary" onclick="bulkMoveDialog()">Verschieben</button>
+        <button class="btn danger" onclick="bulkDelete()">Löschen</button>
+        <button class="btn ghost" onclick="clearSelection()">Auswahl aufheben</button>
+      </div>
+
+      <div class="card dropzone" id="dropzone">
+        <div class="hint">Dateien hier ablegen zum Hochladen</div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:34px">
+                <input type="checkbox" id="select-all" onclick="event.stopPropagation()"
+                       onchange="toggleSelectAll(this.checked)" />
+              </th>
+              <th onclick="sortBy('name')" style="width:48%">Name <span class="arrow" id="a-name"></span></th>
+              <th onclick="sortBy('size')" class="right" style="width:14%">Größe <span class="arrow" id="a-size"></span></th>
+              <th onclick="sortBy('updated_at')" style="width:24%">Geändert <span class="arrow" id="a-updated_at"></span></th>
+              <th style="width:10%"></th>
+            </tr>
+          </thead>
+          <tbody id="entries"></tbody>
+        </table>
+        <div class="empty hidden" id="empty">Dieser Ordner ist leer.</div>
+      </div>
+      <p class="muted" id="status" style="font-size:13px"></p>
+      </div><!-- /files-view -->
+
+      <div id="trash-view" class="hidden">
+        <div class="toolbar">
+          <button class="btn secondary" onclick="loadTrash()">Aktualisieren</button>
+          <button class="btn danger" onclick="emptyTrash()">Papierkorb leeren</button>
+        </div>
+        <div id="trash-bulkbar" class="toolbar hidden">
+          <strong id="trash-bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
+          <button class="btn secondary" onclick="bulkRestoreTrash()">Wiederherstellen</button>
+          <button class="btn danger" onclick="bulkPurgeTrash()">Endgültig löschen</button>
+          <button class="btn ghost" onclick="clearTrashSelection()">Auswahl aufheben</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:34px">
+                  <input type="checkbox" id="trash-select-all"
+                         onchange="trashSelectAll(this.checked)" />
+                </th>
+                <th style="width:42%">Name</th>
+                <th class="right" style="width:14%">Größe</th>
+                <th style="width:22%">Gelöscht</th>
+                <th class="right" style="width:10%">Resttage</th>
+                <th style="width:8%"></th>
+              </tr>
+            </thead>
+            <tbody id="trash-entries"></tbody>
+          </table>
+          <div class="empty hidden" id="trash-empty">Der Papierkorb ist leer.</div>
+        </div>
+        <p class="muted" style="font-size:13px">Einträge werden nach Ablauf der Aufbewahrungsfrist automatisch endgültig gelöscht.</p>
+      </div>
+
+      <div id="users-view" class="hidden">
+        <div class="toolbar">
+          <input id="user-q" class="grow" type="text" placeholder="Benutzer suchen (Name, E-Mail)…" oninput="loadUsers()" />
+          <select id="user-active" onchange="loadUsers()">
+            <option value="">Alle Status</option>
+            <option value="true">Aktiv</option>
+            <option value="false">Inaktiv</option>
+          </select>
+          <select id="user-admin" onchange="loadUsers()">
+            <option value="">Alle Rollen</option>
+            <option value="true">Administratoren</option>
+            <option value="false">Benutzer</option>
+          </select>
+          <button class="btn" onclick="userCreateDialog()">＋ Neuer Benutzer</button>
+        </div>
+        <div id="user-bulkbar" class="toolbar hidden">
+          <strong id="user-bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
+          <button class="btn secondary" onclick="bulkUserActive(true)">Aktivieren</button>
+          <button class="btn secondary" onclick="bulkUserActive(false)">Deaktivieren</button>
+          <button class="btn danger" onclick="bulkUserDeleteDialog()">Löschen</button>
+          <button class="btn ghost" onclick="clearUserSelection()">Auswahl aufheben</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:34px">
+                  <input type="checkbox" id="user-select-all"
+                         onchange="userSelectAll(this.checked)" />
+                </th>
+                <th>Benutzername</th><th>Anzeigename</th><th>E-Mail</th>
+                <th>Status</th><th>Admin</th><th>Letzter Login</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="user-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="user-empty">Keine Benutzer gefunden.</div>
+        </div>
+        <p class="muted" id="user-status" style="font-size:13px"></p>
+      </div>
+
+      <div id="roles-view" class="hidden">
+        <div class="toolbar">
+          <select id="role-scope" onchange="loadRoles()">
+            <option value="">Alle Rollen</option>
+            <option value="system">Systemrollen</option>
+            <option value="resource">Ressourcenrollen</option>
+          </select>
+          <button class="btn" onclick="roleCreateDialog()">＋ Neue Rolle</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Scope</th><th>Rechte</th><th>Eingebaut</th><th></th></tr>
+            </thead>
+            <tbody id="role-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="role-empty">Keine Rollen.</div>
+        </div>
+        <p class="muted" style="font-size:13px">Ressourcenrollen werden im Dateimanager über „Zugriff“ auf Ordner/Dateien vergeben; Systemrollen gelten global.</p>
+      </div>
+
+      <div id="shares-view" class="hidden">
+        <div class="toolbar">
+          <button class="btn secondary" onclick="loadShares()">Aktualisieren</button>
+          <span class="muted" style="font-size:13px">Links erzeugst du im Dateimanager über „…“ → „Link“.</span>
+        </div>
+        <div id="share-bulkbar" class="toolbar hidden">
+          <strong id="share-bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
+          <button class="btn danger" onclick="bulkRevokeShares()">Widerrufen</button>
+          <button class="btn ghost" onclick="clearShareSelection()">Auswahl aufheben</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:34px">
+                  <input type="checkbox" id="share-select-all"
+                         onchange="shareSelectAll(this.checked)" />
+                </th>
+                <th>Ziel</th><th>Erstellt von</th><th>Läuft ab</th>
+                  <th class="right">Downloads</th><th>Schutz</th><th></th></tr>
+            </thead>
+            <tbody id="share-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="share-empty">Keine Freigaben vorhanden.</div>
+        </div>
+      </div>
+
+      <div id="shared-view" class="hidden">
+        <div class="toolbar">
+          <button class="btn secondary hidden" id="shared-back" onclick="sharedBack()">← Zurück</button>
+          <button class="btn secondary" onclick="loadShared()">Aktualisieren</button>
+          <span class="muted" id="shared-crumbs" style="font-size:13px">Einträge, die dir per Recht/Rolle freigegeben wurden.</span>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Typ</th><th>Pfad</th><th class="right">Größe</th><th></th></tr>
+            </thead>
+            <tbody id="shared-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="shared-empty">Keine Freigaben für dich.</div>
+        </div>
+      </div>
+
+      <div id="audit-view" class="hidden">
+        <div class="toolbar">
+          <input id="audit-q" class="grow" type="text"
+                 placeholder="Filtern (Aktion, Benutzer, IP, Ziel)…" oninput="renderAudit()" />
+          <button class="btn secondary" onclick="loadAudit()">Aktualisieren</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>Zeit</th><th>Akteur</th><th>Aktion</th><th>Protokoll</th><th>IP</th><th>Ergebnis</th></tr>
+            </thead>
+            <tbody id="audit-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="audit-empty">Keine Einträge.</div>
+        </div>
+      </div>
+
+      <div id="system-view" class="hidden">
+        <div class="toolbar">
+          <label class="muted" style="font-size:13px">Intervall</label>
+          <select id="monitor-interval" onchange="setMonitorInterval()">
+            <option value="2000">2 s</option>
+            <option value="5000" selected>5 s</option>
+            <option value="10000">10 s</option>
+            <option value="30000">30 s</option>
+          </select>
+          <button class="btn secondary" onclick="loadSystem()">Aktualisieren</button>
+        </div>
+        <div class="grid" id="system-cards"></div>
+      </div>
+
+      <div id="profile-view" class="hidden">
+        <div class="card" style="padding:20px">
+          <h2 style="margin-top:0">Mein Profil</h2>
+          <div class="field"><label>Benutzername</label><input id="me-username" readonly /></div>
+          <div class="field"><label>Anzeigename</label><input id="me-display" /></div>
+          <div class="field"><label>E-Mail</label><input id="me-email" /></div>
+          <button class="btn" onclick="saveProfile()">Speichern</button>
+
+          <hr style="border:0;border-top:1px solid var(--border);margin:24px 0" />
+          <h2>Passwort ändern</h2>
+          <div class="field"><label>Aktuelles Passwort</label><input id="pw-current" type="password" autocomplete="current-password" /></div>
+          <div class="field"><label>Neues Passwort (min. 8 Zeichen)</label><input id="pw-new" type="password" autocomplete="new-password" /></div>
+          <button class="btn secondary" onclick="changeMyPassword()">Passwort ändern</button>
+          <p class="muted" style="font-size:13px">Nach der Änderung wirst du abgemeldet und meldest dich mit dem neuen Passwort neu an.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="archive-mini" class="archive-mini hidden"></div>
+  <div id="toasts"></div>
+
+  <script>
+    const API = "";
+    const state = {
+      token: sessionStorage.getItem("ifs_token") || "",
+      me: null,
+      root: null,
+      cwdId: null,
+      stack: [],
+      entries: [],
+      trash: [],
+      trashSelected: new Set(),
+      users: [],
+      usersSelected: new Set(),
+      userTotal: 0,
+      roles: [],
+      shares: [],
+      sharesSelected: new Set(),
+      shared: [],
+      sharedPath: [],
+      audit: [],
+      system: null,
+      systemTimer: null,
+      view: "files",
+      filter: "",
+      sort: { key: "name", dir: 1 },
+      selected: new Set(),
+    };
+    const fileInput = document.getElementById("fileInput");
+
+    // ---------- Hilfsfunktionen ----------
+    function toast(message, kind = "") {
+      const el = document.createElement("div");
+      el.className = "toast " + kind;
+      el.textContent = message;
+      document.getElementById("toasts").appendChild(el);
+      setTimeout(() => el.remove(), 5000);
+    }
+    function fmtSize(bytes) {
+      if (bytes === 0) return "0 B";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + " MB";
+      return (bytes / 1024 ** 3).toFixed(2) + " GB";
+    }
+    function fmtDate(iso) { return new Date(iso).toLocaleString(); }
+    function esc(text) { return String(text).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+    function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise((resolve, reject) => {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.setAttribute("readonly", "");
+        area.style.position = "fixed";
+        area.style.top = "-1000px";
+        document.body.appendChild(area);
+        area.focus();
+        area.select();
+        try {
+          const ok = document.execCommand("copy");
+          area.remove();
+          ok ? resolve() : reject(new Error("Kopieren nicht möglich"));
+        } catch (e) {
+          area.remove();
+          reject(e);
+        }
+      });
+    }
+
+    async function api(method, path, body) {
+      const headers = {};
+      if (state.token) headers["Authorization"] = "Bearer " + state.token;
+      if (body !== undefined) headers["Content-Type"] = "application/json";
+      const res = await fetch(API + path, {
+        method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (res.status === 401) { logout(); throw new Error("Sitzung abgelaufen"); }
+      return res;
+    }
+    async function apiJson(method, path, body) {
+      const res = await api(method, path, body);
+      const text = await res.text();
+      if (!res.ok) throw new Error("HTTP " + res.status + ": " + text);
+      return text ? JSON.parse(text) : null;
+    }
+
+    // ---------- Anmeldung ----------
+    async function login() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      document.getElementById("login-error").textContent = "";
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        if (!res.ok) { document.getElementById("login-error").textContent = "Benutzername oder Passwort falsch."; return; }
+        state.token = (await res.json()).access_token;
+        sessionStorage.setItem("ifs_token", state.token);
+        await start();
+      } catch (e) {
+        document.getElementById("login-error").textContent = "Verbindungsfehler: " + e.message;
+      }
+    }
+    function logout() {
+      state.token = ""; state.me = null; state.root = null; state.cwdId = null;
+      state.stack = []; state.entries = []; state.users = []; state.view = "files";
+      sessionStorage.removeItem("ifs_token");
+      document.getElementById("app").classList.add("hidden");
+      document.getElementById("login").classList.remove("hidden");
+      document.getElementById("who").textContent = "";
+      document.getElementById("account-btn").classList.add("hidden");
+      document.getElementById("menu-users").classList.add("hidden");
+      document.getElementById("menu-roles").classList.add("hidden");
+      document.getElementById("menu-system").classList.add("hidden");
+      document.getElementById("menu-audit").classList.add("hidden");
+      clearSystemTimer();
+      closeAccountMenu();
+      closeRowMenu();
+    }
+
+    async function start() {
+      try {
+        const me = await apiJson("GET", "/api/me");
+        state.me = me;
+        document.getElementById("who").textContent = me.username + (me.is_admin ? " (Admin)" : "");
+        document.getElementById("account-btn").classList.remove("hidden");
+        if (me.is_admin) {
+          document.getElementById("menu-users").classList.remove("hidden");
+          document.getElementById("menu-roles").classList.remove("hidden");
+          document.getElementById("menu-system").classList.remove("hidden");
+          document.getElementById("menu-audit").classList.remove("hidden");
+        }
+        state.root = await apiJson("GET", "/api/root");
+        state.cwdId = state.root.id;
+        state.stack = [];
+        document.getElementById("login").classList.add("hidden");
+        document.getElementById("app").classList.remove("hidden");
+        document.getElementById("btn-refresh").classList.remove("hidden");
+        showView("files");
+        await refreshTrashBadge();
+      } catch (e) { toast(e.message, "err"); }
+    }
+
+    // ---------- Navigation ----------
+    async function load() {
+      const query = state.cwdId ? ("?parent_id=" + state.cwdId) : "";
+      try {
+        state.entries = await apiJson("GET", "/api/entries" + query);
+        render();
+      } catch (e) { toast("Laden fehlgeschlagen: " + e.message, "err"); }
+    }
+    function openFolder(entry) {
+      state.selected.clear();
+      state.stack.push(entry); state.cwdId = entry.id; state.filter = "";
+      document.getElementById("search").value = ""; load();
+    }
+    function goto(index) { // -1 = root
+      state.selected.clear();
+      state.stack = index < 0 ? [] : state.stack.slice(0, index + 1);
+      state.cwdId = state.stack.length ? state.stack[state.stack.length - 1].id : state.root.id;
+      load();
+    }
+
+    function render() {
+      renderCrumbs();
+      const filter = document.getElementById("search").value.toLowerCase();
+      const list = state.entries
+        .filter(e => !filter || e.name.toLowerCase().includes(filter))
+        .sort((a, b) => {
+          if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+          const { key, dir } = state.sort;
+          let va = a[key], vb = b[key];
+          if (typeof va === "string") { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+          return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+        });
+
+      ["name", "size", "updated_at"].forEach(k => {
+        document.getElementById("a-" + k).textContent =
+          state.sort.key === k ? (state.sort.dir === 1 ? "▲" : "▼") : "";
+      });
+
+      const tbody = document.getElementById("entries");
+      tbody.innerHTML = "";
+      document.getElementById("empty").classList.toggle("hidden", list.length > 0);
+
+      for (const e of list) {
+        const tr = document.createElement("tr");
+
+        const tdCheck = document.createElement("td");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = state.selected.has(e.id);
+        checkbox.onclick = (ev) => ev.stopPropagation();
+        checkbox.onchange = () => {
+          if (checkbox.checked) state.selected.add(e.id);
+          else state.selected.delete(e.id);
+          updateSelectionUI(list);
+        };
+        tdCheck.appendChild(checkbox);
+        tr.appendChild(tdCheck);
+
+        const tdName = document.createElement("td");
+        tdName.className = "name";
+        tdName.innerHTML = (e.type === "folder" ? "📁" : "📄") + " " + esc(e.name);
+        tdName.title = e.path;
+        tdName.onclick = () => {
+          if (e.type === "folder") return openFolder(e);
+          if (previewKind(e) !== "none") return openPreview(e);
+          return details(e);
+        };
+        tr.appendChild(tdName);
+
+        const tdSize = document.createElement("td");
+        tdSize.className = "right nowrap";
+        tdSize.textContent = e.type === "file" ? fmtSize(e.size) : "–";
+        tr.appendChild(tdSize);
+
+        const tdDate = document.createElement("td");
+        tdDate.className = "nowrap muted";
+        tdDate.textContent = fmtDate(e.updated_at);
+        tr.appendChild(tdDate);
+
+        const tdActions = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+
+        const menuItems = [];
+        if (e.type === "file" && previewKind(e) !== "none") {
+          menuItems.push({ label: "Ansehen", handler: () => openPreview(e) });
+        }
+        if (e.type === "file") {
+          menuItems.push({ label: "Versionen", handler: () => versionsDialog(e) });
+        }
+        menuItems.push({ label: "Link", handler: () => shareDialog(e) });
+        menuItems.push({ label: "Zugriff", handler: () => entryAccessDialog(e) });
+        menuItems.push({ label: "Umbenennen", handler: () => rename(e) });
+
+        const more = document.createElement("button");
+        more.className = "btn small secondary";
+        more.textContent = "…";
+        more.title = "Weitere Aktionen";
+        more.onclick = (ev) => openRowMenu(ev, menuItems);
+        wrap.appendChild(more);
+
+        if (e.type === "file") wrap.appendChild(action("Download", "secondary", () => download(e)));
+        else wrap.appendChild(action("Download (.zip)", "secondary", () => downloadZip(e)));
+        wrap.appendChild(action("Löschen", "danger", () => removeEntry(e)));
+        tdActions.appendChild(wrap);
+        tr.appendChild(tdActions);
+
+        tbody.appendChild(tr);
+      }
+
+      document.getElementById("status").textContent =
+        list.length + " von " + state.entries.length + " Einträgen";
+      updateSelectionUI(list);
+    }
+    function action(label, cls, handler) {
+      const b = document.createElement("button");
+      b.className = "btn small " + cls;
+      b.textContent = label;
+      b.onclick = (ev) => { ev.stopPropagation(); handler(); };
+      return b;
+    }
+    function renderCrumbs() {
+      const nav = document.getElementById("crumbs");
+      nav.innerHTML = "";
+      const rootBtn = document.createElement("button");
+      rootBtn.className = "crumb" + (state.stack.length ? "" : " current");
+      rootBtn.textContent = "🏠 Wurzel";
+      rootBtn.onclick = () => goto(-1);
+      nav.appendChild(rootBtn);
+      state.stack.forEach((entry, i) => {
+        const sep = document.createElement("span"); sep.className = "sep"; sep.textContent = "/";
+        nav.appendChild(sep);
+        const b = document.createElement("button");
+        b.className = "crumb" + (i === state.stack.length - 1 ? " current" : "");
+        b.textContent = esc(entry.name);
+        b.onclick = () => goto(i);
+        nav.appendChild(b);
+      });
+    }
+    function sortBy(key) {
+      if (state.sort.key === key) state.sort.dir *= -1;
+      else state.sort = { key, dir: 1 };
+      render();
+    }
+
+    // ---------- Aktionen ----------
+    async function newFolder() {
+      const name = prompt("Name des neuen Ordners:");
+      if (!name) return;
+      try { await apiJson("POST", "/api/folders", { parent_id: state.cwdId, name }); await load(); }
+      catch (e) { toast("Ordner anlegen fehlgeschlagen: " + e.message, "err"); }
+    }
+    async function rename(entry) {
+      const name = prompt("Neuer Name:", entry.name);
+      if (!name || name === entry.name) return;
+      try { await apiJson("PATCH", "/api/entries/" + entry.id, { name }); await load(); }
+      catch (e) { toast("Umbenennen fehlgeschlagen: " + e.message, "err"); }
+    }
+    async function removeEntry(entry) {
+      if (!confirm(`'${entry.name}' wirklich löschen?`)) return;
+      try {
+        await api("DELETE", "/api/entries/" + entry.id);
+        await load();
+        await refreshTrashBadge();
+        toast("In den Papierkorb verschoben.", "ok");
+      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
+    }
+    async function download(entry) {
+      try {
+        const res = await api("GET", "/api/entries/" + entry.id + "/content");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = entry.name; a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) { toast("Download fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function downloadZip(entry) {
+      await startArchiveJob([entry.id], entry.name + ".zip");
+    }
+
+    let archivePoll = null;
+    let archiveJob = null;          // aktueller ZIP-Auftrag (auch minimiert)
+    let archiveModalOpen = false;   // großes Fenster sichtbar?
+
+    function clearArchivePoll() {
+      if (archivePoll) { clearInterval(archivePoll); archivePoll = null; }
+    }
+
+    async function startArchiveJob(ids, fallbackName) {
+      clearArchivePoll();
+      try {
+        const job = await apiJson("POST", "/api/archive/jobs", { entry_ids: ids });
+        archiveJob = {
+          token: job.token,
+          name: job.name || fallbackName,
+          totalFiles: job.total_files || 0,
+          totalBytes: job.total_bytes || 0,
+          filesDone: 0,
+          bytesDone: 0,
+          status: "building",
+          error: null,
+        };
+        archiveModalOpen = true;
+        hideArchiveMini();
+        renderArchiveModal();
+        const poll = async () => {
+          if (!archiveJob) return;
+          try {
+            const st = await apiJson("GET", "/api/archive/jobs/" + archiveJob.token);
+            archiveJob.status = st.status;
+            archiveJob.filesDone = st.files_done || 0;
+            archiveJob.bytesDone = st.bytes_done || 0;
+            archiveJob.totalFiles = st.total_files || archiveJob.totalFiles;
+            archiveJob.totalBytes = st.total_bytes || archiveJob.totalBytes;
+            archiveJob.error = st.error || null;
+            if (archiveJob.status === "ready") {
+              const name = st.name || archiveJob.name;
+              const url = "/api/archive/" + archiveJob.token;
+              clearArchivePoll();
+              finishArchive();
+              triggerDownload(url, name);
+              toast("ZIP bereit.", "ok");
+              return;
+            }
+            updateArchiveUI();
+            if (archiveJob.status === "failed") clearArchivePoll();
+          } catch (e) {
+            clearArchivePoll();
+            if (archiveJob) {
+              archiveJob.status = "failed";
+              archiveJob.error = e.message;
+              updateArchiveUI();
+            }
+          }
+        };
+        archivePoll = setInterval(poll, 700);
+        poll();
+      } catch (e) { toast("ZIP-Download fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function archivePercent() {
+      if (!archiveJob) return 0;
+      if (archiveJob.status === "ready") return 100;
+      if (archiveJob.totalFiles > 0)
+        return Math.min(100, Math.round(archiveJob.filesDone / archiveJob.totalFiles * 100));
+      return 0;
+    }
+
+    function archiveStatusText() {
+      if (!archiveJob) return "";
+      if (archiveJob.status === "ready") return "Fertig – Download startet …";
+      if (archiveJob.status === "failed") return "Fehler: " + (archiveJob.error || "unbekannt");
+      return `${archiveJob.filesDone} / ${archiveJob.totalFiles} Dateien (` +
+        `${fmtSize(archiveJob.bytesDone)} von ${fmtSize(archiveJob.totalBytes)})`;
+    }
+
+    function renderArchiveModal() {
+      if (!archiveJob) return;
+      hideArchiveMini();
+      openModal(`
+        <h2>ZIP wird erstellt</h2>
+        <p class="muted" style="font-size:13px">${esc(archiveJob.name)} · ${archiveJob.totalFiles} Datei(en) · ${fmtSize(archiveJob.totalBytes)}</p>
+        <div class="bar ${archiveJob.status === "failed" ? "err" : ""}" id="zip-bar"><i style="width:${archivePercent()}%"></i></div>
+        <div class="muted" id="zip-status" style="font-size:13px;margin-top:6px">${esc(archiveStatusText())}</div>
+        <div class="actions">
+          <button class="btn secondary" onclick="minimizeArchive()">Im Hintergrund</button>
+          <button class="btn ghost" onclick="cancelArchiveJob()">Abbrechen</button>
+        </div>`);
+      archiveModalOpen = true;
+    }
+
+    function hideArchiveMini() {
+      const el = document.getElementById("archive-mini");
+      if (el) el.classList.add("hidden");
+    }
+
+    function renderArchiveMini() {
+      if (!archiveJob || archiveJob.status === "ready") { hideArchiveMini(); return; }
+      const el = document.getElementById("archive-mini");
+      if (!el) return;
+      el.className = "archive-mini";
+      el.innerHTML = `
+        <div class="top">
+          <span class="name" title="${esc(archiveJob.name)}">ZIP: ${esc(archiveJob.name)}</span>
+          <button class="close" title="Abbrechen"
+            onclick="event.stopPropagation();cancelArchiveJob()">✕</button>
+        </div>
+        <div class="bar ${archiveJob.status === "failed" ? "err" : ""}"><i style="width:${archivePercent()}%"></i></div>
+        <div class="muted" style="font-size:12px;margin-top:6px">${esc(archiveStatusText())}</div>`;
+      el.onclick = () => restoreArchiveModal();
+    }
+
+    function updateArchiveUI() {
+      if (!archiveJob || archiveJob.status === "ready") { hideArchiveMini(); return; }
+      // Wurde das große Fenster anderweitig geschlossen (Esc/Backdrop)? Dann minimieren.
+      if (archiveModalOpen && !document.getElementById("zip-bar")) archiveModalOpen = false;
+      if (archiveModalOpen) {
+        const bar = document.getElementById("zip-bar");
+        const status = document.getElementById("zip-status");
+        if (bar) {
+          bar.className = "bar " + (archiveJob.status === "failed" ? "err" : "");
+          bar.querySelector("i").style.width = archivePercent() + "%";
+        }
+        if (status) status.textContent = archiveStatusText();
+      } else {
+        renderArchiveMini();
+      }
+    }
+
+    function minimizeArchive() {
+      archiveModalOpen = false;
+      closeModal();
+      renderArchiveMini();
+    }
+
+    function restoreArchiveModal() {
+      if (!archiveJob) return;
+      renderArchiveModal();
+      updateArchiveUI();
+    }
+
+    function finishArchive() {
+      clearArchivePoll();
+      archiveJob = null;
+      archiveModalOpen = false;
+      closeModal();
+      hideArchiveMini();
+    }
+
+    async function cancelArchiveJob() {
+      const token = archiveJob ? archiveJob.token : null;
+      clearArchivePoll();
+      archiveJob = null;
+      archiveModalOpen = false;
+      closeModal();
+      hideArchiveMini();
+      if (token) { try { await api("DELETE", "/api/archive/jobs/" + token); } catch (e) { /* egal */ } }
+    }
+
+    function triggerDownload(url, name) {
+      const link = document.createElement("a");
+      link.href = url;
+      if (name) link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    // ---------- Upload ----------
+    fileInput.addEventListener("change", () => { uploadFiles([...fileInput.files]); fileInput.value = ""; });
+    const dz = document.getElementById("dropzone");
+    ["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("drag"); }));
+    ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("drag"); }));
+    dz.addEventListener("drop", e => { if (e.dataTransfer.files.length) uploadFiles([...e.dataTransfer.files]); });
+    window.addEventListener("dragover", e => e.preventDefault());
+    window.addEventListener("drop", e => e.preventDefault());
+
+    async function uploadFiles(files) {
+      for (const file of files) await uploadOne(file).catch(err => toast(file.name + ": " + err.message, "err"));
+      await load();
+    }
+    function progressEl(name) {
+      const wrap = document.getElementById("uploads");
+      const el = document.createElement("div");
+      el.className = "uprog";
+      el.innerHTML = `<div class="top"><span>${esc(name)}</span><span class="pct">0 %</span></div>
+                      <div class="bar"><i></i></div>`;
+      wrap.appendChild(el);
+      return {
+        set(loaded, total, done, error) {
+          const pct = total ? Math.round(loaded / total * 100) : 0;
+          el.querySelector(".pct").textContent = (error ? "Fehler" : done ? "fertig" : pct + " %");
+          el.querySelector(".bar>i").style.width = (error ? 100 : pct) + "%";
+          el.querySelector(".bar").className = "bar " + (error ? "err" : done ? "ok" : "");
+          if (done || error) setTimeout(() => el.remove(), 4000);
+        },
+      };
+    }
+    async function uploadOne(file) {
+      const parentId = state.cwdId || state.root.id;
+      const prog = progressEl(file.name);
+      const SMALL = 8 * 1024 * 1024;
+      try {
+        if (file.size <= SMALL) await uploadSimple(file, parentId, prog);
+        else await uploadResumable(file, parentId, prog);
+        prog.set(file.size, file.size, true, false);
+      } catch (e) { prog.set(0, file.size, false, true); throw e; }
+    }
+    function uploadSimple(file, parentId, prog) {
+      return new Promise((resolve, reject) => {
+        const params = new URLSearchParams({ name: file.name, parent_id: parentId });
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", "/api/uploads/simple?" + params.toString());
+        xhr.setRequestHeader("Authorization", "Bearer " + state.token);
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.upload.onprogress = e => prog.set(e.loaded, e.total || file.size, false, false);
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300)
+          ? resolve() : reject(new Error("HTTP " + xhr.status + ": " + xhr.responseText));
+        xhr.onerror = () => reject(new Error("Netzwerkfehler"));
+        xhr.send(file);
+      });
+    }
+    async function uploadResumable(file, parentId, prog) {
+      const CHUNK = 8 * 1024 * 1024;
+      const session = await apiJson("POST", "/api/uploads", {
+        parent_id: parentId, name: file.name, size: file.size,
+      });
+      let offset = session.offset || 0;
+      while (offset < file.size) {
+        const chunk = file.slice(offset, offset + CHUNK);
+        const put = await fetch("/api/uploads/" + session.id, {
+          method: "PATCH",
+          headers: {
+            "Authorization": "Bearer " + state.token,
+            "Upload-Offset": String(offset),
+            "Content-Type": "application/offset+octet-stream",
+          },
+          body: chunk,
+        });
+        if (!put.ok) throw new Error("HTTP " + put.status + ": " + await put.text());
+        offset = parseInt(put.headers.get("Upload-Offset"), 10);
+        prog.set(offset, file.size, false, false);
+      }
+      await apiJson("POST", "/api/uploads/" + session.id + "/complete");
+    }
+
+    // ---------- Freigabe ----------
+    function shareDialog(entry) {
+      const isFolder = entry.type === "folder";
+      const hint = isFolder
+        ? `<p class="muted" style="font-size:13px">Der Ordnerinhalt wird beim Öffnen des Links als ZIP-Datei bereitgestellt.</p>`
+        : "";
+      const uploadField = isFolder
+        ? `<label class="checkline"><input type="checkbox" id="sh-upload" /> ` +
+          `Upload in diesen Ordner erlauben</label>` +
+          `<label class="checkline"><input type="checkbox" id="sh-overwrite" disabled /> ` +
+          `Vorhandene Dateien überschreiben</label>`
+        : "";
+      openModal(`
+        <h2>Link teilen – ${esc(entry.name)}</h2>
+        ${hint}
+        <div class="field"><label>Passwort (optional)</label><input id="sh-pass" type="text" /></div>
+        <div class="field"><label>Gültig (Tage, optional)</label><input id="sh-days" type="number" min="1" /></div>
+        <div class="field"><label>Max. Downloads (optional)</label><input id="sh-max" type="number" min="1" /></div>
+        ${uploadField}
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" id="sh-create">Link erstellen</button></div>
+        <div id="sh-result"></div>`);
+      if (isFolder) {
+        const uploadBox = document.getElementById("sh-upload");
+        const overwriteBox = document.getElementById("sh-overwrite");
+        uploadBox.onchange = () => {
+          overwriteBox.disabled = !uploadBox.checked;
+          if (!uploadBox.checked) overwriteBox.checked = false;
+        };
+      }
+      document.getElementById("sh-create").onclick = async () => {
+        try {
+          const days = parseInt(document.getElementById("sh-days").value, 10);
+          const body = { entry_id: entry.id };
+          const pass = document.getElementById("sh-pass").value;
+          const max = parseInt(document.getElementById("sh-max").value, 10);
+          const uploadEl = document.getElementById("sh-upload");
+          const overwriteEl = document.getElementById("sh-overwrite");
+          if (uploadEl && uploadEl.checked) body.allow_upload = true;
+          if (uploadEl && overwriteEl && uploadEl.checked && overwriteEl.checked) {
+            body.overwrite = true;
+          }
+          if (pass) body.password = pass;
+          if (max) body.max_downloads = max;
+          if (days) body.expires_at = new Date(Date.now() + days * 864e5).toISOString();
+          const share = await apiJson("POST", "/api/shares", body);
+          const filename = entry.type === "folder" ? entry.name + ".zip" : entry.name;
+          const link = location.origin + "/api/shares/" + share.token + "/content/" +
+            encodeURIComponent(filename);
+          document.getElementById("sh-result").innerHTML = `
+            <div class="field" style="margin-top:14px"><label>Öffentlicher Link</label>
+            <div class="linkbox"><input id="sh-link" readonly value="${esc(link)}" />
+            <button class="btn secondary" id="sh-copy">Kopieren</button></div></div>`;
+          document.getElementById("sh-copy").onclick = () => {
+            copyText(link)
+              .then(() => toast("Link kopiert.", "ok"))
+              .catch(() => toast("Kopieren nicht möglich – bitte manuell markieren.", "err"));
+          };
+        } catch (e) { toast("Freigabe fehlgeschlagen: " + e.message, "err"); }
+      };
+    }
+
+    // ---------- Details ----------
+    function details(entry) {
+      const rows = [
+        ["Name", entry.name], ["Pfad", entry.path], ["Typ", entry.type],
+        ["Größe", entry.type === "file" ? fmtSize(entry.size) + " (" + entry.size + " B)" : "–"],
+        ["MIME", entry.mime || "–"], ["SHA-256", entry.sha256 || "–"],
+        ["Erstellt", fmtDate(entry.created_at)], ["Geändert", fmtDate(entry.updated_at)],
+        ["ID", entry.id],
+      ];
+      openModal(`
+        <h2>Details</h2>
+        <div class="kv">${rows.map(([k, v]) => `<div class="k">${k}</div><div>${esc(v)}</div>`).join("")}</div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
+    }
+
+    // ---------- Papierkorb ----------
+    function showView(view) {
+      state.view = view;
+      document.getElementById("files-view").classList.toggle("hidden", view !== "files");
+      document.getElementById("trash-view").classList.toggle("hidden", view !== "trash");
+      document.getElementById("users-view").classList.toggle("hidden", view !== "users");
+      document.getElementById("roles-view").classList.toggle("hidden", view !== "roles");
+      document.getElementById("shares-view").classList.toggle("hidden", view !== "shares");
+      document.getElementById("shared-view").classList.toggle("hidden", view !== "shared");
+      document.getElementById("audit-view").classList.toggle("hidden", view !== "audit");
+      document.getElementById("system-view").classList.toggle("hidden", view !== "system");
+      document.getElementById("profile-view").classList.toggle("hidden", view !== "profile");
+      const navFiles = document.getElementById("nav-files");
+      if (navFiles) navFiles.className = "btn small" + (view === "files" ? " active" : " secondary");
+      const navShared = document.getElementById("nav-shared");
+      if (navShared) navShared.className = "btn small" + (view === "shared" ? " active" : " secondary");
+      closeAccountMenu();
+      closeRowMenu();
+      if (view !== "system") clearSystemTimer();
+      if (view === "trash") loadTrash();
+      else if (view === "users") loadUsers();
+      else if (view === "roles") loadRoles();
+      else if (view === "shares") loadShares();
+      else if (view === "shared") loadShared();
+      else if (view === "audit") loadAudit();
+      else if (view === "system") loadSystem();
+      else if (view === "profile") loadProfile();
+      else load();
+    }
+
+    function refreshCurrent() {
+      if (state.view === "trash") loadTrash();
+      else if (state.view === "users") loadUsers();
+      else if (state.view === "roles") loadRoles();
+      else if (state.view === "shares") loadShares();
+      else if (state.view === "shared") loadShared();
+      else if (state.view === "audit") loadAudit();
+      else if (state.view === "system") loadSystem();
+      else if (state.view === "profile") loadProfile();
+      else load();
+    }
+
+    // ---------- Menüs ----------
+    function toggleAccountMenu(event) {
+      event.stopPropagation();
+      closeRowMenu();
+      document.getElementById("account-menu").classList.toggle("hidden");
+    }
+
+    function closeAccountMenu() {
+      document.getElementById("account-menu").classList.add("hidden");
+    }
+
+    let rowMenu = null;
+
+    function closeRowMenu() {
+      if (rowMenu) {
+        rowMenu.remove();
+        rowMenu = null;
+      }
+    }
+
+    function openRowMenu(event, items) {
+      event.stopPropagation();
+      closeRowMenu();
+      closeAccountMenu();
+      const menu = document.createElement("div");
+      menu.className = "menu floating";
+      for (const item of items) {
+        const button = document.createElement("button");
+        button.textContent = item.label;
+        if (item.danger) button.classList.add("danger");
+        button.onclick = (ev) => {
+          ev.stopPropagation();
+          closeRowMenu();
+          item.handler();
+        };
+        menu.appendChild(button);
+      }
+      document.body.appendChild(menu);
+      const rect = event.currentTarget.getBoundingClientRect();
+      const width = Math.max(menu.offsetWidth, 180);
+      let left = rect.right - width;
+      if (left < 8) left = 8;
+      let top = rect.bottom + 4;
+      if (top + menu.offsetHeight > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - menu.offsetHeight - 4);
+      }
+      menu.style.position = "fixed";
+      menu.style.left = left + "px";
+      menu.style.top = top + "px";
+      menu.style.minWidth = width + "px";
+      rowMenu = menu;
+    }
+
+    document.addEventListener("click", () => {
+      closeRowMenu();
+      closeAccountMenu();
+    });
+
+    async function refreshTrashBadge() {
+      try {
+        const data = await apiJson("GET", "/api/trash/count");
+        const badge = document.getElementById("trash-badge");
+        badge.textContent = data.count;
+        badge.classList.toggle("hidden", !data.count);
+      } catch (e) { /* Badge ist optional */ }
+    }
+
+    async function loadTrash() {
+      try {
+        state.trash = await apiJson("GET", "/api/trash");
+        state.trashSelected = new Set();
+        renderTrash();
+      } catch (e) { toast("Papierkorb laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function renderTrash() {
+      const tbody = document.getElementById("trash-entries");
+      tbody.innerHTML = "";
+      const items = state.trash || [];
+      document.getElementById("trash-empty").classList.toggle("hidden", items.length > 0);
+      for (const e of items) {
+        const tr = document.createElement("tr");
+
+        const tdSel = document.createElement("td");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = state.trashSelected.has(e.id);
+        checkbox.onclick = ev => ev.stopPropagation();
+        checkbox.onchange = () => toggleTrashSelect(e.id, checkbox.checked);
+        tdSel.appendChild(checkbox);
+        tr.appendChild(tdSel);
+
+        const tdName = document.createElement("td");
+        const suffix = e.type === "folder" ? ` <span class="muted">(${e.files} Dateien)</span>` : "";
+        tdName.innerHTML = (e.type === "folder" ? "📁" : "📄") + " " + esc(e.name) + suffix;
+        tdName.title = e.path;
+        tr.appendChild(tdName);
+
+        const tdSize = document.createElement("td");
+        tdSize.className = "right nowrap";
+        tdSize.textContent = fmtSize(e.size);
+        tr.appendChild(tdSize);
+
+        const tdDate = document.createElement("td");
+        tdDate.className = "muted nowrap";
+        tdDate.textContent = fmtDate(e.trashed_at);
+        tr.appendChild(tdDate);
+
+        const tdDays = document.createElement("td");
+        tdDays.className = "right nowrap";
+        tdDays.textContent = e.days_left;
+        tr.appendChild(tdDays);
+
+        const tdActions = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+        wrap.appendChild(action("Wiederherstellen", "secondary", () => restoreTrash(e)));
+        wrap.appendChild(action("Endgültig löschen", "danger", () => purgeTrash(e)));
+        tdActions.appendChild(wrap);
+        tr.appendChild(tdActions);
+
+        tbody.appendChild(tr);
+      }
+      renderTrashSelectionUI();
+    }
+
+    function toggleTrashSelect(id, checked) {
+      if (checked) state.trashSelected.add(id);
+      else state.trashSelected.delete(id);
+      renderTrashSelectionUI();
+    }
+
+    function trashSelectAll(checked) {
+      state.trashSelected = new Set(checked ? (state.trash || []).map(e => e.id) : []);
+      renderTrash();
+    }
+
+    function clearTrashSelection() {
+      state.trashSelected = new Set();
+      renderTrash();
+    }
+
+    function renderTrashSelectionUI() {
+      const items = state.trash || [];
+      const count = state.trashSelected.size;
+      document.getElementById("trash-bulkbar").classList.toggle("hidden", count === 0);
+      document.getElementById("trash-bulk-count").textContent = count;
+      const selectAll = document.getElementById("trash-select-all");
+      if (selectAll) {
+        selectAll.checked = items.length > 0 && count === items.length;
+        selectAll.indeterminate = count > 0 && count < items.length;
+      }
+    }
+
+    async function bulkRestoreTrash() {
+      const ids = [...state.trashSelected];
+      if (!ids.length) return;
+      try {
+        const result = await apiJson("POST", "/api/trash/bulk/restore", { ids });
+        const failed = result.failed || [];
+        toast(
+          `Wiederhergestellt: ${result.ok}` + (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
+          failed.length ? "err" : "ok",
+        );
+        await loadTrash();
+        await refreshTrashBadge();
+        await load();
+      } catch (e) { toast("Wiederherstellen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function bulkPurgeTrash() {
+      const ids = [...state.trashSelected];
+      if (!ids.length) return;
+      if (!confirm(`${ids.length} Einträge endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
+      try {
+        const result = await apiJson("POST", "/api/trash/bulk/purge", { ids });
+        const failed = result.failed || [];
+        toast(
+          `Endgültig gelöscht: ${result.ok} Einträge, ${result.files || 0} Dateien` +
+            (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
+          failed.length ? "err" : "ok",
+        );
+        await loadTrash();
+        await refreshTrashBadge();
+      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function restoreTrash(entry) {
+      try {
+        await apiJson("POST", "/api/trash/" + entry.id + "/restore", {});
+        toast("Wiederhergestellt.", "ok");
+        await loadTrash();
+        await refreshTrashBadge();
+      } catch (e) { toast("Wiederherstellen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function purgeTrash(entry) {
+      if (!confirm(`'${entry.name}' endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
+      try {
+        await api("DELETE", "/api/trash/" + entry.id);
+        toast("Endgültig gelöscht.", "ok");
+        await loadTrash();
+        await refreshTrashBadge();
+      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function emptyTrash() {
+      if (!confirm("Papierkorb vollständig leeren? Das kann nicht rückgängig gemacht werden.")) return;
+      try {
+        const result = await apiJson("DELETE", "/api/trash");
+        toast(`Papierkorb geleert (${result.entries} Einträge, ${result.files} Dateien).`, "ok");
+        await loadTrash();
+        await refreshTrashBadge();
+      } catch (e) { toast("Leeren fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- Benutzerverwaltung ----------
+    async function loadUsers() {
+      const params = new URLSearchParams();
+      const q = document.getElementById("user-q").value.trim();
+      if (q) params.set("q", q);
+      const active = document.getElementById("user-active").value;
+      if (active) params.set("active", active);
+      const admin = document.getElementById("user-admin").value;
+      if (admin) params.set("admin", admin);
+      params.set("limit", "200");
+      try {
+        const data = await apiJson("GET", "/api/users?" + params.toString());
+        state.users = data.items;
+        state.userTotal = data.total;
+        state.usersSelected = new Set();
+        renderUsers();
+      } catch (e) { toast("Benutzer laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function renderUsers() {
+      const tbody = document.getElementById("user-rows");
+      tbody.innerHTML = "";
+      const items = state.users || [];
+      document.getElementById("user-empty").classList.toggle("hidden", items.length > 0);
+      document.getElementById("user-status").textContent =
+        items.length + " von " + state.userTotal + " Benutzern";
+      for (const u of items) {
+        const tr = document.createElement("tr");
+
+        const tdSel = document.createElement("td");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = state.usersSelected.has(u.id);
+        checkbox.onchange = () => toggleUserSelect(u.id, checkbox.checked);
+        tdSel.appendChild(checkbox);
+        tr.appendChild(tdSel);
+
+        const cells = [u.username, u.display_name || "–", u.email || "–"];
+        for (const value of cells) {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        }
+
+        const tdStatus = document.createElement("td");
+        tdStatus.innerHTML = u.is_active
+          ? '<span class="state on">aktiv</span>'
+          : '<span class="state off">inaktiv</span>';
+        tr.appendChild(tdStatus);
+
+        const tdAdmin = document.createElement("td");
+        tdAdmin.textContent = u.is_admin ? "✓" : "–";
+        tr.appendChild(tdAdmin);
+
+        const tdLogin = document.createElement("td");
+        tdLogin.className = "muted nowrap";
+        tdLogin.textContent = u.last_login_at ? fmtDate(u.last_login_at) : "–";
+        tr.appendChild(tdLogin);
+
+        const tdActions = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+
+        const menuItems = [
+          { label: "Bearbeiten", handler: () => userEditDialog(u) },
+          { label: "Passwort", handler: () => userPasswordDialog(u) },
+          { label: "Gruppen", handler: () => userGroupsDialog(u) },
+          { label: "Rollen", handler: () => userRolesDialog(u) },
+        ];
+        const more = document.createElement("button");
+        more.className = "btn small secondary";
+        more.textContent = "…";
+        more.title = "Weitere Aktionen";
+        more.onclick = (ev) => openRowMenu(ev, menuItems);
+        wrap.appendChild(more);
+
+        wrap.appendChild(action(
+          u.is_active ? "Deaktivieren" : "Aktivieren", "secondary", () => toggleUserActive(u)
+        ));
+        wrap.appendChild(action("Löschen", "danger", () => deleteUserDialog(u)));
+        tdActions.appendChild(wrap);
+        tr.appendChild(tdActions);
+
+        tbody.appendChild(tr);
+      }
+      renderUserSelectionUI();
+    }
+
+    function toggleUserSelect(id, checked) {
+      if (checked) state.usersSelected.add(id);
+      else state.usersSelected.delete(id);
+      renderUserSelectionUI();
+    }
+
+    function userSelectAll(checked) {
+      state.usersSelected = new Set(checked ? (state.users || []).map(u => u.id) : []);
+      renderUsers();
+    }
+
+    function clearUserSelection() {
+      state.usersSelected = new Set();
+      renderUsers();
+    }
+
+    function renderUserSelectionUI() {
+      const items = state.users || [];
+      const count = state.usersSelected.size;
+      document.getElementById("user-bulkbar").classList.toggle("hidden", count === 0);
+      document.getElementById("user-bulk-count").textContent = count;
+      const selectAll = document.getElementById("user-select-all");
+      if (selectAll) {
+        selectAll.checked = items.length > 0 && count === items.length;
+        selectAll.indeterminate = count > 0 && count < items.length;
+      }
+    }
+
+    async function bulkUserActive(active) {
+      const ids = [...state.usersSelected];
+      if (!ids.length) return;
+      const what = active ? "aktivieren" : "deaktivieren";
+      if (!confirm(`${ids.length} Benutzer ${what}?`)) return;
+      try {
+        const result = await apiJson("POST", "/api/users/bulk/active", { ids, active });
+        const failed = result.failed || [];
+        toast(
+          `${active ? "Aktiviert" : "Deaktiviert"}: ${result.ok}` +
+            (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
+          failed.length ? "err" : "ok",
+        );
+        await loadUsers();
+      } catch (e) { toast("Aktion fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function bulkUserDeleteDialog() {
+      const ids = [...state.usersSelected];
+      if (!ids.length) return;
+      let others = [];
+      try {
+        const data = await apiJson("GET", "/api/users?active=true&limit=200");
+        others = data.items.filter(item => !state.usersSelected.has(item.id));
+      } catch (e) { /* optional */ }
+      const options = others
+        .map(item => `<option value="${item.id}">${esc(item.username)}</option>`)
+        .join("");
+      openModal(`
+        <h2>${ids.length} Benutzer löschen</h2>
+        <p class="muted">Besitzen Benutzer Dateien, muss der Besitz übertragen werden.</p>
+        <div class="field"><label>Besitz übertragen an (optional)</label>
+          <select id="bud-transfer"><option value="">– nicht übertragen –</option>${options}</select></div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn danger" onclick="submitBulkUserDelete()">Endgültig löschen</button></div>`);
+    }
+
+    async function submitBulkUserDelete() {
+      const ids = [...state.usersSelected];
+      if (!ids.length) { closeModal(); return; }
+      const transfer = document.getElementById("bud-transfer").value;
+      try {
+        const body = { ids };
+        if (transfer) body.transfer_to = transfer;
+        const result = await apiJson("POST", "/api/users/bulk/delete", body);
+        const failed = result.failed || [];
+        closeModal();
+        toast(
+          `Gelöscht: ${result.ok}` + (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
+          failed.length ? "err" : "ok",
+        );
+        await loadUsers();
+      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function userCreateDialog() {
+      openModal(`
+        <h2>Neuer Benutzer</h2>
+        <div class="field"><label>Benutzername</label><input id="nu-username" /></div>
+        <div class="field"><label>Anzeigename (optional)</label><input id="nu-display" /></div>
+        <div class="field"><label>E-Mail (optional)</label><input id="nu-email" /></div>
+        <div class="field"><label>Passwort (min. 8 Zeichen)</label><input id="nu-password" type="password" /></div>
+        <label class="checkline"><input type="checkbox" id="nu-admin" /> Administrator</label>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" onclick="submitUserCreate()">Anlegen</button></div>`);
+    }
+
+    async function submitUserCreate() {
+      const body = {
+        username: document.getElementById("nu-username").value.trim(),
+        display_name: document.getElementById("nu-display").value.trim() || null,
+        email: document.getElementById("nu-email").value.trim() || null,
+        password: document.getElementById("nu-password").value,
+        is_admin: document.getElementById("nu-admin").checked,
+      };
+      if (!body.username || !body.password) {
+        toast("Benutzername und Passwort sind erforderlich.", "err");
+        return;
+      }
+      try {
+        await apiJson("POST", "/api/users", body);
+        closeModal();
+        toast("Benutzer angelegt.", "ok");
+        loadUsers();
+      } catch (e) { toast("Anlegen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function userEditDialog(u) {
+      openModal(`
+        <h2>Benutzer bearbeiten – ${esc(u.username)}</h2>
+        <div class="field"><label>Anzeigename</label><input id="eu-display" value="${esc(u.display_name || "")}" /></div>
+        <div class="field"><label>E-Mail</label><input id="eu-email" value="${esc(u.email || "")}" /></div>
+        <label class="checkline"><input type="checkbox" id="eu-admin" ${u.is_admin ? "checked" : ""} /> Administrator</label>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" onclick="submitUserEdit('${u.id}')">Speichern</button></div>`);
+    }
+
+    async function submitUserEdit(id) {
+      const body = {
+        display_name: document.getElementById("eu-display").value.trim(),
+        email: document.getElementById("eu-email").value.trim(),
+        is_admin: document.getElementById("eu-admin").checked,
+      };
+      try {
+        await apiJson("PATCH", "/api/users/" + id, body);
+        closeModal();
+        toast("Gespeichert.", "ok");
+        loadUsers();
+      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function userPasswordDialog(u) {
+      openModal(`
+        <h2>Passwort zurücksetzen – ${esc(u.username)}</h2>
+        <div class="field"><label>Neues Passwort (min. 8 Zeichen)</label><input id="pu-password" type="password" /></div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" onclick="submitUserPassword('${u.id}')">Zurücksetzen</button></div>`);
+    }
+
+    async function submitUserPassword(id) {
+      const password = document.getElementById("pu-password").value;
+      if (password.length < 8) {
+        toast("Passwort muss mindestens 8 Zeichen haben.", "err");
+        return;
+      }
+      try {
+        await apiJson("POST", "/api/users/" + id + "/password", { password });
+        closeModal();
+        toast("Passwort gesetzt – bestehende Sitzungen sind abgemeldet.", "ok");
+      } catch (e) { toast("Zurücksetzen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function toggleUserActive(u) {
+      const operation = u.is_active ? "deactivate" : "activate";
+      try {
+        await api("POST", "/api/users/" + u.id + "/" + operation);
+        toast(u.is_active ? "Benutzer deaktiviert." : "Benutzer aktiviert.", "ok");
+        loadUsers();
+      } catch (e) { toast("Aktion fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function deleteUserDialog(u) {
+      let others = [];
+      try {
+        const data = await apiJson("GET", "/api/users?active=true&limit=200");
+        others = data.items.filter(item => item.id !== u.id);
+      } catch (e) { /* optional */ }
+      const options = others
+        .map(item => `<option value="${item.id}">${esc(item.username)}</option>`)
+        .join("");
+      openModal(`
+        <h2>Benutzer löschen – ${esc(u.username)}</h2>
+        <p class="muted">Besitzt der Benutzer Dateien, muss der Besitz übertragen werden.</p>
+        <div class="field"><label>Besitz übertragen an (optional)</label>
+          <select id="du-transfer"><option value="">– nicht übertragen –</option>${options}</select></div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn danger" onclick="submitUserDelete('${u.id}')">Endgültig löschen</button></div>`);
+    }
+
+    async function submitUserDelete(id) {
+      const transfer = document.getElementById("du-transfer").value;
+      const query = transfer ? "?transfer_to=" + transfer : "";
+      try {
+        await api("DELETE", "/api/users/" + id + query);
+        closeModal();
+        toast("Benutzer gelöscht.", "ok");
+        loadUsers();
+      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function userGroupsDialog(u) {
+      try {
+        const [all, mine] = await Promise.all([
+          apiJson("GET", "/api/groups"),
+          apiJson("GET", "/api/users/" + u.id + "/groups"),
+        ]);
+        const mineIds = new Set(mine.map(group => group.id));
+        const rows = all.length
+          ? all.map(group =>
+              `<label class="checkline"><input type="checkbox" class="grp" value="${group.id}" ` +
+              `${mineIds.has(group.id) ? "checked" : ""} /> ${esc(group.name)}</label>`
+            ).join("")
+          : '<p class="muted">Es gibt noch keine Gruppen.</p>';
+        openModal(`
+          <h2>Gruppen – ${esc(u.username)}</h2>
+          ${rows}
+          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+          <button class="btn" onclick="submitUserGroups('${u.id}')">Speichern</button></div>`);
+      } catch (e) { toast("Gruppen laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function submitUserGroups(id) {
+      try {
+        const [all, mine] = await Promise.all([
+          apiJson("GET", "/api/groups"),
+          apiJson("GET", "/api/users/" + id + "/groups"),
+        ]);
+        const mineIds = new Set(mine.map(group => group.id));
+        const checked = new Set(
+          [...document.querySelectorAll("input.grp:checked")].map(el => el.value)
+        );
+        for (const group of all) {
+          if (checked.has(group.id) && !mineIds.has(group.id)) {
+            await api("POST", "/api/users/" + id + "/groups/" + group.id);
+          } else if (!checked.has(group.id) && mineIds.has(group.id)) {
+            await api("DELETE", "/api/users/" + id + "/groups/" + group.id);
+          }
+        }
+        closeModal();
+        toast("Gruppen aktualisiert.", "ok");
+        loadUsers();
+      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- Profil ----------
+    function loadProfile() {
+      const me = state.me || {};
+      document.getElementById("me-username").value = me.username || "";
+      document.getElementById("me-display").value = me.display_name || "";
+      document.getElementById("me-email").value = me.email || "";
+    }
+
+    async function saveProfile() {
+      try {
+        const body = {
+          display_name: document.getElementById("me-display").value.trim(),
+          email: document.getElementById("me-email").value.trim(),
+        };
+        state.me = await apiJson("PATCH", "/api/me", body);
+        toast("Profil gespeichert.", "ok");
+      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function changeMyPassword() {
+      const current = document.getElementById("pw-current").value;
+      const next = document.getElementById("pw-new").value;
+      if (next.length < 8) {
+        toast("Neues Passwort muss mindestens 8 Zeichen haben.", "err");
+        return;
+      }
+      try {
+        await api("POST", "/api/me/password", {
+          current_password: current,
+          new_password: next,
+        });
+        toast("Passwort geändert – bitte neu anmelden.", "ok");
+        logout();
+      } catch (e) { toast("Passwort ändern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- Rollen ----------
+    const PERM_LABELS = {
+      read: "lesen", write: "schreiben", delete: "löschen", share: "teilen", admin: "admin",
+    };
+    const ALL_PERMS = ["read", "write", "delete", "share", "admin"];
+    let accessEntry = null;
+
+    async function loadRoles() {
+      const scope = document.getElementById("role-scope").value;
+      const query = scope ? "?scope=" + scope : "";
+      try {
+        state.roles = await apiJson("GET", "/api/roles" + query);
+        renderRoles();
+      } catch (e) { toast("Rollen laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function renderRoles() {
+      const tbody = document.getElementById("role-rows");
+      tbody.innerHTML = "";
+      const items = state.roles || [];
+      document.getElementById("role-empty").classList.toggle("hidden", items.length > 0);
+      for (const role of items) {
+        const tr = document.createElement("tr");
+
+        const tdName = document.createElement("td");
+        tdName.textContent = role.name;
+        tr.appendChild(tdName);
+
+        const tdScope = document.createElement("td");
+        tdScope.textContent = role.scope === "system" ? "System" : "Ressource";
+        tr.appendChild(tdScope);
+
+        const tdPerms = document.createElement("td");
+        tdPerms.innerHTML = role.permission_names.length
+          ? role.permission_names.map(p => `<span class="chip">${PERM_LABELS[p] || p}</span>`).join("")
+          : '<span class="muted">–</span>';
+        tr.appendChild(tdPerms);
+
+        const tdBuiltin = document.createElement("td");
+        tdBuiltin.textContent = role.is_builtin ? "✓" : "–";
+        tr.appendChild(tdBuiltin);
+
+        const tdActions = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+        wrap.appendChild(action("Zuweisungen", "secondary", () => roleAssignmentsDialog(role)));
+        if (!role.is_builtin) {
+          wrap.appendChild(action("Bearbeiten", "secondary", () => roleEditDialog(role)));
+          wrap.appendChild(action("Löschen", "danger", () => roleDelete(role)));
+        }
+        tdActions.appendChild(wrap);
+        tr.appendChild(tdActions);
+        tbody.appendChild(tr);
+      }
+    }
+
+    function permsCheckboxes(selected) {
+      const chosen = new Set(selected || []);
+      return ALL_PERMS.map(p =>
+        `<label class="checkline"><input type="checkbox" class="perm" value="${p}" ${chosen.has(p) ? "checked" : ""} /> ${PERM_LABELS[p]}</label>`
+      ).join("");
+    }
+
+    function selectedPerms() {
+      return [...document.querySelectorAll("input.perm:checked")].map(el => el.value);
+    }
+
+    function roleCreateDialog() {
+      openModal(`
+        <h2>Neue Rolle</h2>
+        <div class="field"><label>Name</label><input id="nr-name" /></div>
+        <div class="field"><label>Beschreibung</label><input id="nr-desc" /></div>
+        <div class="field"><label>Scope</label>
+          <select id="nr-scope">
+            <option value="resource">Ressource (auf Einträge)</option>
+            <option value="system">System (global)</option>
+          </select></div>
+        <div class="field"><label>Rechte</label>${permsCheckboxes([])}</div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" onclick="submitRoleCreate()">Anlegen</button></div>`);
+    }
+
+    async function submitRoleCreate() {
+      try {
+        await apiJson("POST", "/api/roles", {
+          name: document.getElementById("nr-name").value.trim(),
+          description: document.getElementById("nr-desc").value.trim() || null,
+          scope: document.getElementById("nr-scope").value,
+          permissions: selectedPerms(),
+        });
+        closeModal();
+        toast("Rolle angelegt.", "ok");
+        loadRoles();
+      } catch (e) { toast("Anlegen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function roleEditDialog(role) {
+      openModal(`
+        <h2>Rolle bearbeiten – ${esc(role.name)}</h2>
+        <div class="field"><label>Beschreibung</label><input id="er-desc" value="${esc(role.description || "")}" /></div>
+        <div class="field"><label>Rechte</label>${permsCheckboxes(role.permission_names)}</div>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" onclick="submitRoleEdit('${role.id}')">Speichern</button></div>`);
+    }
+
+    async function submitRoleEdit(id) {
+      try {
+        await apiJson("PATCH", "/api/roles/" + id, {
+          description: document.getElementById("er-desc").value.trim(),
+          permissions: selectedPerms(),
+        });
+        closeModal();
+        toast("Gespeichert.", "ok");
+        loadRoles();
+      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function roleDelete(role) {
+      if (!confirm(`Rolle '${role.name}' löschen? Zuweisungen werden entfernt.`)) return;
+      try {
+        await api("DELETE", "/api/roles/" + role.id);
+        toast("Rolle gelöscht.", "ok");
+        loadRoles();
+      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function principalLabel(assignment) {
+      const kind = assignment.principal_type === "group" ? "Gruppe" : "Benutzer";
+      return `${kind}: ${assignment.principal_id}` + (assignment.entry_id ? ` @ ${assignment.entry_id}` : " (global)");
+    }
+
+    async function fillPrincipals(selectId, typeId) {
+      const type = document.getElementById(typeId).value;
+      const select = document.getElementById(selectId);
+      select.innerHTML = "";
+      try {
+        if (type === "user") {
+          const data = await apiJson("GET", "/api/users?limit=200");
+          for (const u of data.items) select.appendChild(new Option(u.username, u.id));
+        } else {
+          const groups = await apiJson("GET", "/api/groups");
+          for (const g of groups) select.appendChild(new Option(g.name, g.id));
+        }
+      } catch (e) { /* z. B. wenn keine Adminrechte bestehen */ }
+    }
+
+    async function roleAssignmentsDialog(role) {
+      try {
+        const assignments = await apiJson("GET", "/api/roles/" + role.id + "/assignments");
+        const list = assignments.length
+          ? assignments.map(a =>
+              `<div class="checkline"><span class="grow">${esc(principalLabel(a))}</span>` +
+              `<button class="btn small danger" onclick="removeRoleAssignment('${a.id}')">Entfernen</button></div>`
+            ).join("")
+          : '<p class="muted">Keine Zuweisungen.</p>';
+        const addForm = role.scope === "system"
+          ? `<hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
+             <h3 style="margin:0 0 8px">Zuweisen</h3>
+             <div class="field"><label>Typ</label>
+               <select id="ra-type" onchange="fillPrincipals('ra-principal','ra-type')">
+                 <option value="user">Benutzer</option><option value="group">Gruppe</option>
+               </select></div>
+             <div class="field"><label>Empfänger</label><select id="ra-principal"></select></div>
+             <button class="btn" onclick="submitRoleAssignment('${role.id}')">Zuweisen</button>`
+          : '<p class="muted">Ressourcenrollen werden im Dateimanager über „Zugriff“ vergeben.</p>';
+        openModal(`<h2>Zuweisungen – ${esc(role.name)}</h2>${list}${addForm}
+          <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
+        if (role.scope === "system") fillPrincipals("ra-principal", "ra-type");
+      } catch (e) { toast("Zuweisungen laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function submitRoleAssignment(roleId) {
+      const type = document.getElementById("ra-type").value;
+      const principal = document.getElementById("ra-principal").value;
+      if (!principal) { toast("Kein Empfänger ausgewählt.", "err"); return; }
+      try {
+        await apiJson("POST", "/api/roles/" + roleId + "/assignments", {
+          principal_type: type, principal_id: principal,
+        });
+        toast("Zugewiesen.", "ok");
+        closeModal();
+      } catch (e) { toast("Zuweisen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function removeRoleAssignment(assignmentId) {
+      try {
+        await api("DELETE", "/api/roles/assignments/" + assignmentId);
+        toast("Entfernt.", "ok");
+      } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // --- Zugriff auf einen Eintrag (Ressourcenrollen) ---
+    let accessShares = [];
+
+    async function entryAccessDialog(entry) {
+      accessEntry = entry;
+      try {
+        const [assignments, allRoles, shares] = await Promise.all([
+          apiJson("GET", "/api/entries/" + entry.id + "/roles"),
+          apiJson("GET", "/api/roles?scope=resource"),
+          apiJson("GET", "/api/shares?entry_id=" + entry.id),
+        ]);
+        accessShares = shares;
+        const list = assignments.length
+          ? assignments.map(a =>
+              `<div class="checkline"><span class="grow">${esc(a.role_name || a.role_id)} – ${esc(principalLabel(a))}</span>` +
+              `<button class="btn small danger" onclick="removeEntryAssignment('${a.id}')">Entfernen</button></div>`
+            ).join("")
+          : '<p class="muted">Keine Rollen zugewiesen.</p>';
+        const links = shares.length
+          ? shares.map(s =>
+              `<div class="checkline"><span class="grow">${shareLink(s)}` +
+              `${s.has_password ? ' <span class="chip">Passwort</span>' : ""}</span>` +
+              `<button class="btn small secondary" onclick="copyAccessLink('${s.token}')">Kopieren</button>` +
+              `<button class="btn small secondary" onclick="editAccessLink('${s.token}')">Bearbeiten</button>` +
+              `<button class="btn small danger" onclick="revokeAccessLink('${s.token}')">Widerrufen</button></div>`
+            ).join("")
+          : '<p class="muted">Keine Links vorhanden.</p>';
+        const roleOptions = allRoles.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
+        openModal(`
+          <h2>Zugriff – ${esc(entry.name)}</h2>
+          ${list}
+          <hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
+          <h3 style="margin:0 0 8px">Rolle zuweisen</h3>
+          <div class="field"><label>Rolle</label><select id="ea-role">${roleOptions}</select></div>
+          <div class="field"><label>Typ</label>
+            <select id="ea-type" onchange="fillPrincipals('ea-principal','ea-type')">
+              <option value="user">Benutzer</option><option value="group">Gruppe</option>
+            </select></div>
+          <div class="field"><label>Empfänger</label><select id="ea-principal"></select></div>
+          <button class="btn" onclick="submitEntryAccess()">Zuweisen</button>
+          <hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
+          <h3 style="margin:0 0 8px">Links</h3>
+          ${links}
+          <button class="btn secondary" onclick="shareDialog(accessEntry)">＋ Neuer Link</button>
+          <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
+        fillPrincipals("ea-principal", "ea-type");
+      } catch (e) { toast("Zugriff laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function copyAccessLink(token) {
+      const share = accessShares.find(s => s.token === token);
+      if (share) copyShareLink(share);
+    }
+
+    function editAccessLink(token) {
+      const share = accessShares.find(s => s.token === token);
+      if (share) shareEditDialog(share, () => entryAccessDialog(accessEntry));
+    }
+
+    async function revokeAccessLink(token) {
+      const share = accessShares.find(s => s.token === token);
+      if (share) await revokeShare(share, () => entryAccessDialog(accessEntry));
+    }
+
+    async function submitEntryAccess() {
+      const role = document.getElementById("ea-role").value;
+      const type = document.getElementById("ea-type").value;
+      const principal = document.getElementById("ea-principal").value;
+      if (!role || !principal) { toast("Rolle und Empfänger wählen.", "err"); return; }
+      try {
+        await apiJson("POST", "/api/entries/" + accessEntry.id + "/roles", {
+          role_id: role, principal_type: type, principal_id: principal,
+        });
+        toast("Zugewiesen.", "ok");
+        entryAccessDialog(accessEntry);
+      } catch (e) { toast("Zuweisen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function removeEntryAssignment(assignmentId) {
+      try {
+        await api("DELETE", "/api/entries/" + accessEntry.id + "/roles/" + assignmentId);
+        toast("Entfernt.", "ok");
+        entryAccessDialog(accessEntry);
+      } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // --- Systemrollen je Benutzer ---
+    async function userRolesDialog(u) {
+      try {
+        const [systemRoles, mine] = await Promise.all([
+          apiJson("GET", "/api/roles?scope=system"),
+          apiJson("GET", "/api/users/" + u.id + "/roles"),
+        ]);
+        const mineIds = new Set(mine.map(a => a.role_id));
+        const rows = systemRoles.map(role =>
+          `<label class="checkline"><input type="checkbox" class="srole" value="${role.id}" ${mineIds.has(role.id) ? "checked" : ""} /> ${esc(role.name)} <span class="muted">${esc(role.description || "")}</span></label>`
+        ).join("");
+        openModal(`
+          <h2>Systemrollen – ${esc(u.username)}</h2>
+          ${rows}
+          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+          <button class="btn" onclick="submitUserRoles('${u.id}')">Speichern</button></div>`);
+      } catch (e) { toast("Rollen laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function submitUserRoles(userId) {
+      try {
+        const [systemRoles, mine] = await Promise.all([
+          apiJson("GET", "/api/roles?scope=system"),
+          apiJson("GET", "/api/users/" + userId + "/roles"),
+        ]);
+        const mineByRole = new Map(mine.map(a => [a.role_id, a.id]));
+        const checked = new Set(
+          [...document.querySelectorAll("input.srole:checked")].map(el => el.value)
+        );
+        for (const role of systemRoles) {
+          if (checked.has(role.id) && !mineByRole.has(role.id)) {
+            await api("POST", "/api/users/" + userId + "/roles/" + role.id);
+          } else if (!checked.has(role.id) && mineByRole.has(role.id)) {
+            await api("DELETE", "/api/users/" + userId + "/roles/" + mineByRole.get(role.id));
+          }
+        }
+        closeModal();
+        toast("Rollen aktualisiert.", "ok");
+      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- Datei-Vorschau ----------
+    const TEXT_EXT = new Set([
+      "txt", "md", "markdown", "json", "csv", "tsv", "log", "yaml", "yml", "xml", "ini",
+      "cfg", "conf", "env", "py", "pyw", "js", "mjs", "cjs", "ts", "tsx", "jsx", "vue",
+      "css", "scss", "less", "java", "c", "h", "cpp", "hpp", "cs", "go", "rs", "rb",
+      "php", "sh", "bash", "zsh", "ps1", "sql", "toml", "rst", "tex", "gitignore",
+    ]);
+    const HTML_EXT = new Set(["html", "htm", "xhtml"]);
+    const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif"]);
+    const VIDEO_EXT = new Set(["mp4", "webm", "ogv", "mov", "m4v"]);
+    const AUDIO_EXT = new Set(["mp3", "wav", "oga", "flac", "m4a", "aac"]);
+    const PDF_EXT = new Set(["pdf"]);
+    const PREVIEW_TEXT_LIMIT = 256 * 1024;
+    let previewEntry = null;
+
+    function extOf(name) {
+      const index = String(name).lastIndexOf(".");
+      return index >= 0 ? name.slice(index + 1).toLowerCase() : "";
+    }
+
+    function previewKind(entry) {
+      const ext = extOf(entry.name);
+      const mime = (entry.mime || "").toLowerCase();
+      if (HTML_EXT.has(ext) || mime === "text/html") return "html";
+      if (PDF_EXT.has(ext) || mime === "application/pdf") return "pdf";
+      if (IMAGE_EXT.has(ext) || mime.startsWith("image/")) return "image";
+      if (VIDEO_EXT.has(ext) || mime.startsWith("video/")) return "video";
+      if (AUDIO_EXT.has(ext) || mime.startsWith("audio/")) return "audio";
+      if (TEXT_EXT.has(ext) || mime.startsWith("text/")) return "text";
+      return "none";
+    }
+
+    function previewActions() {
+      return `<div class="actions">
+        <button class="btn secondary" onclick="download(previewEntry)">Herunterladen</button>
+        <button class="btn secondary" onclick="details(previewEntry)">Details</button>
+        <button class="btn" onclick="closeModal()">Schließen</button>
+      </div>`;
+    }
+
+    async function openPreview(entry) {
+      previewEntry = entry;
+      try {
+        const kind = previewKind(entry);
+        if (kind === "text" || kind === "html") await openTextPreview(entry, kind === "html");
+        else await openMediaPreview(entry, kind);
+      } catch (e) { toast("Vorschau fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function openTextPreview(entry, asHtml) {
+      const response = await fetch("/api/entries/" + entry.id + "/content", {
+        headers: {
+          "Authorization": "Bearer " + state.token,
+          "Range": "bytes=0-" + (PREVIEW_TEXT_LIMIT - 1),
+        },
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const text = await response.text();
+      const truncated = response.status === 206;
+      const body = asHtml
+        ? `<iframe sandbox="" style="width:100%;height:70vh;background:#fff;border:1px solid var(--border);border-radius:8px" srcdoc="${esc(text)}"></iframe>`
+        : `<pre style="margin:0;max-height:70vh;overflow:auto;background:#0b0e13;border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12.5px;white-space:pre-wrap;word-break:break-word">${esc(text)}</pre>`;
+      const note = truncated
+        ? `<p class="muted" style="font-size:12px">Nur die ersten ${PREVIEW_TEXT_LIMIT / 1024} KB werden angezeigt.</p>`
+        : "";
+      openModal(`<h2>${esc(entry.name)}</h2>${body}${note}${previewActions()}`);
+    }
+
+    async function openMediaPreview(entry, kind) {
+      const token = await apiJson("POST", "/api/entries/" + entry.id + "/preview-token");
+      const url = token.url;
+      let body;
+      if (kind === "image") {
+        body = `<img src="${url}" alt="${esc(entry.name)}" style="max-width:100%;max-height:72vh;border-radius:8px" />`;
+      } else if (kind === "video") {
+        body = `<video controls preload="metadata" src="${url}" style="max-width:100%;max-height:72vh;border-radius:8px"></video>`;
+      } else if (kind === "audio") {
+        body = `<audio controls src="${url}" style="width:100%"></audio>`;
+      } else {
+        body = `<iframe src="${url}" style="width:100%;height:74vh;border:1px solid var(--border);border-radius:8px"></iframe>`;
+      }
+      openModal(`<h2>${esc(entry.name)}</h2>
+        <div style="text-align:center;margin:6px 0">${body}</div>${previewActions()}`);
+    }
+
+    // ---------- Freigaben ----------
+    function shareLink(share) {
+      const token = typeof share === "string" ? share : share.token;
+      const name = typeof share === "string" ? "" : (share.entry_name || "");
+      const isFolder = typeof share === "string" ? false : share.entry_type === "folder";
+      if (!name) return location.origin + "/api/shares/" + token + "/content";
+      const filename = isFolder ? name + ".zip" : name;
+      return location.origin + "/api/shares/" + token + "/content/" + encodeURIComponent(filename);
+    }
+
+    async function loadShared() {
+      try {
+        if (state.sharedPath.length === 0) {
+          state.shared = await apiJson("GET", "/api/shared");
+        } else {
+          const current = state.sharedPath[state.sharedPath.length - 1];
+          state.shared = await apiJson("GET", "/api/entries?parent_id=" + current.id);
+        }
+        renderShared();
+      } catch (e) { toast("Mit mir geteilt laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function renderShared() {
+      const tbody = document.getElementById("shared-rows");
+      const inFolder = state.sharedPath.length > 0;
+      const items = state.shared || [];
+      tbody.innerHTML = "";
+
+      document.getElementById("shared-back").classList.toggle("hidden", !inFolder);
+      document.getElementById("shared-crumbs").textContent = inFolder
+        ? "Mit mir geteilt / " + state.sharedPath.map(entry => entry.name).join(" / ")
+        : "Einträge, die dir per Recht/Rolle freigegeben wurden.";
+      const empty = document.getElementById("shared-empty");
+      empty.textContent = inFolder ? "Dieser Ordner ist leer." : "Keine Freigaben für dich.";
+      empty.classList.toggle("hidden", items.length > 0);
+
+      for (const e of items) {
+        const tr = document.createElement("tr");
+
+        const tdName = document.createElement("td");
+        tdName.innerHTML = (e.type === "folder" ? "📁" : "📄") + " " + esc(e.name);
+        tdName.title = e.path;
+        tr.appendChild(tdName);
+
+        const tdType = document.createElement("td");
+        tdType.textContent = e.type === "folder" ? "Ordner" : "Datei";
+        tr.appendChild(tdType);
+
+        const tdPath = document.createElement("td");
+        tdPath.className = "muted";
+        tdPath.textContent = e.path;
+        tr.appendChild(tdPath);
+
+        const tdSize = document.createElement("td");
+        tdSize.className = "right nowrap";
+        tdSize.textContent = e.type === "file" ? fmtSize(e.size) : "–";
+        tr.appendChild(tdSize);
+
+        const tdAct = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+        if (e.type === "folder") {
+          wrap.appendChild(action("Öffnen", "secondary", () => openShared(e)));
+        } else {
+          wrap.appendChild(action("Download", "secondary", () => download(e)));
+        }
+        tdAct.appendChild(wrap);
+        tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    function openShared(entry) {
+      if (entry.type !== "folder") return;
+      state.sharedPath.push(entry);
+      loadShared();
+    }
+
+    function sharedBack() {
+      if (state.sharedPath.length > 0) state.sharedPath.pop();
+      loadShared();
+    }
+
+    async function loadShares() {
+      try {
+        state.shares = await apiJson("GET", "/api/shares");
+        state.sharesSelected = new Set();
+        renderShares();
+      } catch (e) { toast("Freigaben laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function renderShares() {
+      const tbody = document.getElementById("share-rows");
+      tbody.innerHTML = "";
+      const items = state.shares || [];
+      document.getElementById("share-empty").classList.toggle("hidden", items.length > 0);
+      for (const s of items) {
+        const tr = document.createElement("tr");
+
+        const tdSel = document.createElement("td");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = state.sharesSelected.has(s.token);
+        checkbox.onchange = () => toggleShareSelect(s.token, checkbox.checked);
+        tdSel.appendChild(checkbox);
+        tr.appendChild(tdSel);
+
+        const tdEntry = document.createElement("td");
+        tdEntry.textContent = s.entry_path || s.entry_name || s.entry_id;
+        tr.appendChild(tdEntry);
+
+        const tdBy = document.createElement("td");
+        tdBy.textContent = s.created_by_username || "–";
+        tr.appendChild(tdBy);
+
+        const tdExp = document.createElement("td");
+        tdExp.className = "muted nowrap";
+        tdExp.textContent = s.expires_at ? fmtDate(s.expires_at) : "–";
+        tr.appendChild(tdExp);
+
+        const tdDl = document.createElement("td");
+        tdDl.className = "right nowrap";
+        tdDl.textContent = s.max_downloads ? `${s.downloads} / ${s.max_downloads}` : s.downloads;
+        tr.appendChild(tdDl);
+
+        const tdProt = document.createElement("td");
+        const chips = [];
+        if (s.has_password) chips.push('<span class="chip">Passwort</span>');
+        if (s.allow_upload) chips.push('<span class="chip">Upload</span>');
+        if (s.overwrite) chips.push('<span class="chip">Überschreiben</span>');
+        tdProt.innerHTML = chips.length ? chips.join(" ") : '<span class="muted">–</span>';
+        tr.appendChild(tdProt);
+
+        const tdAct = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+        wrap.appendChild(action("Kopieren", "secondary", () => copyShareLink(s)));
+        wrap.appendChild(action("Bearbeiten", "secondary", () => shareEditDialog(s)));
+        wrap.appendChild(action("Öffnen", "secondary", () => window.open(shareLink(s), "_blank")));
+        wrap.appendChild(action("Widerrufen", "danger", () => revokeShare(s)));
+        tdAct.appendChild(wrap);
+        tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      }
+      renderShareSelectionUI();
+    }
+
+    function toggleShareSelect(token, checked) {
+      if (checked) state.sharesSelected.add(token);
+      else state.sharesSelected.delete(token);
+      renderShareSelectionUI();
+    }
+
+    function shareSelectAll(checked) {
+      state.sharesSelected = new Set(checked ? (state.shares || []).map(s => s.token) : []);
+      renderShares();
+    }
+
+    function clearShareSelection() {
+      state.sharesSelected = new Set();
+      renderShares();
+    }
+
+    function renderShareSelectionUI() {
+      const items = state.shares || [];
+      const count = state.sharesSelected.size;
+      document.getElementById("share-bulkbar").classList.toggle("hidden", count === 0);
+      document.getElementById("share-bulk-count").textContent = count;
+      const selectAll = document.getElementById("share-select-all");
+      if (selectAll) {
+        selectAll.checked = items.length > 0 && count === items.length;
+        selectAll.indeterminate = count > 0 && count < items.length;
+      }
+    }
+
+    async function bulkRevokeShares() {
+      const tokens = [...state.sharesSelected];
+      if (!tokens.length) return;
+      if (!confirm(`${tokens.length} Freigaben widerrufen?`)) return;
+      try {
+        const result = await apiJson("POST", "/api/shares/bulk/revoke", { tokens });
+        const failed = result.failed || [];
+        toast(
+          `Widerrufen: ${result.ok}` + (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
+          failed.length ? "err" : "ok",
+        );
+        await loadShares();
+      } catch (e) { toast("Widerrufen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function copyShareLink(share) {
+      copyText(shareLink(share))
+        .then(() => toast("Link kopiert.", "ok"))
+        .catch(() => toast("Kopieren nicht möglich – Link bitte manuell markieren.", "err"));
+    }
+
+    async function revokeShare(share, after = null) {
+      if (!confirm("Diese Freigabe widerrufen?")) return;
+      try {
+        const response = await api("DELETE", "/api/shares/" + share.token);
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        toast("Freigabe widerrufen.", "ok");
+        if (after) after(); else loadShares();
+      } catch (e) { toast("Widerrufen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    let shareEditAfter = null;
+    let shareEditShare = null;
+
+    function shareEditDialog(share, after = null) {
+      shareEditAfter = after;
+      shareEditShare = share;
+      const expiry = share.expires_at ? share.expires_at.slice(0, 10) : "";
+      openModal(`
+        <h2>Freigabe bearbeiten</h2>
+        <p class="muted" style="font-size:13px">${esc(share.entry_path || share.entry_name || "")}</p>
+        <div class="field"><label>Passwort (leer = kein Passwort)</label>
+          <input id="se-pass" type="text" placeholder="${share.has_password ? "gesetzt – leer lassen zum Behalten" : "kein Passwort"}" /></div>
+        <label class="checkline"><input type="checkbox" id="se-remove-pass" /> Passwort entfernen</label>
+        <div class="field"><label>Ablaufdatum (leer = unbegrenzt)</label>
+          <input id="se-expires" type="date" value="${expiry}" /></div>
+        <div class="field"><label>Max. Downloads (leer = unbegrenzt)</label>
+          <input id="se-max" type="number" min="1" value="${share.max_downloads ?? ""}" /></div>
+        ${share.entry_type === "folder"
+          ? `<label class="checkline"><input type="checkbox" id="se-upload" ${share.allow_upload ? "checked" : ""} /> ` +
+            `Upload in diesen Ordner erlauben</label>` +
+            `<label class="checkline"><input type="checkbox" id="se-overwrite" ${share.overwrite ? "checked" : ""} /> ` +
+            `Vorhandene Dateien überschreiben</label>`
+          : ""}
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" onclick="submitShareEdit('${share.token}')">Speichern</button></div>`);
+      if (share.entry_type === "folder") {
+        const uploadBox = document.getElementById("se-upload");
+        const overwriteBox = document.getElementById("se-overwrite");
+        const sync = () => {
+          overwriteBox.disabled = !uploadBox.checked;
+          if (!uploadBox.checked) overwriteBox.checked = false;
+        };
+        uploadBox.onchange = sync;
+        sync();
+      }
+    }
+
+    async function submitShareEdit(token) {
+      const body = {};
+      const pass = document.getElementById("se-pass").value;
+      const removePass = document.getElementById("se-remove-pass").checked;
+      if (removePass) body.password = "";
+      else if (pass) body.password = pass;
+      const expires = document.getElementById("se-expires").value;
+      body.expires_at = expires ? new Date(expires + "T23:59:59").toISOString() : null;
+      const max = document.getElementById("se-max").value;
+      body.max_downloads = max ? parseInt(max, 10) : null;
+      const uploadEl = document.getElementById("se-upload");
+      const overwriteEl = document.getElementById("se-overwrite");
+      const current = shareEditShare || {};
+      if (uploadEl) {
+        // Nur geänderte Werte senden: `allow_upload=true` verlangt `write` am
+        // Eintrag und darf ein reines Bearbeiten anderer Felder nicht blockieren.
+        if (uploadEl.checked !== !!current.allow_upload) body.allow_upload = uploadEl.checked;
+        if (overwriteEl && overwriteEl.checked !== !!current.overwrite) {
+          body.overwrite = overwriteEl.checked;
+        }
+      }
+      try {
+        await apiJson("PATCH", "/api/shares/" + token, body);
+        closeModal();
+        toast("Freigabe aktualisiert.", "ok");
+        const after = shareEditAfter;
+        shareEditAfter = null;
+        if (after) after(); else loadShares();
+      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- Audit-Log ----------
+    async function loadAudit() {
+      try {
+        state.audit = await apiJson("GET", "/api/audit?limit=300");
+        renderAudit();
+      } catch (e) { toast("Audit laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function renderAudit() {
+      const filter = document.getElementById("audit-q").value.toLowerCase();
+      const tbody = document.getElementById("audit-rows");
+      tbody.innerHTML = "";
+      const items = (state.audit || []).filter(row => {
+        if (!filter) return true;
+        const hay = [row.action, row.actor_username, row.ip, row.target_entry, row.protocol, row.result]
+          .filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(filter);
+      });
+      document.getElementById("audit-empty").classList.toggle("hidden", items.length > 0);
+      for (const row of items) {
+        const tr = document.createElement("tr");
+        const cells = [
+          fmtDate(row.ts),
+          row.actor_username || "–",
+          row.action,
+          row.protocol || "–",
+          row.ip || "–",
+          row.result || "–",
+        ];
+        for (const value of cells) {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+
+    // ---------- Mehrfachauswahl / Bulk ----------
+    function updateSelectionUI(visibleList) {
+      const count = state.selected.size;
+      document.getElementById("bulkbar").classList.toggle("hidden", count === 0);
+      document.getElementById("bulk-count").textContent = count;
+      const selectAll = document.getElementById("select-all");
+      const list = visibleList || state.entries || [];
+      const selectedVisible = list.filter(e => state.selected.has(e.id)).length;
+      if (selectAll) {
+        selectAll.checked = list.length > 0 && selectedVisible === list.length;
+        selectAll.indeterminate = selectedVisible > 0 && selectedVisible < list.length;
+      }
+    }
+
+    function toggleSelectAll(checked) {
+      const filter = document.getElementById("search").value.toLowerCase();
+      const list = state.entries.filter(e => !filter || e.name.toLowerCase().includes(filter));
+      for (const entry of list) {
+        if (checked) state.selected.add(entry.id);
+        else state.selected.delete(entry.id);
+      }
+      render();
+    }
+
+    function clearSelection() {
+      state.selected.clear();
+      render();
+    }
+
+    async function bulkDelete() {
+      const ids = [...state.selected];
+      if (!ids.length) return;
+      if (!confirm(`${ids.length} Einträge in den Papierkorb verschieben?`)) return;
+      try {
+        const result = await apiJson("POST", "/api/bulk/delete", { ids });
+        const extra = result.failed.length ? `, ${result.failed.length} fehlgeschlagen` : "";
+        toast(`${result.ok} gelöscht${extra}.`, "ok");
+        state.selected.clear();
+        await load();
+        await refreshTrashBadge();
+      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function bulkDownload() {
+      const ids = [...state.selected];
+      if (!ids.length) return;
+      await startArchiveJob(ids, "auswahl.zip");
+    }
+
+    async function bulkMoveDialog() {
+      const ids = [...state.selected];
+      if (!ids.length) return;
+      try {
+        const folders = await apiJson("GET", "/api/folders");
+        const options = folders.map(f => `<option value="${f.id}">${esc(f.path)}</option>`).join("");
+        openModal(`
+          <h2>${ids.length} Einträge verschieben</h2>
+          <div class="field"><label>Zielordner</label><select id="bm-target">${options}</select></div>
+          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+          <button class="btn" onclick="submitBulkMove()">Verschieben</button></div>`);
+      } catch (e) { toast("Ordner laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function submitBulkMove() {
+      const ids = [...state.selected];
+      const target = document.getElementById("bm-target").value;
+      if (!target) return;
+      try {
+        const result = await apiJson("POST", "/api/bulk/move", { ids, parent_id: target });
+        closeModal();
+        const extra = result.failed.length ? `, ${result.failed.length} fehlgeschlagen` : "";
+        toast(`${result.ok} verschoben${extra}.`, "ok");
+        state.selected.clear();
+        await load();
+      } catch (e) { toast("Verschieben fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- Versionen ----------
+    let versionsEntry = null;
+    let versionsList = [];
+
+    async function versionsDialog(entry) {
+      versionsEntry = entry;
+      try {
+        versionsList = await apiJson("GET", "/api/entries/" + entry.id + "/versions");
+        const rows = versionsList.map(v => {
+          const meta = `Version ${v.seq}${v.is_current ? " (aktuell)" : ""} · ${fmtSize(v.size)} · ${fmtDate(v.created_at)}`;
+          const actions = v.is_current
+            ? ""
+            : `<button class="btn small secondary" onclick="downloadVersion('${v.id}')">Herunterladen</button>` +
+              `<button class="btn small" onclick="restoreVersion('${v.id}')">Wiederherstellen</button>`;
+          return `<div class="checkline"><span class="grow">${meta}</span>${actions}</div>`;
+        }).join("");
+        openModal(`
+          <h2>Versionen – ${esc(entry.name)}</h2>
+          ${rows || '<p class="muted">Keine Versionen.</p>'}
+          <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
+      } catch (e) { toast("Versionen laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function downloadVersion(versionId) {
+      if (!versionsEntry) return;
+      try {
+        const response = await fetch(
+          "/api/entries/" + versionsEntry.id + "/versions/" + versionId + "/content",
+          { headers: { "Authorization": "Bearer " + state.token } },
+        );
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = versionsEntry.name;
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (e) { toast("Download fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function restoreVersion(versionId) {
+      if (!versionsEntry) return;
+      const version = versionsList.find(v => v.id === versionId);
+      if (!confirm(`Version ${version ? version.seq : ""} wiederherstellen?`)) return;
+      try {
+        await apiJson(
+          "POST",
+          "/api/entries/" + versionsEntry.id + "/versions/" + versionId + "/restore",
+        );
+        toast("Version wiederhergestellt.", "ok");
+        await load();
+        await versionsDialog(versionsEntry);
+      } catch (e) { toast("Wiederherstellen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- System-Monitoring ----------
+    const monitor = {
+      interval: 5000,
+      maxPoints: 60,
+      series: { cpu: [], mem: [], rx: [], tx: [] },
+    };
+
+    function clearSystemTimer() {
+      if (state.systemTimer) {
+        clearInterval(state.systemTimer);
+        state.systemTimer = null;
+      }
+    }
+
+    function setMonitorInterval() {
+      monitor.interval = parseInt(document.getElementById("monitor-interval").value, 10) || 5000;
+      clearSystemTimer();
+      loadSystem();
+    }
+
+    async function loadSystem() {
+      try {
+        const data = await apiJson("GET", "/api/system/stats");
+        state.system = data;
+        const cpu = data.cpu || {};
+        const mem = data.memory;
+        const net = data.network || {};
+        if (cpu.percent != null) pushSeries("cpu", cpu.percent);
+        if (mem && mem.percent != null) pushSeries("mem", mem.percent);
+        if (net.rx_bytes_per_sec != null) pushSeries("rx", net.rx_bytes_per_sec);
+        if (net.tx_bytes_per_sec != null) pushSeries("tx", net.tx_bytes_per_sec);
+        renderSystem();
+        clearSystemTimer();
+        state.systemTimer = setInterval(() => {
+          if (state.view === "system") loadSystem();
+          else clearSystemTimer();
+        }, monitor.interval);
+      } catch (e) { toast("Systemdaten fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function pushSeries(key, value) {
+      const values = monitor.series[key];
+      values.push(value);
+      while (values.length > monitor.maxPoints) values.shift();
+    }
+
+    function sparkline(values, max, color) {
+      const n = values.length;
+      const hi = max != null && max > 0 ? max : Math.max(1, ...values);
+      let points = "";
+      if (n > 0) {
+        points = values.map((value, index) => {
+          const x = n === 1 ? 100 : (index / (n - 1)) * 100;
+          const y = 29 - Math.min(1, Math.max(0, value / hi)) * 26;
+          return x.toFixed(1) + "," + y.toFixed(1);
+        }).join(" ");
+      }
+      return `<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">` +
+        `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+    }
+
+    function chartCard(label, value, sub, values, max, color) {
+      return `<div class="card stat"><div class="label">${esc(label)}</div>` +
+        `<div class="value">${value}</div>` +
+        sparkline(values, max, color) +
+        `<div class="sub">${sub || ""}</div></div>`;
+    }
+
+    function statCard(label, value, sub, percent) {
+      const bar = percent == null
+        ? ""
+        : `<div class="bar"><i style="width:${Math.min(100, Math.max(0, percent))}%"></i></div>`;
+      return `<div class="card stat"><div class="label">${esc(label)}</div>` +
+        `<div class="value">${value}</div>${bar}<div class="sub">${sub || ""}</div></div>`;
+    }
+
+    function fmtUptime(seconds) {
+      if (seconds == null) return "–";
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return (days ? days + " d " : "") + hours + " h " + minutes + " min";
+    }
+
+    function fmtRate(value) {
+      return value == null ? "–" : fmtSize(value) + "/s";
+    }
+
+    function renderSystem() {
+      const s = state.system || {};
+      const cpu = s.cpu || {};
+      const mem = s.memory;
+      const disk = s.disk;
+      const net = s.network || {};
+      const ifs = s.ifs || {};
+      const seaweed = s.seaweedfs;
+      const pct = value => (value == null ? "–" : value + " %");
+      const num = value => (value == null ? "–" : Number(value).toFixed(2));
+      const bytes = value => (value == null ? "–" : fmtSize(value));
+      const netMax = Math.max(1, ...monitor.series.rx, ...monitor.series.tx) * 1.1;
+      document.getElementById("system-cards").innerHTML = [
+        chartCard("CPU", pct(cpu.percent),
+          `Load ${num(cpu.load_1)} / ${num(cpu.load_5)} / ${num(cpu.load_15)} · ${cpu.cores ?? "?"} Kerne`,
+          monitor.series.cpu, 100, "#3b82f6"),
+        chartCard("RAM", mem ? `${bytes(mem.used)} / ${bytes(mem.total)}` : "–",
+          mem ? pct(mem.percent) + " belegt" : "nicht verfügbar",
+          monitor.series.mem, 100, "#16a34a"),
+        chartCard("Netzwerk ↓", fmtRate(net.rx_bytes_per_sec), `gesamt ${bytes(net.rx_total)}`,
+          monitor.series.rx, netMax, "#22d3ee"),
+        chartCard("Netzwerk ↑", fmtRate(net.tx_bytes_per_sec), `gesamt ${bytes(net.tx_total)}`,
+          monitor.series.tx, netMax, "#a78bfa"),
+        statCard("Speicherplatz", disk ? pct(disk.percent) + " belegt" : "–",
+          disk ? `${bytes(disk.free)} frei von ${bytes(disk.total)} (${esc(disk.path)})` : "nicht verfügbar",
+          disk ? disk.percent : null),
+        statCard("SeaweedFS", seaweed ? `${seaweed.volumes} Volumes` : "–",
+          seaweed ? `${seaweed.files} Objekte · ${bytes(seaweed.used_bytes)} belegt` : "nicht verfügbar",
+          null),
+        statCard("Laufzeit", fmtUptime(s.uptime_seconds), "", null),
+        statCard("Benutzer", ifs.users ?? "–", "", null),
+        statCard("Einträge", ifs.entries ?? "–", `belegt: ${bytes(ifs.stored_bytes)}`, null),
+      ].join("");
+    }
+
+    // ---------- Modal ----------
+    function openModal(html) {
+      document.getElementById("modal-root").innerHTML =
+        `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+    }
+    function closeModal() { document.getElementById("modal-root").innerHTML = ""; }
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+    // ---------- Start ----------
+    document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+    if (state.token) start(); else document.getElementById("login").classList.remove("hidden");
+  </script>
+</body>
+</html>

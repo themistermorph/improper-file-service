@@ -1,0 +1,1 @@
+"""IFS-Kern: protokollunabhängige Domänenlogik."""
