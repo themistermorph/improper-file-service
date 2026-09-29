@@ -109,12 +109,16 @@ sichtbare Adresse (`masquerade address`) konfiguriert werden.
 ```
 Namespace (PostgreSQL)                       Blobs (S3)
 ─────────────────────                        ──────────
-/ Projekte
-  / 2026
-     report.pdf ─── current_version ──┐
-                                      ▼
-                              versions (DB) ── blob_id ──►  blobs/cas/sha256/ab/cd…​ (S3)
+/ (Home je Benutzer)
+  / Projekte
+    / 2026
+       report.pdf ─── current_version ──┐
+                                        ▼
+                                versions (DB) ── blob_id ──►  blobs/cas/sha256/ab/cd…​ (S3)
 ```
+
+Jeder Benutzer besitzt ein eigenes **Home** (Wurzel: `parent_id IS NULL`, `owner_id = user`);
+die Namen `/…` in diesem Dokument sind relativ zu dieser Wurzel zu lesen.
 
 - **`entries`**: Baumknoten (Ordner/Datei) mit Name, Parent, Besitzer.
 - **`versions`**: unveränderliche Version einer Datei (Größe, MIME, Hash, Zeit).
@@ -148,14 +152,16 @@ group_members    (group_id, user_id)
 credentials      (id, user_id, type[password|token], secret_hash, scopes, expires_at)
 
 entries          (id uuid, parent_id uuid NULL, name, type[folder|file], owner_id,
-                  current_version_id NULL, trashed_at NULL, created_at, updated_at,
-                  UNIQUE(parent_id, lower(name)))
+                  current_version_id NULL, trashed_at NULL, trashed_by NULL,
+                  original_parent_id NULL, created_at, updated_at,
+                  UNIQUE(parent_id, lower(name)) – je Parent;
+                  UNIQUE(owner_id) WHERE parent_id IS NULL AND trashed_at IS NULL – genau eine Wurzel/Benutzer)
 versions         (id, entry_id, blob_id, seq, size, mime, sha256, created_by, created_at)
 blobs            (id, storage_key, size, sha256, status, created_at)
 acl              (id, entry_id, principal_type[user|group], principal_id,
                   perms bitmask, inherited)
 shares           (token, entry_id, created_by, password_hash, expires_at,
-                  max_downloads, downloads, allow_upload)
+                  max_downloads, downloads, allow_upload, overwrite, created_at)
 upload_sessions  (id, entry_id, owner_id, protocol, offset, s3_upload_id,
                   parts jsonb, expires_at, status)
 quota_usage      (principal_type, principal_id, bytes, files)

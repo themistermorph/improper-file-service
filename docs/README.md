@@ -31,6 +31,9 @@ Diese Dokumentation ist in zwei Teile gegliedert:
 | Sicherheitsentscheidungen nachvollziehen | [Sicherheit](sicherheit.md) |
 | Betrieb, Backup, Monitoring | [Betrieb](betrieb.md) |
 | Am Code mitarbeiten | [Entwicklung](entwicklung.md) |
+| Änderungen nachlesen | [`../CHANGELOG.md`](../CHANGELOG.md) |
+| Sicherheitslücke melden | [`../SECURITY.md`](../SECURITY.md) |
+| Beitragen / Release | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) · [`../RELEASING.md`](../RELEASING.md) |
 
 ---
 

@@ -77,6 +77,11 @@ Zusätzliche Zugangsdaten/Tokens: `id`, `user_id`, `type` (`token`/`ftp`),
 | `original_parent_id` | UUID \| null | Ursprünglicher Zielordner (für robustes Wiederherstellen) |
 | `created_at`, `updated_at` | timestamptz | |
 
+Indizes (u. a.): eindeutiger Name je Parent (`uq_entries_parent_lower_name`, nur aktive
+Einträge) und **genau eine aktive Wurzel je Besitzer** (`uq_entries_root_owner` auf
+`owner_id` mit `parent_id IS NULL AND trashed_at IS NULL`) – Grundlage der
+Per-User-Wurzeln.
+
 ### `blobs`
 
 | Spalte | Typ | Anmerkung |
@@ -123,9 +128,10 @@ Bitmaske: `read=1`, `write=2`, `delete=4`, `share=8`, `admin=16`.
 | `entry_id` | UUID \| null → `entries.id` | null = systemweit; sonst Vererbung ab diesem Eintrag |
 | `created_at` | timestamptz | |
 
-**Rechteberechnung:** effektive Rechte = Besitzer-Vollrechte ∪ systemweite Rollen
-(`entry_id IS NULL`) ∪ Rollen und ACLs entlang des Pfades. Die systemweite Rolle `admin`
-wirkt wie das Admin-Flag. Details: [Sicherheit](sicherheit.md).
+**Rechteberechnung:** effektive Rechte = Besitzer-Vollrechte ∪ Ressourcenrollen und
+ACLs entlang des Pfades. Systemweite Rollen (`entry_id IS NULL`, auch `admin`) gewähren
+**keine** Dateirechte, sondern nur Systemfunktionen (Benutzer/Rollen/Audit/System).
+Details: [Sicherheit](sicherheit.md).
 
 ### `shares`
 

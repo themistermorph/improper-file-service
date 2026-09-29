@@ -13,7 +13,11 @@ sowohl über HTTP als auch über FTPS.
 - **ACLs** vergeben Rechte an Benutzer oder Gruppen.
 - Rechte **vererben** sich: ein Recht auf einem Ordner gilt für alle Nachfahren.
 - Rechte-Bitmaske: `read`, `write`, `delete`, `share`, `admin`.
-- **ACLs setzen** dürfen nur globale Admins; **Freigaben** (`share`) darf der Besitzer.
+- **ACLs/Rollen setzen** darf, wer `admin` am Eintrag hat (Eigentümer bzw. Manager);
+  Systemadmins haben **keinen** Dateizugriff auf fremde Wurzeln.
+- **Per-User-Wurzel:** Jeder Benutzer hat ein eigenes Home. Freigegebene Einträge findest
+  du als Empfänger unter **GET `/api/shared`** bzw. in der Web-UI „Mit mir geteilt".
+- **Externe Freigaben** (`share`) darf der Besitzer bzw. wer `read`+`share` hat.
 
 ---
 
@@ -22,7 +26,7 @@ sowohl über HTTP als auch über FTPS.
 ```bash
 HOST=http://localhost:8000
 TOKEN=$(curl -s -X POST $HOST/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' \
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}" \
   | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 AUTH="Authorization: Bearer $TOKEN"
 JSON="Content-Type: application/json"
@@ -49,27 +53,23 @@ echo "alice=$ALICE group=$GROUP"
 ## 3. Ordner anlegen und freigeben
 
 ```bash
-# Zwei Ordner in der Wurzel
+# Zwei Ordner im Home des Admins
 SHARED=$(curl -s -X POST $HOST/api/folders -H "$AUTH" -H "$JSON" \
   -d '{"name":"team-share"}' | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
 
 PRIVATE=$(curl -s -X POST $HOST/api/folders -H "$AUTH" -H "$JSON" \
   -d '{"name":"nur-admin"}' | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
 
-# Wurzel-ID ermitteln (parent_id des neuen Ordners)
-ROOT=$(curl -s -H "$AUTH" "$HOST/api/entries/$SHARED" \
-  | python -c "import sys,json;print(json.load(sys.stdin)['parent_id'])")
-echo "shared=$SHARED private=$PRIVATE root=$ROOT"
+echo "shared=$SHARED private=$PRIVATE"
 
-# Gruppe "team": read auf der Wurzel (zum Navigieren) + read/write auf team-share
-curl -s -X POST $HOST/api/entries/$ROOT/acl -H "$AUTH" -H "$JSON" \
-  -d "{\"principal_type\":\"group\",\"principal_id\":\"$GROUP\",\"perms\":[\"read\"]}" \
-  -o /dev/null -w "ACL Wurzel: %{http_code}\n"
-
+# Gruppe "team": read/write auf team-share (Vererbung gilt für den Teilbaum)
 curl -s -X POST $HOST/api/entries/$SHARED/acl -H "$AUTH" -H "$JSON" \
   -d "{\"principal_type\":\"group\",\"principal_id\":\"$GROUP\",\"perms\":[\"read\",\"write\"]}" \
   -o /dev/null -w "ACL team-share: %{http_code}\n"
 ```
+
+Der Ordner liegt im Home des Admins. Alice erreicht ihn nicht über ihr eigenes Listing,
+sondern über die Freigabe (nächster Abschnitt).
 
 ---
 
@@ -81,10 +81,13 @@ ALICE_TOKEN=$(curl -s -X POST $HOST/api/auth/login -H "$JSON" \
   | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 ALICE_AUTH="Authorization: Bearer $ALICE_TOKEN"
 
-# Wurzel auflisten (erlaubt, da read auf Wurzel)
+# Eigenes Home (leer, da neu) auflisten
 curl -s -H "$ALICE_AUTH" "$HOST/api/entries"
 
-# In team-share schreiben (erlaubt)
+# Freigaben für alice anzeigen (team-share erscheint hier)
+curl -s -H "$ALICE_AUTH" "$HOST/api/shared"
+
+# In team-share schreiben (erlaubt, über die Freigabe-ID)
 echo "von alice" > alice.txt
 curl -s -X PUT "$HOST/api/uploads/simple?parent_id=$SHARED&name=alice.txt" \
   -H "$ALICE_AUTH" --data-binary @alice.txt
@@ -95,23 +98,30 @@ curl -s -o /dev/null -w "Schreiben in nur-admin: %{http_code}\n" \
   -H "$ALICE_AUTH" --data-binary @alice.txt
 ```
 
-Erwartung: das Schreiben in `team-share` gelingt (201), das in `nur-admin` wird mit
-**403** abgelehnt.
+Erwartung: `/api/shared` listet `team-share`; das Schreiben in `team-share` gelingt (201),
+das in `nur-admin` wird mit **403** abgelehnt. In der Web-UI erscheint `team-share` im
+Tab **„Mit mir geteilt"**.
 
 ---
 
-## 5. Dieselben Rechte über FTPS
+## 5. Zugriffe über FTPS
+
+FTP-Pfade beziehen sich immer auf das **eigene Home** des Benutzers. Alice kann dort
+lesen/schreiben; fremde (geteilte) Ordner sind per FTP nicht eingebunden – diese erreichst
+du über die Web-UI bzw. `/api/shared`.
 
 ```bash
 lftp -u alice,alice-geheim ftps://localhost <<'EOF'
 ls
-cd /team-share
+mkdir meine-dateien
+cd /meine-dateien
 put alice.txt
-cd /nur-admin
+ls
 EOF
 ```
 
-`lftp` kann `team-share` lesen/schreiben, `nur-admin` verweigert der Server.
+Das Anlegen/Schreiben im eigenen Home gelingt; FTPS nutzt exakt dasselbe Rechte-Modell
+wie HTTP.
 
 ---
 
@@ -132,7 +142,8 @@ Es gibt aktuell keinen API-Endpunkt zum Löschen einzelner ACL-Einträge. Zum En
 - **Listing:** Wer `read` auf einem Ordner hat, sieht die **Namen** aller Kinder. Der
   Zugriff auf Inhalte wird weiterhin pro Eintrag geprüft.
 - **Vererbung:** Rechte auf einem Ordner gelten für den gesamten Teilbaum.
-- **Admin:** Die globale Adminrolle umgeht alle ACLs.
+- **Admin:** Systemadmins haben **keinen** Dateizugriff auf fremde Wurzeln; die
+  systemweite Rolle `admin` gewährt nur Systemfunktionen (Verwaltung), keine Dateirechte.
 - **FTP = HTTP:** Es gibt keinen separaten Rechtebestand; FTP-Login und -Zugriffe nutzen
   exakt dasselbe Modell.
 

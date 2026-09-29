@@ -13,7 +13,7 @@ Eintrag (der Besitzer hat es implizit).
 ```bash
 HOST=http://localhost:8000
 TOKEN=$(curl -s -X POST $HOST/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' \
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}" \
   | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 AUTH="Authorization: Bearer $TOKEN"
 
@@ -68,7 +68,8 @@ curl -s -o /dev/null -w "%{http_code}\n" "$HOST/api/shares/$TOKEN_SHARE/content"
 Download **mit** Passwort:
 
 ```bash
-curl -s "$HOST/api/shares/$TOKEN_SHARE/content?password=geheim-123" -o geheim.txt
+curl -s -H "X-Share-Password: geheim-123" \
+  "$HOST/api/shares/$TOKEN_SHARE/content" -o geheim.txt
 cat geheim.txt
 ```
 
@@ -144,7 +145,7 @@ curl -s "$HOST/api/shares/$TOKEN_SHARE" | python -m json.tool
 # Drei weitere Abrufe (Limit = 3 insgesamt)
 for i in 1 2 3; do
   curl -s -o /dev/null -w "Download $i: %{http_code}\n" \
-    "$HOST/api/shares/$TOKEN_SHARE/content?password=geheim-123"
+    -H "X-Share-Password: geheim-123" "$HOST/api/shares/$TOKEN_SHARE/content"
 done
 ```
 

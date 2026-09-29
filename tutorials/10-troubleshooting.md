@@ -37,7 +37,7 @@ Im Log steht meist die konkrete Ursache (Konfiguration, DB-/S3-Verbindung).
 
 ```bash
 TOKEN=$(curl -s -X POST localhost:8000/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}" | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 curl -s -H "Authorization: Bearer $TOKEN" localhost:8000/api/me
 ```
 

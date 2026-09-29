@@ -31,7 +31,8 @@ Dieses Dokument beschreibt mittelfein die nächsten Funktionen des IFS:
 **Ziel:** Administratoren können Benutzer vollständig verwalten; Nutzer verwalten ihr
 eigenes Profil und ihre Zugangsdaten.
 
-**Akteure:** Systemadministrator (Vollzugriff), angemeldeter Benutzer (Selbstbedienung).
+**Akteure:** Systemadministrator (Benutzer-/Rollen-/Audit-/Systemverwaltung – **kein**
+Dateizugriff auf fremde Wurzeln), angemeldeter Benutzer (Selbstbedienung).
 
 ### Funktionale Anforderungen
 
@@ -86,7 +87,8 @@ eigenes Profil und ihre Zugangsdaten.
 **Ziel:** Gelöschte Einträge auffindbar und wiederherstellbar machen, bevor sie endgültig
 entfernt werden.
 
-**Akteure:** Benutzer mit `delete`-Recht (eigener Papierkorb), Administrator (alle).
+**Akteure:** Eigentümer bzw. Benutzer mit `delete`-Recht (jeweils eigener Papierkorb);
+Systemadmins haben **keine** Sicht auf fremde Papierkörbe.
 
 ### Funktionale Anforderungen
 
@@ -97,7 +99,7 @@ entfernt werden.
 | TR-3 | Eintrag wiederherstellen (inkl. Teilbaum) an ursprünglichen Ort | MUSS |
 | TR-4 | Wiederherstellen mit neuem Namen/Ziel bei Namenskonflikt | MUSS |
 | TR-5 | Eintrag endgültig löschen (inkl. Teilbaum) | MUSS |
-| TR-6 | Papierkorb leeren (eigene / als Admin alle) | SOLLTE |
+| TR-6 | Papierkorb leeren (nur eigene) | SOLLTE |
 | TR-7 | Automatisches endgültiges Löschen nach Aufbewahrungsfrist (Standard 30 Tage) | MUSS |
 | TR-8 | Anzahl im Papierkorb anzeigen (Badge) | SOLLTE |
 | TR-9 | Audit aller Aktionen | MUSS |
@@ -179,8 +181,9 @@ role_assignments  (id, role_id, principal_type[user|group], principal_id,
 acl               (+ role_id NULL – Abwärtskompatibilität zu rohen perms)
 ```
 
-**Rechteberechnung (erweitert):** effektive Rechte = Besitzer-Vollrechte ∪ systemweite
-Rollen ∪ Rollen/ACLs entlang des Pfades. Reihenfolge/Union bleibt additiv wie bisher.
+**Rechteberechnung (erweitert):** effektive Rechte = Besitzer-Vollrechte ∪
+Ressourcenrollen und ACLs entlang des Pfades (additiv). Systemweite Rollen
+(`entry_id IS NULL`, auch `admin`) gewähren **keine** Dateirechte, nur Systemfunktionen.
 
 ### API
 

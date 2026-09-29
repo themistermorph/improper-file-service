@@ -61,8 +61,8 @@ IFS_DATABASE_URL=postgresql+psycopg://ifs:geheim@db:5432/ifs
 | Variable | Typ | Standard | Beschreibung |
 |---|---|---|---|
 | `IFS_S3_ENDPOINT_URL` | string \| leer | *(leer)* | S3-Endpunkt. Leer = AWS S3. Für MinIO/Ceph die URL setzen. |
-| `IFS_S3_ACCESS_KEY` | string | *(leer)* | Access Key des S3-Kontos. |
-| `IFS_S3_SECRET_KEY` | string | *(leer)* | Secret Key des S3-Kontos. |
+| `IFS_S3_ACCESS_KEY` | string | `minioadmin` | Access Key des S3-Kontos (`setup-seaweedfs.sh` setzt einen eigenen; `.env.example` lässt ihn leer). |
+| `IFS_S3_SECRET_KEY` | string | `minioadmin` | Secret Key des S3-Kontos (`setup-seaweedfs.sh` setzt einen eigenen). |
 | `IFS_S3_BUCKET` | string | `ifs` | Bucket für Blobs. |
 | `IFS_S3_REGION` | string | `us-east-1` | Region. |
 | `IFS_S3_USE_SSL` | bool | `false` | TLS zum S3-Endpunkt. |
@@ -199,7 +199,7 @@ IFS_ADMIN_PASSWORD=<starkes-passwort>
 
 ## Einstellungen prüfen
 
-- **Laufzeit:** `GET /version` und `GET /healthz` geben Name, Version und Umgebung zurück.
+- **Laufzeit:** `GET /version` liefert Name und Version (bewusst **ohne** Umgebungsangabe); `GET /healthz` nur `{"status":"ok"}`.
 - **Start:** Bei ungültigen Werten bricht der Prozess mit einer Pydantic-Fehlermeldung ab.
 - **Container:** `docker compose config` validiert die zusammengeführte Compose-Konfiguration.
 

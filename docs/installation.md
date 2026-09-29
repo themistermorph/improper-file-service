@@ -15,7 +15,7 @@ containerisiert mit **Docker Compose** (empfohlen) als auch **manuell** ohne Doc
 | Docker Compose | ≥ 2.20 (Plugin `docker compose`) |
 | CPU / RAM | 2 vCPU / 2 GB RAM für den Start; mehr für Parallelbetrieb |
 | Speicher | Hängt von Datenmenge ab; Postgres + Objektspeicher-Volume |
-| Netzwerk | Ports 8000 (HTTP), 21 + Passive-Range (FTPS), 9090 (Objektspeicher-API, nur intern/Dev) |
+| Netzwerk | Ports 8000 (HTTP), 21 + Passive-Range (FTPS), 8333 (S3-API, nur intern) und 9010 (Storage-UI) |
 
 ### Variante B – Manuell (Python)
 
@@ -107,7 +107,7 @@ curl http://localhost:8000/healthz
 
 curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}'
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}"
 ```
 
 ---
@@ -170,7 +170,7 @@ export IFS_FTP_MASQUERADE_ADDRESS="files.example.org"
 
 ```bash
 python -m ifs.cli init-db      # Schema anlegen + Bucket prüfen
-python -m ifs.cli seed-admin   # Admin + Wurzelverzeichnis
+python -m ifs.cli seed-admin   # Admin + dessen Home (jeder Benutzer erhält automatisch ein Home)
 python -m ifs.cli run-api      # HTTP-API + Web-UI auf :8000
 # zweites Terminal:
 python -m ifs.cli run-ftp      # FTPS-Gateway
@@ -181,6 +181,17 @@ python -m ifs.cli run-worker   # Hintergrundjobs
 ---
 
 ## 4. Aktualisierung
+
+> **Pflicht für bestehende Installationen (Per-User-Wurzel):** Die SQL-Migrationen
+> unter `migrations/sql/` nacheinander anwenden – insbesondere
+> `0004_unique_entry_names.sql`, `0005_share_overwrite.sql` und
+> `0006_per_user_roots.sql`. **Vor** dem Unique-Index aus 0006 muss für jeden
+> Benutzer eine Wurzel existieren. Beispiel:
+> ```bash
+> for f in migrations/sql/000*.sql; do
+>   docker compose exec -T db psql -U ifs -d ifs < "$f"
+> done
+> ```
 
 ### Docker Compose
 
@@ -195,7 +206,7 @@ docker compose up -d
 ```bash
 git pull
 .venv\Scripts\python -m pip install -e .
-# Migrationen (falls vorhanden):
+# Migrationen (SQL unter migrations/sql/ sowie ggf. alembic upgrade head)
 alembic upgrade head
 # Dienste neu starten
 ```

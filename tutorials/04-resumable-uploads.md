@@ -29,7 +29,7 @@ entspricht (sonst `409`). Empfangene Chunks werden im Spool-Verzeichnis
 ```bash
 HOST=http://localhost:8000
 TOKEN=$(curl -s -X POST $HOST/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' \
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}" \
   | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 
 # Zielordner ermitteln (hier: vorhandener Ordner "projekte")

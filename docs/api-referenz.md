@@ -78,9 +78,8 @@ Validierungs- und Framework-Fehler (FastAPI) liefern:
 
 `type` ist `"folder"` oder `"file"`.
 
-> **Tipp – Wurzel-ID ermitteln:** `GET /api/entries` ohne `parent_id` listet den Inhalt
-> der Wurzel. Erstelle einen Ordner ohne `parent_id`; die Antwort enthält `parent_id` –
-> das ist die Wurzel-ID.
+> **Tipp – eigene Wurzel-ID:** `GET /api/root` liefert das eigene Home (Wurzel) inkl.
+> `id`. Alternativ listet `GET /api/entries` ohne `parent_id` den Inhalt der eigenen Wurzel.
 
 ---
 
@@ -102,7 +101,7 @@ Antwort `200`:
 ```bash
 curl -s -X POST localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}'
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}"
 ```
 
 Bei Fehlschlag `401` und ein Audit-Eintrag `auth.login.failed`.
@@ -130,7 +129,7 @@ Listet die Kinder eines Verzeichnisses.
 
 | Query | Typ | Standard | Beschreibung |
 |---|---|---|---|
-| `parent_id` | UUID | Wurzel | Verzeichnis, dessen Inhalt gelistet wird |
+| `parent_id` | UUID | eigene Wurzel (Home) | Verzeichnis, dessen Inhalt gelistet wird |
 
 Antwort `200`: Array von `EntryOut`, Ordner zuerst, dann alphabetisch.
 
@@ -679,7 +678,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 | Pfad | Beschreibung |
 |---|---|
-| `GET /healthz` | Status + Anzahl Benutzer/Einträge (ohne `/api`-Präfix) |
+| `GET /healthz` | Liveness/Readiness; `{"status":"ok"}` (ohne `/api`-Präfix) |
 | `GET /version` | Name, Version (bewusst ohne Umgebungsangabe) |
 | `GET /metrics` | Prometheus-Textmetrics |
 | `GET /docs` | Swagger UI |

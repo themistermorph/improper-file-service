@@ -13,7 +13,7 @@ Upload, Listing, Download mit Resume, Umbenennen, Verschieben, Kopieren, Lösche
 HOST=http://localhost:8000
 TOKEN=$(curl -s -X POST $HOST/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' \
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}" \
   | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 echo "$TOKEN" | head -c 20
 ```

@@ -19,12 +19,17 @@ src/ifs/
   utils.py           UUIDv7, Pfadnormalisierung
   core/              Protokollunabhängiger Kern
     authz.py         Policy Decision Point
-    namespace.py     Baum, Versionen, Rename/Move, Papierkorb
+    namespace.py     Baum, Per-User-Wurzeln, Versionen, Rename/Move, Papierkorb
+    accounts.py      Benutzer/Gruppen
+    roles.py         Rollen + Zuweisungen
     content.py       S3-Blobs (CAS), Streaming, Presign
     uploads.py       Resumable Upload-Sessions
+    archive.py       ZIP-Erstellung (synchron) / archive_jobs.py (async, Fortschritt)
+    system_stats.py  System-/Container-Metriken (Admin-Panel)
     quota.py         Verbrauch/Quota-Prüfung
     audit.py         Audit-Log
     events.py        Outbox
+    ratelimit.py     Login-/Upload-Rate-Limit
   api/               FastAPI-Router + Pydantic-Schemas
   ftp/               FTPS-Gateway (pyftpdlib) + virtuelles Dateisystem
   worker.py          Hintergrundjobs
@@ -75,7 +80,7 @@ selbstsigniertes Zertifikat und öffnet eine echte TLS-Verbindung.
 1. **Kernlogik** in `core/` implementieren (keine FastAPI-Typen!). Fehler als
    `IFSError`-Ableger aus `errors.py` werfen.
 2. **Schema** in `api/schemas.py` ergänzen (Request/Response).
-3. **Router** in `api/api/<bereich>.py` erweitern; `Depends(get_db)` und
+3. **Router** in `api/<bereich>.py` erweitern (in `api/router.py` einbinden); `Depends(get_db)` und
    `Depends(get_current_user)` nutzen.
 4. **Autorisierung**: immer `authz.authorize(db, user, action, entry)` aufrufen.
 5. **Audit**: mutierende Operationen mit `audit.record(...)` protokollieren.
@@ -141,7 +146,7 @@ Für den schnellen Dev-Start genügt `IFS_AUTO_CREATE_SCHEMA=true`
 | Virenscan | Worker + Outbox-Event `entry.written` |
 | Volltextsuche | Postgres-FTS, später OpenSearch über Outbox |
 | OIDC/SSO, MFA | `security.py`, `api/deps.py`, `models.Credential` |
-| Versionierungs-UI, Papierkorb-UI | `api/entries.py` + `web/index.html` |
+| Per-User-Verschlüsselung (E2E/Zero-Knowledge) | geplant (Ausbaustufe); betrifft `core/content.py`, `web/index.html`, FTP/Vorschau/ZIP |
 
 ---
 

@@ -57,8 +57,8 @@ Nach Konfigurationsänderungen in `.env` ist ein Neustart der betroffenen Rolle 
 
 | Endpunkt | Zweck |
 |---|---|
-| `GET /healthz` | Liveness/Readiness; prüft DB-Zugriff, liefert Zähler |
-| `GET /version` | Name, Version, Umgebung |
+| `GET /healthz` | Liveness/Readiness; liefert nur `{"status":"ok"}` |
+| `GET /version` | Name, Version (bewusst ohne Umgebungsangabe) |
 | `GET /metrics` | Prometheus-Textmetriken (`ifs_users`, `ifs_entries`, `ifs_stored_bytes`) |
 
 Beispiel-Prometheus-Scrape:
@@ -71,8 +71,8 @@ scrape_configs:
       - targets: ["ifs-api:8000"]
 ```
 
-Healthcheck im Compose ist für `db` konfiguriert (der Objektspeicher `s3` wird ohne
-Healthcheck gestartet); `api`/`ftp`/`worker` hängen per `depends_on` von `db` ab.
+Healthchecks sind für `db` **und** `s3` (SeaweedFS) konfiguriert; `api`/`ftp`/`worker`
+hängen per `depends_on: condition: service_healthy` von beiden ab.
 
 ---
 
@@ -147,8 +147,8 @@ Der Worker läuft standardmäßig alle 10 Sekunden und erledigt:
 | Papierkorb leeren | endgültiges Löschen nach 30 Tagen |
 | Blob-GC | entfernt unreferenzierte Blobs aus DB und S3 |
 
-Die Fristen sind in `src/ifs/worker.py` als Konstanten hinterlegt
-(`TRASH_RETENTION_DAYS`, `UPLOAD_SESSION_TTL_HOURS`) und können dort angepasst werden.
+Die Upload-Frist ist als `UPLOAD_SESSION_TTL_HOURS` in `src/ifs/worker.py` hinterlegt;
+die Papierkorb-Frist steuert `IFS_TRASH_RETENTION_DAYS` (Standard 30 Tage).
 
 ---
 
@@ -160,10 +160,16 @@ Die Fristen sind in `src/ifs/worker.py` als Konstanten hinterlegt
 git pull
 docker compose build
 
-# 3. Migrationen ausführen
+# 3. SQL-Migrationen anwenden (migrations/sql/, in Reihenfolge)
+for f in migrations/sql/000*.sql; do
+  docker compose exec -T db psql -U ifs -d ifs < "$f"
+done
+#    Vor 0006_per_user_roots.sql muss für jeden Benutzer eine Wurzel existieren.
+
+# 4. Ggf. Alembic-Migrationen
 docker compose run --rm api alembic upgrade head
 
-# 4. Rollen neu starten
+# 5. Rollen neu starten
 docker compose up -d
 ```
 

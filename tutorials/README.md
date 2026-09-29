@@ -16,8 +16,12 @@ nennt die Voraussetzungen am Anfang.
 | 9 | [Produktiv-Deployment](09-produktiv-deployment.md) | Server, Domain, Zertifikate |
 | 10 | [Troubleshooting](10-troubleshooting.md) | laufendes IFS |
 
+> **Per-User-Wurzel:** Jeder Benutzer hat ein eigenes Home. Von anderen Benutzern
+> freigegebene Einträge erscheinen in der Web-UI unter **„Mit mir geteilt"**
+> (API: `GET /api/shared`) – siehe Tutorial 5.
+
 **Konventionen in den Tutorials**
 
 - `HOST` ist die Basis-URL, z. B. `http://localhost:8000`.
-- `TOKEN` ist ein gültiger Bearer-Token aus dem Login.
+- `TOKEN` ist ein gültiger Bearer-Token aus dem Login (Login-Passwort: `$IFS_ADMIN_PASSWORD`).
 - `ID`, `GROUP_ID` usw. sind Platzhalter für zurückgegebene UUIDs.

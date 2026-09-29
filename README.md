@@ -78,8 +78,9 @@ Danach erreichbar:
 | FTPS | `ftps://localhost:21` (explizites TLS) |
 | Storage-UI (nur Admins, Basic Auth) | http://localhost:9010 |
 
-Beim ersten Start wird – sofern `IFS_ADMIN_PASSWORD` gesetzt ist – ein Admin und das
-Wurzelverzeichnis angelegt.
+Beim ersten Start wird – sofern `IFS_ADMIN_PASSWORD` gesetzt ist – ein Admin und dessen
+**Home (Wurzel)** angelegt; jeder neu angelegte Benutzer erhält automatisch ein eigenes
+Home (Per-User-Wurzel).
 
 > **Objektspeicher:** Standard ist **SeaweedFS** als lokaler S3-kompatibler Dienst mit
 > persistentem Volume `s3-data`. Für externes S3 (AWS/Ceph/Wasabi) einfach
@@ -138,15 +139,20 @@ Die wichtigsten:
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `IFS_DATABASE_URL` | SQLAlchemy-URL | `postgresql+psycopg://ifs:ifs@localhost:5432/ifs` |
+| `IFS_DB_PASSWORD` | DB-Passwort (von Compose zur URL zusammengesetzt) | `ifs` |
 | `IFS_AUTO_CREATE_SCHEMA` | Schema beim Start anlegen (Dev) | `false` |
-| `IFS_JWT_SECRET` | Schlüssel für Access-Tokens | `change-me` |
+| `IFS_JWT_SECRET` | Schlüssel für Access-Tokens (min. 32 Zeichen; in Produktion Pflicht) | *(leer)* |
 | `IFS_S3_ENDPOINT_URL` | S3-Endpunkt (leer = AWS) | – |
 | `IFS_S3_BUCKET` | Bucket für Blobs | `ifs` |
 | `IFS_S3_SSE` | Serverseitige Verschlüsselung | `AES256` |
 | `IFS_UPLOAD_SPOOL_DIR` | Temp-Verzeichnis für Uploads | `/var/lib/ifs/spool` |
 | `IFS_MAX_UPLOAD_SIZE` | Max. Dateigröße in Bytes (0 = ∞) | `0` |
+| `IFS_SHARE_UPLOAD_MAX_SIZE` | Max. Größe öffentlicher Drop-Link-Uploads (0 = ∞) | `104857600` |
+| `IFS_SHARE_UPLOAD_MAX_REQUESTS` | Rate-Limit öffentliche Share-Uploads (pro Freigabe+IP) | `60` |
 | `IFS_FTP_PASSIVE_PORTS` | Passive-Portrange | `30000-30100` |
 | `IFS_FTP_MASQUERADE_ADDRESS` | nach außen sichtbare FTPS-Adresse (Docker/NAT: zwingend) | – |
+| `IFS_MONITOR_DISK_PATH` | Pfad für die Speicherbelegung im Admin-Panel | `/` |
+| `IFS_SEAWEEDFS_STATUS_URL` | SeaweedFS-Volume-Status fürs Admin-Panel | *(leer)* |
 
 ---
 
@@ -177,6 +183,7 @@ PATCH  /api/uploads/{id}               Chunk anhängen (Header Upload-Offset)
 POST   /api/uploads/{id}/complete      abschließen
 POST   /api/archive/jobs               ZIP-Erstellung starten (Fortschritt)
 GET    /api/archive/jobs/{token}       ZIP-Fortschritt abfragen
+DELETE /api/archive/jobs/{token}       ZIP-Auftrag abbrechen
 GET    /api/archive/{token}            fertiges ZIP herunterladen
 POST   /api/shares                     Freigabelink erstellen
 GET    /api/shares/{token}/content     öffentlicher Download (Ordner als ZIP)
@@ -193,14 +200,17 @@ GET    /api/roles?scope=...            Rollen auflisten (Admin)
 POST   /api/roles                      Rolle anlegen (Admin)
 POST   /api/entries/{id}/roles         Rolle auf Eintrag vergeben
 GET    /api/groups, /api/audit         Administration
+GET    /api/system/stats               Admin-Monitoring (CPU/RAM/Disk/Netz)
 ```
 
 Beispiel:
 
 ```bash
+# IFS_ADMIN_PASSWORD muss gesetzt sein (siehe .env)
 TOKEN=$(curl -s -X POST localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+  -d "{\"username\":\"admin\",\"password\":\"$IFS_ADMIN_PASSWORD\"}" \
+  | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 
 curl -H "Authorization: Bearer $TOKEN" localhost:8000/api/entries
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -220,19 +230,24 @@ src/ifs/
   security.py        Argon2, JWT, Tokens
   core/              Protokollunabhängiger Kern
     authz.py         zentrales Autorisierungsmodul (PDP)
-    namespace.py     Baum, Versionen, Rename/Move, Papierkorb
+    namespace.py     Baum, Per-User-Wurzeln, Versionen, Rename/Move, Papierkorb
+    accounts.py      Benutzer/Gruppen/Gruppenverwaltung
+    roles.py         Rollen und Zuweisungen
     content.py       S3-Blobs (CAS), Streaming, Presign
     uploads.py       resumable Upload-Sessions
-    quota.py / audit.py / events.py
+    archive.py / archive_jobs.py  ZIP-Erstellung (synchron/async mit Fortschritt)
+    system_stats.py  System-/Container-Metriken fürs Admin-Panel
+    quota.py / audit.py / events.py / ratelimit.py
   api/               REST-Endpunkte + Schemas
   ftp/               FTPS-Gateway (pyftpdlib) mit virtuellem Dateisystem
   worker.py          Outbox, Papierkorb, Blob-GC
   web/index.html     Web-Frontend (Dateimanager)
-migrations/          Alembic (für produktive Migrationen)
+migrations/          Alembic + SQL-Migrationen (sql/000x_*.sql)
 scripts/             Hilfsskripte (Dev-Zertifikat, Doku-Link-Checker, Deploy-Helfer)
 deploy/              Skripte für das Test-Deployment (SSH/Compose)
+docs/                Handbücher; tutorials/ Schritt-für-Schritt-Anleitungen
 tests/               pytest (Kern, API, FTPS-End-to-End)
-docker-compose.yml       Stack (db, api, ftp, worker) – Objektspeicher ist extern (S3)
+docker-compose.yml       Stack (db, s3, s3-ui, api, ftp, worker) – Standard: lokales SeaweedFS, alternativ externes S3
 ```
 
 ---
@@ -247,6 +262,19 @@ alembic revision --autogenerate -m "initial"
 alembic upgrade head
 ```
 
+> **Bestehende Installation (Upgrade):** Die SQL-Migrationen unter
+> `migrations/sql/` nacheinander anwenden, insbesondere
+> `0004_unique_entry_names.sql`, `0005_share_overwrite.sql` und
+> `0006_per_user_roots.sql`. **Vor** dem Unique-Index aus 0006 muss für jeden
+> Benutzer eine Wurzel existieren (Per-User-Wurzel), sonst schlägt die Migration
+> fehl. Beispiel:
+>
+> ```bash
+> for f in migrations/sql/000*.sql; do
+>   docker compose exec -T db psql -U ifs -d ifs < "$f"
+> done
+> ```
+
 ---
 
 ## Bewusste MVP-Einschränkungen
@@ -254,7 +282,7 @@ alembic upgrade head
 - Resumable Uploads spoolen lokal (Temp-Datei) und laden erst beim Abschluss nach S3.
   Für sehr große Dateien ist der direkte S3-Multipart-Upload der nächste Ausbau.
 - `STOU` (Store Unique) wird nicht unterstützt.
-- Es gibt noch keinen WebDAV-Endpunkt und keine Versionierungs-/Papierkorb-UI.
+- Es gibt noch keinen WebDAV-Endpunkt. Versionierungs- und Papierkorb-UI sind vorhanden.
 - Der Core ist synchron; die Streaming-Endpunkte laufen als synchrone Aufrufe im
   ASGI-Thread. Bei hoher Nebenläufigkeit wäre ein async-Umbau sinnvoll.
 - Kein Virenscanner und keine Volltextsuche (in der Architektur für Stufe 2 vorgesehen).

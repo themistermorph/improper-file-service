@@ -48,7 +48,8 @@ docker compose ps
 ```
 
 Warte, bis `db` als `healthy` erscheint. Beim ersten Start legt die API den Admin und
-das Wurzelverzeichnis an. Als Objektspeicher dient standardmäßig **lokales SeaweedFS**
+dessen **Home (Wurzel)** an; jeder neu angelegte Benutzer erhält automatisch ein eigenes
+Home (Per-User-Wurzel). Als Objektspeicher dient standardmäßig **lokales SeaweedFS**
 (persistentes Volume `s3-data`; Details in [Installation](../docs/installation.md)).
 
 ---
@@ -62,7 +63,7 @@ curl http://localhost:8000/healthz
 Erwartete Antwort:
 
 ```json
-{"status":"ok","users":1,"entries":1}
+{"status":"ok"}
 ```
 
 Öffne die Web-UI: <http://localhost:8000> und melde dich an

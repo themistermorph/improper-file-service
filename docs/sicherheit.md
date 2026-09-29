@@ -264,7 +264,8 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   sind nur für den Eigentümer lesbar; das Storage-UI-Passwort wird nicht mehr ausgegeben.
 - **N7 (Folge-Review) – Aufräumen/SSRF:** `delete_user` entfernt Rollenzuweisungen; der
   SeaweedFS-Status-Abruf erlaubt nur `http`/`https` (kein `file://` u. Ä.).
-- **Betriebliches:** Der Objektspeicher wird extern betrieben (kein lokaler Storage-Dienst);
+- **Betriebliches:** Der Objektspeicher wird standardmäßig **lokal** als
+  SeaweedFS-Container betrieben (Volume `s3-data`), alternativ extern (AWS/Ceph/Wasabi);
   der In-Memory-Login-Limiter ist pro Prozess (dokumentiert) – für mehrere API-Worker ist
   ein gemeinsamer Store nötig.
 
