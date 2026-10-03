@@ -11,8 +11,10 @@ Interaktive Dokumentation: `GET /docs` (Swagger UI), `GET /redoc`, Schema unter
 
 ### Authentifizierung
 
-Alle Endpunkte außer Login, Freigabe-Download, öffentlicher Galerie (`/api/published`),
-Health und Version benötigen einen Bearer-Token:
+Alle Endpunkte außer Login, Health, Version, öffentlicher Galerie (`/api/published`),
+Freigabe-Download (`/api/shares/{token}/content`) sowie der tokenbasierten Vorschau- und
+Archiv-Endpunkte (`/api/preview/{token}`, `/api/archive/{token}`,
+`/api/archive/jobs/{token}`) benötigen einen Bearer-Token:
 
 ```
 Authorization: Bearer <access_token>
@@ -58,6 +60,7 @@ Validierungs- und Framework-Fehler (FastAPI) liefern:
 | `412` | Vorbedingung fehlgeschlagen (ETag, reserviert) |
 | `413` | Datei zu groß / Quota |
 | `416` | Range nicht erfüllbar (mit `Content-Range: bytes */<size>`) |
+| `429` | Zu viele Anfragen (Rate-Limit, u. a. Login, Share-Passwort/-Upload, Veröffentlichungs-Download; `Retry-After`) |
 
 ### Eintragstyp `EntryOut`
 
@@ -199,7 +202,9 @@ dass ein write-only-Eintrag in einen lesbaren Ordner verschoben und dort gelesen
 Kopiert einen Eintrag. Dateien teilen den Blob des Originals (kein Datenkopieren im
 Objektspeicher, eigene Version 1); **Ordner werden samt aktivem Teilbaum rekursiv
 kopiert** (Papierkorb-Einträge ausgenommen). Die Quota des Kopierenden wird einmalig
-für die Summe aller kopierten Dateien geprüft (`413` bei Überschreitung). `201`.
+für die Summe aller kopierten Dateien geprüft (`413` bei Überschreitung). Erfordert
+`write` auf dem Ziel sowie zusätzlich `read` **und** `share` auf der Quelle – eine Kopie
+gehört dem Kopierenden und ist damit unabhängig weiterverteilbar. `201`.
 
 | Feld | Typ | Pflicht |
 |---|---|---|
@@ -231,7 +236,7 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" localhost:8000/api/entries/$
 **Regeln:** Ein gelöschter Ordner erscheint **einmal** (nicht mit allen Kindern). Beim
 Wiederherstellen wird der Teilbaum reaktiviert; existiert am Ziel bereits ein aktiver
 Eintrag gleichen Namens, antwortet die API mit `409` – dann `new_name` mitgeben.
-Wiederherstellen erfordert das `delete`-Recht (oder Besitz/Admin) am Eintrag **sowie
+Wiederherstellen erfordert das `delete`-Recht (oder Besitz) am Eintrag **sowie
 `read` auf dem Eintrag und `write` auf dem Zielordner** – sonst `403`. Nach
 Ablauf von `IFS_TRASH_RETENTION_DAYS` (Standard 30) entfernt der Worker die Einträge
 endgültig (Blob-GC entfernt danach unreferenzierte Inhalte).
@@ -312,9 +317,10 @@ Das Archiv wird serverseitig in eine temporäre Datei geschrieben und gestreamt 
 Speicherbedarf), danach automatisch gelöscht.
 
 **Hintergrund-Jobs (Fortschritt):** Die WebUI nutzt `/api/archive/jobs`, pollt den
-Fortschritt und startet den Download erst bei `ready`. Jobs laufen nach 1 Stunde ab bzw.
-werden nach dem Download entfernt. Der direkte Weg über `archive-token` bleibt kompatibel
-und erstellt das ZIP synchron (Token 5 Minuten gültig).
+Fortschritt und startet den Download erst bei `ready`. Der Status-Token ist 1 Stunde
+gültig; der prozesslokale Job wird zusätzlich nach 30 Minuten aufgeräumt bzw. nach dem
+Download entfernt. Der direkte Weg über `archive-token` bleibt kompatibel und erstellt
+das ZIP synchron (Token 5 Minuten gültig).
 
 ```bash
 JOB=$(curl -s -X POST localhost:8000/api/archive/jobs -H "Authorization: Bearer $TOKEN" \
@@ -574,16 +580,20 @@ Antwort: `ShareDetailOut`. Widerrufen entfernt den Link endgültig (`GET`/Downlo
 Eine Veröffentlichung stellt eine **Datei oder einen Ordner** ohne Anmeldung in der
 öffentlichen Galerie unter `/published` bereit. Ordner werden beim Download als **ZIP**
 geliefert (wie bei Freigaben). Die Veröffentlichung ist schlanker als eine Freigabe (kein
-Passwort, kein Ablauf, kein Downloadlimit) und wird in `published_entries` geführt.
-Erforderlich sind `read`- und `share`-Recht am Eintrag.
+Passwort, kein Ablauf, kein konfigurierbares Downloadlimit) und wird in
+`published_entries` geführt. Erforderlich sind `read`- und `share`-Recht am Eintrag;
+die eigene **Wurzel** (`parent_id IS NULL`) kann nicht veröffentlicht werden (`400`).
 
 | Methode & Pfad | Auth | Beschreibung |
 |---|---|---|
-| `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, type, size, mime, published_by_username, published_at }]` |
-| `GET /api/published/{entry_id}/content` | – | Öffentlicher Download: Datei (Range-Support) bzw. Ordner (ZIP) |
-| `GET /api/published/mine` | Bearer | Eigene Veröffentlichungen inkl. `path` (Systemadmins sehen alle) |
-| `POST /api/published/{entry_id}` | Bearer | Datei veröffentlichen (`201`; idempotent) |
-| `DELETE /api/published/{entry_id}` | Bearer | Veröffentlichung zurückziehen (`204`) |
+| `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, type, size, mime, published_by_username, published_at }]`. `q` filtert den Namen; `%`, `_` und `\` werden literal behandelt. |
+| `GET /api/published/{entry_id}/content` | – | Öffentlicher Download: Datei (Range-Support) bzw. Ordner (ZIP). Rate-limitiert pro Eintrag+IP (`429` mit `Retry-After`). |
+| `GET /api/published/mine` | Bearer | Eigene Veröffentlichungen inkl. `path`; Systemadmins sehen zusätzlich fremde, bei diesen wird `path` ausgelassen. |
+| `POST /api/published/{entry_id}` | Bearer | Datei oder Ordner veröffentlichen (`201`; idempotent – erneutes Veröffentlichen meldet weiterhin den ursprünglichen `published_by_username`). |
+| `DELETE /api/published/{entry_id}` | Bearer | Veröffentlichung zurückziehen (`204`). |
+
+Anonyme Downloads sind begrenzt über `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` (Standard 120)
+je `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS` (Standard 300 s); bei Überschreitung `429`.
 
 Die Galerie-Seite ist unter `GET /published` erreichbar und lädt ihre Daten aus
 `GET /api/published`.
@@ -592,11 +602,13 @@ Die Galerie-Seite ist unter `GET /published` erreichbar und lädt ihre Daten aus
 > Deaktivieren oder Löschen eines Kontos werden zugehörige Veröffentlichungen
 > automatisch zurückgezogen.
 
+Ausführlich: [Tutorial 11](../tutorials/11-veroeffentlichungen.md).
+
 ---
 
 ## 8. Benutzer und Administration
 
-### 7.1 Selbstbedienung (jeder angemeldete Benutzer)
+### 8.1 Selbstbedienung (jeder angemeldete Benutzer)
 
 | Methode & Pfad | Beschreibung |
 |---|---|
@@ -611,7 +623,7 @@ Die Galerie-Seite ist unter `GET /published` erreichbar und lädt ihre Daten aus
 > Nach einer Passwortänderung wird die **Token-Version** des Benutzers erhöht; alle
 > bisherigen Tokens sind sofort ungültig (Neuanmeldung erforderlich).
 
-### 7.2 Benutzerverwaltung (nur globaler Admin)
+### 8.2 Benutzerverwaltung (nur globaler Admin)
 
 | Methode & Pfad | Beschreibung |
 |---|---|
@@ -631,7 +643,7 @@ Die Galerie-Seite ist unter `GET /published` erreichbar und lädt ihre Daten aus
 werden (`409`). Deaktivieren invalidiert alle Tokens des Benutzers. Besitzt der Benutzer
 Dateien, verlangt das Löschen `transfer_to` (`409` sonst).
 
-### 7.3 Gruppen, ACLs, Audit
+### 8.3 Gruppen, ACLs, Audit
 
 | Methode & Pfad | Beschreibung |
 |---|---|
@@ -674,7 +686,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 Ausführlich: [Tutorial 5](../tutorials/05-benutzer-gruppen-rechte.md).
 
-### 7.4 Rollen
+### 8.4 Rollen
 
 Rollen sind benannte Rechtebündel mit `scope` **`system`** (global) oder **`resource`**
 (auf Einträge, vererbt sich auf Nachfahren). Eingebaute Rollen sind schreibgeschützt.
@@ -729,7 +741,8 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 | Aktion | benötigtes Recht |
 |---|---|
 | Auflisten/Lesen/Download | `read` |
-| Anlegen/Upload/Umbenennen/Kopieren (Ziel) | `write` |
+| Anlegen/Upload/Umbenennen (Ziel) | `write` |
+| Kopieren | `read` + `share` auf der Quelle, `write` auf dem Ziel |
 | Verschieben | `write` auf Quelle und Ziel, zusätzlich `read` auf der Quelle |
 | Löschen | `delete` |
 | Freigabe erstellen | `read` + `share` |

@@ -13,6 +13,10 @@ Arbeitsverzeichnis (siehe `.env.example`).
 - Werte sind typisiert (Pydantic); ein ungültiger Wert verhindert den Start mit klarer
   Fehlermeldung.
 
+> **Ausnahme:** `IFS_S3_UI_USER` und `IFS_S3_UI_PASSWORD` werden nur vom Deploy-Skript
+> `deploy/setup-seaweedfs.sh` für die SeaweedFS-UI verwendet; die Anwendung selbst
+> wertet sie nicht aus.
+
 ---
 
 ## Allgemein
@@ -29,7 +33,7 @@ Arbeitsverzeichnis (siehe `.env.example`).
 |---|---|---|---|
 | `IFS_DATABASE_URL` | string | `postgresql+psycopg://ifs:ifs@localhost:5432/ifs` | SQLAlchemy-URL. PostgreSQL im Betrieb, SQLite nur für Tests. |
 | `IFS_DB_PASSWORD` | string | `ifs` | Nur für `docker-compose`: Passwort für den `db`-Dienst und die zusammengesetzte `IFS_DATABASE_URL`. In Produktion ändern. |
-| `IFS_AUTO_CREATE_SCHEMA` | bool | `false` | Legt beim Start Tabellen per `create_all` an. **Nur Dev/Erststart**, in Produktion `false` und Alembic nutzen. |
+| `IFS_AUTO_CREATE_SCHEMA` | bool | `false` | Legt beim Start Tabellen per `create_all` an. **Nur Dev/Erststart**, in Produktion `false` und Migrationen nutzen (siehe [Betrieb](betrieb.md)). |
 
 > In `IFS_ENVIRONMENT=prod` verweigert der Start, wenn `IFS_DATABASE_URL` die
 > Default-Zugangsdaten (`ifs:ifs`, `postgres:postgres`, `root:root`, `admin:admin`) enthält.

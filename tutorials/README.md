@@ -15,6 +15,7 @@ nennt die Voraussetzungen am Anfang.
 | 8 | [API-Anbindung mit Python](08-api-anbindung-python.md) | Python 3.11+ |
 | 9 | [Produktiv-Deployment](09-produktiv-deployment.md) | Server, Domain, Zertifikate |
 | 10 | [Troubleshooting](10-troubleshooting.md) | laufendes IFS |
+| 11 | [Veröffentlichungen](11-veroeffentlichungen.md) | laufendes IFS |
 
 > **Per-User-Wurzel:** Jeder Benutzer hat ein eigenes Home. Von anderen Benutzern
 > freigegebene Einträge erscheinen in der Web-UI unter **„Mit mir geteilt"**
@@ -25,3 +26,7 @@ nennt die Voraussetzungen am Anfang.
 - `HOST` ist die Basis-URL, z. B. `http://localhost:8000`.
 - `TOKEN` ist ein gültiger Bearer-Token aus dem Login (Login-Passwort: `$IFS_ADMIN_PASSWORD`).
 - `ID`, `GROUP_ID` usw. sind Platzhalter für zurückgegebene UUIDs.
+
+---
+
+Handbücher: [`../docs/README.md`](../docs/README.md)

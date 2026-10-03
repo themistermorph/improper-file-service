@@ -184,9 +184,10 @@ python -m ifs.cli run-worker   # Hintergrundjobs
 
 > **Pflicht für bestehende Installationen (Per-User-Wurzel):** Die SQL-Migrationen
 > unter `migrations/sql/` nacheinander anwenden – insbesondere
-> `0004_unique_entry_names.sql`, `0005_share_overwrite.sql` und
-> `0006_per_user_roots.sql`. **Vor** dem Unique-Index aus 0006 muss für jeden
-> Benutzer eine Wurzel existieren. Beispiel:
+> `0004_unique_entry_names.sql`, `0005_share_overwrite.sql`,
+> `0006_per_user_roots.sql`, `0007_performance_indexes.sql` und
+> `0008_published_entries.sql` (öffentliche Galerie). **Vor** dem Unique-Index aus 0006
+> muss für jeden Benutzer eine Wurzel existieren. Beispiel:
 > ```bash
 > for f in migrations/sql/000*.sql; do
 >   docker compose exec -T db psql -U ifs -d ifs < "$f"
@@ -206,8 +207,8 @@ docker compose up -d
 ```bash
 git pull
 .venv\Scripts\python -m pip install -e .
-# Migrationen (SQL unter migrations/sql/ sowie ggf. alembic upgrade head)
-alembic upgrade head
+# Migrationen anwenden (SQL unter migrations/sql/, in Reihenfolge)
+for f in migrations/sql/000*.sql; do psql "$IFS_DATABASE_URL" < "$f"; done
 # Dienste neu starten
 ```
 

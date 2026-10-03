@@ -2,7 +2,9 @@
 # Preflight: prüft die S3-Konfiguration und die Kompatibilität (kein Eingriff am Betrieb).
 # Voraussetzung: .env mit IFS_S3_* ist gesetzt und der Stack läuft mindestens mit `db`.
 set -uo pipefail
-cd /home/ifs/ifs
+# Unabhängig vom Aufrufpfad ins Projektwurzelverzeichnis wechseln (lokaler
+# Checkout wie auch Deployment unter /home/ifs/ifs).
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "== S3-Preflight =="
 docker compose exec -T api python - <<'PY'

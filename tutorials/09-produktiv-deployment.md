@@ -49,7 +49,7 @@ sudo mkdir -p /opt/ifs && cd /opt/ifs
 IFS_ENVIRONMENT=prod
 IFS_LOG_LEVEL=INFO
 IFS_DATABASE_URL=postgresql+psycopg://ifs:GEHEIM@db:5432/ifs
-IFS_AUTO_CREATE_SCHEMA=false
+IFS_AUTO_CREATE_SCHEMA=false   # Achtung: die Standard-Compose überschreibt das (siehe Abschnitt 7)
 IFS_JWT_SECRET=<- 48+ zufällige Bytes ->
 IFS_S3_ENDPOINT_URL=                          # leer = AWS S3
 IFS_S3_REGION=eu-central-1
@@ -134,14 +134,36 @@ Der Passive-Bereich muss exakt dem `IFS_FTP_PASSIVE_PORTS` entsprechen.
 
 ---
 
-## 7. Starten und migrieren
+## 7. Starten und Schema bereitstellen
+
+> **Achtung, `IFS_AUTO_CREATE_SCHEMA`:** Der `api`-Dienst im mitgelieferten
+> `docker-compose.yml` setzt `IFS_AUTO_CREATE_SCHEMA: "true"` **hart** im
+> `environment`-Block. Compose-`environment` überschreibt `env_file` – der Wert
+> `IFS_AUTO_CREATE_SCHEMA=false` aus der `.env` wirkt in dieser Standard-Compose also
+> **nicht**. Für den Produktivbetrieb entweder den Eintrag in `docker-compose.yml` (bzw.
+> einem Override) auf `"false"` setzen **und** die Migrationen selbst anwenden, oder
+> bewusst bei `true` bleiben (Automatik) und die Migrationen für bestehende
+> Installationen trotzdem anwenden.
+
+**Nicht** über `alembic upgrade head` im Container migrieren: Das `Dockerfile` kopiert
+nur `pyproject.toml`, `requirements.txt` und `src` – **nicht** `alembic.ini` bzw.
+`migrations/`, und `migrations/versions/` ist leer. `docker compose run --rm api alembic
+upgrade head` scheitert daher („No config file 'alembic.ini' found"). Nutze stattdessen
+die **SQL-Migrationen** unter `migrations/sql/`:
 
 ```bash
 docker compose build
-docker compose run --rm api alembic upgrade head
-docker compose up -d
+docker compose up -d          # startet DB + API (Basisschema per create_all)
 docker compose ps
+
+# SQL-Migrationen in Reihenfolge anwenden (idempotent, inkl. 0008_published_entries.sql)
+for f in migrations/sql/000*.sql; do
+  docker compose exec -T db psql -U ifs -d ifs < "$f"
+done
 ```
+
+Die Migrationen sind idempotent (`IF NOT EXISTS`) und können wiederholt angewendet werden.
+Für weitere Schemaänderungen siehe [Betrieb](../docs/betrieb.md#7-upgrades-und-migrationen).
 
 Erster Login in der Web-UI → **Admin-Passwort ändern** (bzw. neuen Admin anlegen und den
 Seed-Account deaktivieren).
@@ -182,7 +204,9 @@ vergeben oder einen TCP-Load-Balancer einsetzen.
 ## 11. Go-Live-Checkliste
 
 - [ ] `IFS_JWT_SECRET` und Admin-Passwort stark und geheim
-- [ ] `IFS_AUTO_CREATE_SCHEMA=false`, Migrationen ausgeführt
+- [ ] `IFS_AUTO_CREATE_SCHEMA` im `api`-Dienst explizit auf `false` gestellt (die
+      Standard-Compose erzwingt sonst `"true"`), SQL-Migrationen
+      `migrations/sql/000*.sql` ausgeführt
 - [ ] HTTPS mit gültigem Zertifikat, HTTP→HTTPS-Redirect
 - [ ] FTPS-Zertifikat gültig, Masquerade gesetzt, Passive-Range per Firewall offen
 - [ ] Objektspeicher mit Verschlüsselung (`IFS_S3_SSE`)

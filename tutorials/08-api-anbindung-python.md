@@ -14,6 +14,7 @@ Download und resumable Upload.
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 import httpx
@@ -113,7 +114,7 @@ class IFSClient:
 
 
 if __name__ == "__main__":
-    ifs = IFSClient("http://localhost:8000", "admin", "admin")
+    ifs = IFSClient("http://localhost:8000", "admin", os.environ["IFS_ADMIN_PASSWORD"])
 
     project = ifs.mkdir("python-demo")
     print("Ordner:", project["path"])

@@ -29,13 +29,13 @@ src/ifs/
     quota.py         Verbrauch/Quota-Prüfung
     audit.py         Audit-Log
     events.py        Outbox
-    ratelimit.py     Login-/Upload-Rate-Limit
+    ratelimit.py     Login-/Upload-/Veröffentlichungs-Rate-Limit
   api/               FastAPI-Router + Pydantic-Schemas
   ftp/               FTPS-Gateway (pyftpdlib) + virtuelles Dateisystem
   worker.py          Hintergrundjobs
-  web/index.html     Web-Frontend
+  web/               Web-Frontend (index.html, published.html)
 tests/               pytest (Kern, API, FTPS-End-to-End)
-migrations/          Alembic
+migrations/          Alembic-Konfiguration + SQL-Migrationen (sql/)
 scripts/             Hilfsskripte
 ```
 
@@ -49,8 +49,9 @@ Protokollen technisch erzwungen.
 
 Der Kern ist bewusst **synchron** (SQLAlchemy 2.0 sync + boto3):
 
-- FastAPI-Endpunkte sind überwiegend `def` und laufen im Threadpool; Streaming-Endpunkte
-  sind `async` und rufen den synchronen Kern direkt auf.
+- FastAPI-Endpunkte sind überwiegend `def` und laufen im Threadpool; nur die
+  **Upload**-Streaming-Endpunkte sind `async` und rufen den synchronen Kern direkt auf.
+  Download-Streaming bleibt `def` im Threadpool.
 - Das FTPS-Gateway (pyftpdlib ist synchron) nutzt **denselben** Kern ohne Duplikation.
 
 Ein async-Umbau wäre ein isoliertes, größeres Vorhaben (eigener ADR) und erst bei sehr

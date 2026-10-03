@@ -86,15 +86,19 @@ Ablauf gelten unverändert).
 FOLDER=$(curl -s -X POST $HOST/api/folders -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"name":"team"}' | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST $HOST/api/shares -H "$AUTH" -H 'Content-Type: application/json' \
-  -d "{\"entry_id\":\"$FOLDER\"}" | python -m json.tool
+# Eigene Freigabe für den Ordner – Token separat erfassen!
+TOKEN_FOLDER=$(curl -s -X POST $HOST/api/shares -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"entry_id\":\"$FOLDER\"}" | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
 
-curl -s "$HOST/api/shares/$TOKEN_SHARE/content/team.zip" -o team.zip
+curl -s "$HOST/api/shares/$TOKEN_FOLDER/content/team.zip" -o team.zip
 unzip -l team.zip
 ```
 
+> Der Ordner-Download nutzt das **Ordner-Token** (`$TOKEN_FOLDER`), nicht das Token der
+> Datei-Freigabe aus Abschnitt 2 (`$TOKEN_SHARE`).
+
 > **`curl -O`:** Da der Dateiname im Pfad steht, speichert
-> `curl -O "$HOST/api/shares/$TOKEN_SHARE/content/team.zip"` automatisch als
+> `curl -O "$HOST/api/shares/$TOKEN_FOLDER/content/team.zip"` automatisch als
 > `team.zip`. (Der Header `Content-Disposition` nennt den Namen zusätzlich, was mit
 > `curl -OJ` auch über `/content` funktioniert.)
 
@@ -120,8 +124,12 @@ vorhandene Dateien ersetzen, muss das bei der Freigabe erlaubt werden
 
 ## 4. Metadaten abrufen
 
+Die Freigabe ist passwortgeschützt, daher braucht auch der Metadaten-Abruf das Passwort
+im Header `X-Share-Password` – sonst antwortet der Dienst mit `401 Unauthorized`.
+(Alternativ mit Bearer-Token: `GET $HOST/api/shares?entry_id=$ENTRY`.)
+
 ```bash
-curl -s "$HOST/api/shares/$TOKEN_SHARE" | python -m json.tool
+curl -s -H "X-Share-Password: geheim-123" "$HOST/api/shares/$TOKEN_SHARE" | python -m json.tool
 ```
 
 ```json
@@ -141,12 +149,22 @@ curl -s "$HOST/api/shares/$TOKEN_SHARE" | python -m json.tool
 
 ## 5. Downloadlimit testen
 
+In Abschnitt 3 wurde bereits **ein** Download verbraucht (`max_downloads = 3`). Es
+bleiben also noch zwei erfolgreiche Abrufe; der dritte liefert `410 Gone`:
+
 ```bash
-# Drei weitere Abrufe (Limit = 3 insgesamt)
 for i in 1 2 3; do
   curl -s -o /dev/null -w "Download $i: %{http_code}\n" \
     -H "X-Share-Password: geheim-123" "$HOST/api/shares/$TOKEN_SHARE/content"
 done
+```
+
+Erwartete Ausgabe:
+
+```
+Download 1: 200
+Download 2: 200
+Download 3: 410
 ```
 
 Ab Erreichen des Limits antwortet der Dienst mit **410 Gone**.

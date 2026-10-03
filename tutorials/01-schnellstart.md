@@ -40,9 +40,16 @@ Zertifikat erzeugt: certs/ftps.crt / certs/ftps.key
 
 ---
 
-## Schritt 3 – Starten
+## Schritt 3 – Objektspeicher vorbereiten und starten
+
+Die Compose nutzt **lokales SeaweedFS** als S3-kompatiblen Speicher. Zuerst die
+Storage-Zugangsdaten und die Storage-UI-Konfiguration erzeugen – die Dateien
+`seaweedfs/s3.json` und `seaweedfs/Caddyfile` sind per `.gitignore` ausgeschlossen und
+werden daher **nicht** mitgeliefert. Ohne sie starten die Dienste `s3` und `s3-ui` nicht:
 
 ```bash
+bash deploy/setup-seaweedfs.sh     # erzeugt seaweedfs/s3.json + seaweedfs/Caddyfile
+bash deploy/preflight-s3.sh        # optional: prüft S3 (Head/Put/Get/Range/Multipart)
 docker compose up -d --build
 docker compose ps
 ```

@@ -134,6 +134,10 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 Die Kopie teilt denselben Blob (Deduplizierung), erhält aber eine eigene Version.
 
+> **Rechte:** `POST /api/entries/{id}/copy` verlangt `read` **und** `share` an der
+> Quelle sowie `write` am Zielordner. Das `share`-Recht stellt sicher, dass sich das
+> Verbot, Freigabelinks anzulegen, nicht durch Kopieren umgehen lässt.
+
 ---
 
 ## Schritt 8 – Überschreiben erzeugt eine neue Version

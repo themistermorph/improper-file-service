@@ -2,7 +2,9 @@
 # Erzeugt SeaweedFS-Zugangsdaten (S3) und den Basic-Auth-Login für die Storage-UI.
 # Aktualisiert .env und legt seaweedfs/s3.json + seaweedfs/Caddyfile an.
 set -euo pipefail
-cd /home/ifs/ifs
+# Unabhängig vom Aufrufpfad ins Projektwurzelverzeichnis wechseln (lokaler
+# Checkout wie auch Deployment unter /home/ifs/ifs).
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mkdir -p seaweedfs
 # .env enthält Secrets (JWT, Admin-, S3-Zugangsdaten) -> nur für den Eigentümer lesbar.
 touch .env

@@ -86,7 +86,6 @@ bash deploy/preflight-s3.sh
 # Bucket-Inhalt (Beispiel AWS CLI)
 aws s3 ls "s3://$IFS_S3_BUCKET"
 ```
-```
 
 ---
 
@@ -107,10 +106,10 @@ aws s3 ls "s3://$IFS_S3_BUCKET"
 
 ```bash
 # curl mit TLS
-curl -v --ssl-reqd -u admin:admin ftp://localhost/ 2>&1 | head -n 30
+curl -v --ssl-reqd -u "admin:$IFS_ADMIN_PASSWORD" ftp://localhost/ 2>&1 | head -n 30
 
 # lftp mit Debug
-lftp -d -u admin,admin ftps://localhost
+lftp -d -u "admin,$IFS_ADMIN_PASSWORD" ftps://localhost
 ```
 
 - Im `lftp`-Prompt `set ftp:passive-mode on`.
@@ -157,12 +156,12 @@ docker compose exec api sh
 # DB-Tabellen
 docker compose exec db psql -U ifs -d ifs -c '\dt'
 
-# Blobs
-mc ls --recursive local/ifs | head
+# Blobs (AWS CLI; Bucket-Name aus IFS_S3_BUCKET)
+aws s3 ls --recursive "s3://$IFS_S3_BUCKET" | head
 
-# Health/Metriken
+# Health/Metriken (TOKEN wie in Abschnitt 2; /metrics ist standardmäßig nur für Admins)
 curl -s localhost:8000/healthz
-curl -s localhost:8000/metrics | head
+curl -s -H "Authorization: Bearer $TOKEN" localhost:8000/metrics | head
 ```
 
 ---

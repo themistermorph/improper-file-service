@@ -20,6 +20,7 @@ Diese Dokumentation ist in zwei Teile gegliedert:
 | Große/abbrechende Uploads fortsetzen | [Tutorial 4 – Resumable Uploads](../tutorials/04-resumable-uploads.md) |
 | Benutzer, Gruppen und Rechte setzen | [Tutorial 5 – Benutzer & Rechte](../tutorials/05-benutzer-gruppen-rechte.md) |
 | Dateien mit Dritten teilen | [Tutorial 6 – Freigabelinks](../tutorials/06-freigabelinks.md) |
+| Dateien öffentlich veröffentlichen | [Tutorial 11 – Veröffentlichungen](../tutorials/11-veroeffentlichungen.md) |
 | Backups erstellen und wiederherstellen | [Tutorial 7 – Backup & Restore](../tutorials/07-backup-restore.md) |
 | IFS aus einer eigenen Anwendung ansprechen | [Tutorial 8 – API-Anbindung](../tutorials/08-api-anbindung-python.md) |
 | IFS produktiv betreiben | [Tutorial 9 – Produktiv-Deployment](../tutorials/09-produktiv-deployment.md) |

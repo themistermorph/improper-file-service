@@ -165,9 +165,10 @@ for f in migrations/sql/000*.sql; do
   docker compose exec -T db psql -U ifs -d ifs < "$f"
 done
 #    Vor 0006_per_user_roots.sql muss für jeden Benutzer eine Wurzel existieren.
+#    Enthält u. a. 0007_performance_indexes.sql und 0008_published_entries.sql.
 
-# 4. Ggf. Alembic-Migrationen
-docker compose run --rm api alembic upgrade head
+# 4. Alembic nur für eigene Schema-Änderungen: Das mitgelieferte Docker-Image
+#    enthält alembic.ini/migrations nicht; Standard-Upgrades laufen über Schritt 3.
 
 # 5. Rollen neu starten
 docker compose up -d

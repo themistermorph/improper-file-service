@@ -23,8 +23,9 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 - **Featurebeschreibung Ausbaustufe 2** – [`FEATURES.md`](FEATURES.md):
   Account-Manager, Papierkorb, Rollenmanagement und weitere Vorschläge.
 - **Tutorials** – Schritt-für-Schritt ab [`tutorials/01-schnellstart.md`](tutorials/01-schnellstart.md):
-  Schnellstart, HTTP-Dateien, FTPS, resumable Uploads, Rechte, Freigaben, Backup,
-  API-Anbindung, Produktiv-Deployment, Troubleshooting.
+  Schnellstart, HTTP-Dateien, FTPS, resumable Uploads, Rechte, Freigaben,
+  Veröffentlichungen (öffentliche Galerie), Backup, API-Anbindung,
+  Produktiv-Deployment, Troubleshooting.
 
 ---
 
@@ -153,6 +154,8 @@ Die wichtigsten:
 | `IFS_MAX_UPLOAD_SIZE` | Max. Dateigröße in Bytes (0 = ∞) | `0` |
 | `IFS_SHARE_UPLOAD_MAX_SIZE` | Max. Größe öffentlicher Drop-Link-Uploads (0 = ∞) | `104857600` |
 | `IFS_SHARE_UPLOAD_MAX_REQUESTS` | Rate-Limit öffentliche Share-Uploads (pro Freigabe+IP) | `60` |
+| `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` | Rate-Limit anonymer Galerie-Downloads (pro Eintrag+IP) | `120` |
+| `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS` | Zeitfenster für `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` | `300` |
 | `IFS_FTP_PASSIVE_PORTS` | Passive-Portrange | `30000-30100` |
 | `IFS_FTP_MASQUERADE_ADDRESS` | nach außen sichtbare FTPS-Adresse (Docker/NAT: zwingend) | – |
 | `IFS_MONITOR_DISK_PATH` | Pfad für die Speicherbelegung im Admin-Panel | `/` |
@@ -263,18 +266,20 @@ docker-compose.yml       Stack (db, s3, s3-ui, api, ftp, worker) – Standard: l
 
 ## Datenbankmigrationen
 
-Für den schnellen Start legt `ifs init-db` das Schema per `create_all` an. Für
-produktive Änderungen Alembic nutzen:
+Für den schnellen Start legt `ifs init-db` das Schema per `create_all` an. Bestehende
+Installationen werden über die SQL-Migrationen unter `migrations/sql/` aktualisiert
+(siehe unten). Alembic ist für eigene, autogenerierte Schema-Änderungen vorbereitet:
 
 ```bash
-alembic revision --autogenerate -m "initial"
+alembic revision --autogenerate -m "meine Änderung"
 alembic upgrade head
 ```
 
 > **Bestehende Installation (Upgrade):** Die SQL-Migrationen unter
 > `migrations/sql/` nacheinander anwenden, insbesondere
 > `0004_unique_entry_names.sql`, `0005_share_overwrite.sql`,
-> `0006_per_user_roots.sql` und `0008_published_entries.sql`. **Vor** dem
+> `0006_per_user_roots.sql`, `0007_performance_indexes.sql` und
+> `0008_published_entries.sql`. **Vor** dem
 > Unique-Index aus 0006 muss für jeden
 > Benutzer eine Wurzel existieren (Per-User-Wurzel), sonst schlägt die Migration
 > fehl. Beispiel:

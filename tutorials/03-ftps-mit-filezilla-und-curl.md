@@ -67,7 +67,7 @@ Du siehst die IFS-Ordnerstruktur (Wurzel, `projekte`, …).
 ```bash
 FTPHOST=localhost
 USER=admin
-PASS=admin
+PASS=$IFS_ADMIN_PASSWORD
 
 # Listing
 curl --ssl-reqd -u "$USER:$PASS" "ftp://$FTPHOST/projekte/"
@@ -107,7 +107,7 @@ cat partial.txt
 ## Schritt 6 – Verbindung mit Python (`ftplib`)
 
 ```python
-import ftplib, ssl
+import ftplib, os, ssl
 
 ctx = ssl.create_default_context()
 # Nur für Dev mit selbstsigniertem Zertifikat:
@@ -117,7 +117,7 @@ ctx.verify_mode = ssl.CERT_NONE
 ftp = ftplib.FTP_TLS(context=ctx)
 try:
     ftp.connect("localhost", 21, timeout=10)
-    ftp.login("admin", "admin")
+    ftp.login("admin", os.environ["IFS_ADMIN_PASSWORD"])
     ftp.prot_p()
 
     print("PWD:", ftp.pwd())
