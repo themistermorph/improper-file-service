@@ -4,7 +4,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.1.2] – 2026-10-03
 
 ### Performance
 - **Parallel-Optimierung über API, Kern, FTPS, Web-UI und Worker** – ohne Änderung des
@@ -130,5 +130,6 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Login-Rate-Limit ist pro Prozess (In-Memory); für den vorgesehenen Maßstab
   (eine API-Instanz) ausgelegt.
 
+[0.1.2]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.2
 [0.1.1]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.1
 [0.1.0]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.0
