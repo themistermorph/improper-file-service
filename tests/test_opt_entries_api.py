@@ -7,7 +7,6 @@ werden memoisiert) und dass Reihenfolge, Pfade und Auswahl unverändert bleiben.
 
 from __future__ import annotations
 
-import io
 from contextlib import contextmanager
 
 import pytest
@@ -18,9 +17,9 @@ from ifs import main
 from ifs.api.entries import resolve_blob
 from ifs.core import content, namespace
 from ifs.db import get_engine, get_session_factory
-from ifs.models import Blob, BlobStatus
 
 from .conftest import make_blob, make_user
+from .helpers import auth, fake_store_blob, range_get_object
 
 
 @pytest.fixture
@@ -44,13 +43,6 @@ def query_count():
     return _counter
 
 
-def _login(client: TestClient, username: str = "admin", password: str = "admin") -> dict:
-    token = client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
-
-
 def _create_folder(
     client: TestClient, headers: dict, name: str, parent_id: str | None = None
 ) -> str:
@@ -62,34 +54,16 @@ def _create_folder(
     return response.json()["id"]
 
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    with open(local_path, "rb") as handle:
-        data = handle.read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"hello opt"
-    if start is not None or end is not None:
-        payload = payload[start or 0 : (end + 1 if end is not None else None)]
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
+_fake_get_object = range_get_object(b"hello opt")
 
 
 def test_get_entries_query_anzahl_nicht_linear_mit_kinderzahl(monkeypatch, query_count):
     """21 zusätzliche Kinder dürfen keine 21 zusätzlichen Queries auslösen."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
 
         # Gemeinsame tiefe Vorfahrenkette beider Vergleichsordner.
         level: str | None = None
@@ -120,11 +94,11 @@ def test_get_entries_query_anzahl_nicht_linear_mit_kinderzahl(monkeypatch, query
 
 
 def test_list_entries_reihenfolge_und_pfade(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
         first = _create_folder(client, headers, "OrdnerA")
         second = _create_folder(client, headers, "OrdnerB", first)
         _create_folder(client, headers, "Zulu", second)
@@ -150,10 +124,10 @@ def test_list_entries_reihenfolge_und_pfade(monkeypatch):
 
 
 def test_list_folders_pfade_und_query_anzahl(monkeypatch, query_count):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
         parent = _create_folder(client, headers, "Ebene")
         few = _create_folder(client, headers, "few", parent)
         for index in range(3):
@@ -182,15 +156,15 @@ def test_list_folders_pfade_und_query_anzahl(monkeypatch, query_count):
 
 def test_shared_oberste_einstiegspunkte_und_reihenfolge():
     with TestClient(main.app) as client:
-        admin = _login(client)
+        admin = auth(client)
         bob_id = client.post(
             "/api/users", headers=admin, json={"username": "bob-opt", "password": "geheim123"}
         ).json()["id"]
         client.post(
             "/api/users", headers=admin, json={"username": "alice-opt", "password": "geheim123"}
         )
-        alice = _login(client, "alice-opt", "geheim123")
-        bob = _login(client, "bob-opt", "geheim123")
+        alice = auth(client, "alice-opt", "geheim123")
+        bob = auth(client, "bob-opt", "geheim123")
 
         team = _create_folder(client, alice, "team")
         nested = _create_folder(client, alice, "nested", team)
@@ -221,7 +195,7 @@ def test_shared_oberste_einstiegspunkte_und_reihenfolge():
 
 def test_trash_pfade_und_reihenfolge():
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
         parent = _create_folder(client, headers, "TrashBase")
         first = _create_folder(client, headers, "first", parent)
         second = _create_folder(client, headers, "second", parent)

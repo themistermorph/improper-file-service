@@ -10,6 +10,7 @@ from ifs.core import accounts
 from ifs.errors import BadRequest, Conflict
 
 from .conftest import make_user
+from .helpers import login
 
 
 def test_create_user_and_duplicate(db):
@@ -81,17 +82,9 @@ def test_group_membership(db):
 # --- API ------------------------------------------------------------------
 
 
-def _login(client: TestClient, username: str = "admin", password: str = "admin") -> str:
-    response = client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    )
-    assert response.status_code == 200, response.text
-    return response.json()["access_token"]
-
-
 def test_user_management_api():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
 
         created = client.post(
             "/api/users",
@@ -136,7 +129,7 @@ def test_user_management_api():
         ).status_code == 204
 
         # Nicht-Admin darf die Benutzerliste nicht sehen
-        erika_token = _login(client, "erika", "geheim123")
+        erika_token = login(client, "erika", "geheim123")
         assert client.get(
             "/api/users", headers={"Authorization": f"Bearer {erika_token}"}
         ).status_code == 403
@@ -148,13 +141,13 @@ def test_user_management_api():
 
 def test_self_service_password_change():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         client.post(
             "/api/users",
             headers=admin,
             json={"username": "frank", "password": "start1234"},
         )
-        token = _login(client, "frank", "start1234")
+        token = login(client, "frank", "start1234")
         auth = {"Authorization": f"Bearer {token}"}
 
         assert client.patch("/api/me", headers=auth, json={"display_name": "Frank"}).status_code == 200
@@ -167,7 +160,7 @@ def test_self_service_password_change():
         # Alter Token ist durch die Token-Version ungültig geworden
         assert client.get("/api/me", headers=auth).status_code == 401
         # Neues Passwort funktioniert
-        assert _login(client, "frank", "neuespass9")
+        assert login(client, "frank", "neuespass9")
 
 
 def _new_user(client, admin, username, password="geheim123", is_admin=False):
@@ -182,7 +175,7 @@ def _new_user(client, admin, username, password="geheim123", is_admin=False):
 
 def test_bulk_user_active():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         first = _new_user(client, admin, "bulk-a")
         second = _new_user(client, admin, "bulk-b")
 
@@ -212,7 +205,7 @@ def test_bulk_user_active():
 
 def test_bulk_user_active_protects_last_admin():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         me = client.get("/api/users?q=admin", headers=admin).json()["items"][0]["id"]
 
         response = client.post(
@@ -225,7 +218,7 @@ def test_bulk_user_active_protects_last_admin():
 
 def test_bulk_user_delete_with_transfer():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         owner_id = _new_user(client, admin, "bulk-owner")
         target_id = _new_user(client, admin, "bulk-target")
 
@@ -235,7 +228,7 @@ def test_bulk_user_delete_with_transfer():
             headers=admin,
             json={"principal_type": "user", "principal_id": owner_id, "perms": ["read", "write"]},
         )
-        owner = {"Authorization": f"Bearer {_login(client, 'bulk-owner', 'geheim123')}"}
+        owner = {"Authorization": f"Bearer {login(client, 'bulk-owner', 'geheim123')}"}
         folder_id = client.post("/api/folders", headers=owner, json={"name": "owned"}).json()["id"]
 
         response = client.post(
@@ -247,15 +240,15 @@ def test_bulk_user_delete_with_transfer():
         assert response.json() == {"ok": 1, "failed": []}
         assert client.get(f"/api/users/{owner_id}", headers=admin).status_code == 404
 
-        target = {"Authorization": f"Bearer {_login(client, 'bulk-target', 'geheim123')}"}
+        target = {"Authorization": f"Bearer {login(client, 'bulk-target', 'geheim123')}"}
         assert client.get(f"/api/entries/{folder_id}", headers=target).status_code == 200
 
 
 def test_bulk_user_endpoints_require_admin():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         _new_user(client, admin, "bulk-plain")
-        plain = {"Authorization": f"Bearer {_login(client, 'bulk-plain', 'geheim123')}"}
+        plain = {"Authorization": f"Bearer {login(client, 'bulk-plain', 'geheim123')}"}
         assert client.post(
             "/api/users/bulk/active", headers=plain, json={"ids": [], "active": True}
         ).status_code in (401, 403, 422)

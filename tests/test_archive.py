@@ -9,30 +9,17 @@ from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
+
+from .helpers import fake_store_blob, fixed_get_object
 
 PAYLOAD = b"hello zip"
 
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(PAYLOAD), "ContentLength": len(PAYLOAD)}
+_fake_get_object = fixed_get_object(PAYLOAD)
 
 
 def test_folder_zip_download(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:

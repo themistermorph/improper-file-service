@@ -2,48 +2,26 @@
 
 from __future__ import annotations
 
-import io
-
 from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
 
+from .helpers import fake_store_blob, fixed_get_object, login
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(b"<html><body>hi</body></html>"), "ContentLength": 30}
-
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"<html><body>hi</body></html>")
 
 
 def test_h1_restore_requires_authorization(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob_id = client.post(
             "/api/users", headers=admin, json={"username": "bob", "password": "geheim123"}
         ).json()["id"]
-        bob = {"Authorization": f"Bearer {_login(client, 'bob', 'geheim123')}"}
+        bob = {"Authorization": f"Bearer {login(client, 'bob', 'geheim123')}"}
 
         folder = client.post("/api/folders", headers=admin, json={"name": "shared"}).json()["id"]
         assert client.post(
@@ -73,11 +51,11 @@ def test_h1_restore_requires_authorization(monkeypatch):
 
 
 def test_m1_active_content_forced_to_attachment(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "web"}).json()["id"]
 
         html = client.put(
@@ -107,11 +85,11 @@ def test_m1_active_content_forced_to_attachment(monkeypatch):
 
 
 def test_m2_share_password_and_limit(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "s"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt", headers=auth, content=b"data"
@@ -146,11 +124,11 @@ def test_m2_share_password_and_limit(monkeypatch):
 
 
 def test_n1_scoped_tokens_invalid_after_password_change(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        token = _login(client)
+        token = login(client)
         auth = {"Authorization": f"Bearer {token}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "t"}).json()["id"]
         entry = client.put(
@@ -173,15 +151,15 @@ def test_n1_scoped_tokens_invalid_after_password_change(monkeypatch):
 
 
 def test_n5_upload_rechecks_target_permission(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob_id = client.post(
             "/api/users", headers=admin, json={"username": "bob2", "password": "geheim123"}
         ).json()["id"]
-        bob = {"Authorization": f"Bearer {_login(client, 'bob2', 'geheim123')}"}
+        bob = {"Authorization": f"Bearer {login(client, 'bob2', 'geheim123')}"}
 
         folder = client.post("/api/folders", headers=admin, json={"name": "toctou"}).json()["id"]
         client.post(

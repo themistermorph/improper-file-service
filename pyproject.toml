@@ -40,7 +40,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    # Parallele Testausführung: `python -m pytest -n auto`.
+    # Parallele Testausführung (Standard über `addopts = "-q -n auto"`;
+    # abschaltbar mit `-n0`).
     "pytest-xdist>=3.6",
     # Starlette bevorzugt httpx2 für den TestClient und warnt sonst über httpx.
     "httpx2>=2.13",
@@ -78,4 +79,6 @@ ignore = ["B008", "BLE001", "SIM115", "ASYNC230", "S110"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# Parallele Ausführung als Standard (pytest-xdist). Für gezieltes Debuggen
+# einzelner Tests abschaltbar mit `-n0` (z. B. `pytest -n0 -k mytest`).
+addopts = "-q -n auto"

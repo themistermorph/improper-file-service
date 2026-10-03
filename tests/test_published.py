@@ -8,32 +8,13 @@ from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content, ratelimit
-from ifs.models import Blob, BlobStatus
+
+from .helpers import fake_store_blob, fixed_get_object, login
 
 PAYLOAD = b"published-content"
 
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(PAYLOAD), "ContentLength": len(PAYLOAD)}
-
-
-def _login(client, username, password):
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(PAYLOAD)
 
 
 def _upload(client, headers, name="f.txt", content_bytes=PAYLOAD):
@@ -46,11 +27,11 @@ def _upload(client, headers, name="f.txt", content_bytes=PAYLOAD):
 
 
 def test_publish_public_gallery_and_download(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
 
         # Vor dem Veröffentlichen ist die Galerie leer und ein Direktaufruf 404.
@@ -111,11 +92,11 @@ def test_gallery_page_defines_hidden_helper():
 
 
 def test_unpublish_removes_from_gallery(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
         client.post(f"/api/published/{entry['id']}", headers=admin)
 
@@ -127,28 +108,28 @@ def test_unpublish_removes_from_gallery(monkeypatch):
 
 
 def test_publish_requires_permission(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
 
         client.post(
             "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
         )
-        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}
 
         # Fremde Datei: kein `read`/`share` -> 403.
         assert client.post(f"/api/published/{entry['id']}", headers=sam).status_code == 403
 
 
 def test_public_name_set_change_and_clear(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
 
         # Beim Veröffentlichen einen abweichenden Namen setzen.
@@ -187,7 +168,7 @@ def test_public_name_set_change_and_clear(monkeypatch):
         client.post(
             "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
         )
-        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}
         assert client.patch(
             f"/api/published/{entry['id']}", headers=sam, json={"public_name": "Hack"}
         ).status_code == 403
@@ -196,11 +177,11 @@ def test_public_name_set_change_and_clear(monkeypatch):
 def test_publish_folder_serves_zip(monkeypatch):
     import zipfile
 
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         parent_id = client.post(
             "/api/folders", headers=admin, json={"name": "pub"}
         ).json()["id"]
@@ -233,11 +214,11 @@ def test_publish_folder_serves_zip(monkeypatch):
 
 
 def test_trash_revokes_publication(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
         client.post(f"/api/published/{entry['id']}", headers=admin)
         assert len(client.get("/api/published").json()) == 1
@@ -249,15 +230,15 @@ def test_trash_revokes_publication(monkeypatch):
 
 
 def test_deactivate_revokes_publication(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         user = client.post(
             "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
         ).json()
-        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}
         entry = _upload(client, sam)
         client.post(f"/api/published/{entry['id']}", headers=sam)
         assert len(client.get("/api/published").json()) == 1
@@ -270,18 +251,18 @@ def test_deactivate_revokes_publication(monkeypatch):
 
 
 def test_mine_isolated_between_users(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
         client.post(f"/api/published/{entry['id']}", headers=admin)
 
         client.post(
             "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
         )
-        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}
         assert client.get("/api/published/mine", headers=sam).json() == []
         # Admin sieht alle Veröffentlichungen.
         assert len(client.get("/api/published/mine", headers=admin).json()) == 1
@@ -289,14 +270,14 @@ def test_mine_isolated_between_users(monkeypatch):
 
 def test_published_download_rate_limited(monkeypatch):
     """A1: Anonyme Downloads sind pro Eintrag+IP limitiert (DoS-Schutz)."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     ratelimit.install_published_limiter(
         ratelimit.FixedWindowLimiter(max_events=1, window_seconds=60)
     )
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
         assert client.post(f"/api/published/{entry['id']}", headers=admin).status_code == 201
 
@@ -308,18 +289,18 @@ def test_published_download_rate_limited(monkeypatch):
 
 def test_mine_hides_foreign_path_for_admin(monkeypatch):
     """A2: Systemadmins sehen fremde Veröffentlichungen ohne vollen Pfad."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         own = _upload(client, admin)
         client.post(f"/api/published/{own['id']}", headers=admin)
 
         client.post(
             "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
         )
-        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}
         foreign = _upload(client, sam, name="fremd.txt", content_bytes=b"fremd-content")
         client.post(f"/api/published/{foreign['id']}", headers=sam)
 
@@ -335,11 +316,11 @@ def test_mine_hides_foreign_path_for_admin(monkeypatch):
 
 def test_publish_root_is_rejected(monkeypatch):
     """A3: Die eigene Wurzel darf nicht veröffentlicht werden."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         root_id = client.get("/api/root", headers=admin).json()["id"]
         response = client.post(f"/api/published/{root_id}", headers=admin)
         assert response.status_code == 400
@@ -347,11 +328,11 @@ def test_publish_root_is_rejected(monkeypatch):
 
 def test_republish_keeps_original_publisher(monkeypatch):
     """A4: Idempotentes Re-Publish nennt den Ersteller, nicht den Aufrufer."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         entry = _upload(client, admin)
         created = client.post(f"/api/published/{entry['id']}", headers=admin)
         assert created.status_code == 201
@@ -375,7 +356,7 @@ def test_republish_keeps_original_publisher(monkeypatch):
                 "perms": ["read", "share"],
             },
         ).status_code == 201
-        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}
         republished = client.post(f"/api/published/{entry['id']}", headers=sam)
         assert republished.status_code == 201
         assert republished.json()["published_by_username"] == "admin"
@@ -383,17 +364,17 @@ def test_republish_keeps_original_publisher(monkeypatch):
 
 def test_publisher_display_name_in_gallery(monkeypatch):
     """Der Benutzer-Anzeigename erscheint in Galerie und Verwaltungsliste."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         client.post(
             "/api/users",
             headers=admin,
             json={"username": "erika", "password": "geheim123", "display_name": "Erika M."},
         )
-        erika = {"Authorization": f"Bearer {_login(client, 'erika', 'geheim123')}"}
+        erika = {"Authorization": f"Bearer {login(client, 'erika', 'geheim123')}"}
         entry = _upload(client, erika)
         assert client.post(f"/api/published/{entry['id']}", headers=erika).status_code == 201
 

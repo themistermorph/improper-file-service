@@ -2,41 +2,17 @@
 
 from __future__ import annotations
 
-import io
-
 from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
 
-CONTENT: dict[str, bytes] = {}
-
-
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    key = f"cas/{sha[:2]}/{sha}"
-    CONTENT[key] = data
-    blob = Blob(storage_key=key, sha256=sha, size=len(data), status=BlobStatus.ready)
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = CONTENT.get(key, b"")
-    if start is not None or end is not None:
-        payload = payload[start or 0 : (end + 1 if end is not None else None)]
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
+from .helpers import fake_get_object, fake_store_blob
 
 
 def test_version_history_and_rollback(monkeypatch):
-    CONTENT.clear()
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
-    monkeypatch.setattr(content, "get_object", _fake_get_object)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
+    monkeypatch.setattr(content, "get_object", fake_get_object)
 
     with TestClient(main.app) as client:
         token = client.post(

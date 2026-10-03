@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
 from types import SimpleNamespace
 
@@ -13,38 +12,19 @@ from ifs import main
 from ifs.core import authz, content, namespace
 from ifs.errors import PermissionDenied
 from ifs.ftp.fs import IFSFilesystem
-from ifs.models import ACL, Blob, BlobStatus, PrincipalType
+from ifs.models import ACL, PrincipalType
 
 from .conftest import make_blob, make_user
+from .helpers import fake_store_blob, fixed_get_object, login
 
-
-def _fake_store_blob(db, local_path, mime=None):
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"payload"
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
-
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"payload")
 
 
 def _make_user(client, admin, username="bob", password="geheim123"):
     user_id = client.post(
         "/api/users", headers=admin, json={"username": username, "password": password}
     ).json()["id"]
-    headers = {"Authorization": f"Bearer {_login(client, username, password)}"}
+    headers = {"Authorization": f"Bearer {login(client, username, password)}"}
     return user_id, headers
 
 
@@ -66,11 +46,11 @@ def _grant(client, owner_headers, entry_id, principal_id, perms):
 
 
 def test_s1_share_requires_read(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         _alice_id, alice = _make_user(client, admin, "alice-s1")
         bob_id, bob = _make_user(client, admin, "bob-s1")
 
@@ -101,7 +81,7 @@ def test_s1_share_requires_read(monkeypatch):
 
 def test_s2_admin_cannot_self_assign_resource_role():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         admin_id = client.get("/api/me", headers=admin).json()["id"]
         _alice_id, alice = _make_user(client, admin, "alice-s2")
 
@@ -135,11 +115,11 @@ def test_s2_admin_cannot_self_assign_resource_role():
 
 
 def test_s2_admin_can_only_revoke_foreign_share(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         _alice_id, alice = _make_user(client, admin, "alice-s2b")
 
         folder = client.post("/api/folders", headers=alice, json={"name": "team"}).json()["id"]
@@ -242,7 +222,7 @@ def test_s3_ftp_append_requires_read(monkeypatch):
 
 def test_s4_bulk_tokens_and_sha256_are_bounded():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         root = client.get("/api/root", headers=admin).json()["id"]
 
         too_long = client.post(

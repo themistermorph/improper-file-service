@@ -6,6 +6,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Tests
+- **Schnellere Test-Suite:** Parallele Ausführung ist jetzt Standard
+  (`addopts = "-q -n auto"`, abschaltbar mit `-n0` für gezieltes Debuggen).
+  Wiederkehrende Test-Helfer (Login/`Authorization`, Fake-Objektspeicher) liegen
+  zentral in `tests/helpers.py`; der langsame Argon2-Hash wird in Tests durch
+  einen schnellen Hash ersetzt.
+
 ## [0.1.5] – 2026-10-03
 
 ### Fixed

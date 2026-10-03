@@ -8,16 +8,11 @@ from ifs import main
 from ifs.core import namespace
 
 from .conftest import make_user
-
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+from .helpers import login
 
 
 def _auth(client, username, password="geheim123") -> dict:
-    return {"Authorization": f"Bearer {_login(client, username, password)}"}
+    return {"Authorization": f"Bearer {login(client, username, password)}"}
 
 
 def _create_user(client, admin, username) -> str:
@@ -41,7 +36,7 @@ def test_roots_are_per_user(db):
 
 def test_api_isolation_between_users():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         _create_user(client, admin, "alice-iso")
         _create_user(client, admin, "bob-iso")
         alice = _auth(client, "alice-iso")
@@ -72,7 +67,7 @@ def test_api_isolation_between_users():
 
 def test_shared_with_me():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob_id = _create_user(client, admin, "bob-share")
         _create_user(client, admin, "alice-share")
         alice = _auth(client, "alice-share")
@@ -102,7 +97,7 @@ def test_shared_with_me():
 
 def test_bulk_user_delete_merges_into_target_root():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         carol_id = _create_user(client, admin, "carol-merge")
         target_id = _create_user(client, admin, "dave-merge")
         carol = _auth(client, "carol-merge")

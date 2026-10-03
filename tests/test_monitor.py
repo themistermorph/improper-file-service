@@ -7,20 +7,16 @@ from fastapi.testclient import TestClient
 from ifs import main
 from ifs.core import system_stats
 
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+from .helpers import login
 
 
 def test_system_stats_requires_admin():
     with TestClient(main.app) as client:
         assert client.get("/api/system/stats").status_code == 401
 
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         client.post("/api/users", headers=admin, json={"username": "mon", "password": "geheim123"})
-        user = {"Authorization": f"Bearer {_login(client, 'mon', 'geheim123')}"}
+        user = {"Authorization": f"Bearer {login(client, 'mon', 'geheim123')}"}
         assert client.get("/api/system/stats", headers=user).status_code == 403
 
         response = client.get("/api/system/stats", headers=admin)

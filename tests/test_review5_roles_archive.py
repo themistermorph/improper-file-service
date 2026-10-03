@@ -21,16 +21,11 @@ from ifs.config import get_settings
 from ifs.core import archive, archive_jobs, namespace
 
 from .conftest import make_user
-
-
-def _login(client, username: str = "admin", password: str = "admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+from .helpers import login
 
 
 def _auth(client, username: str, password: str = "geheim123") -> dict:
-    return {"Authorization": f"Bearer {_login(client, username, password)}"}
+    return {"Authorization": f"Bearer {login(client, username, password)}"}
 
 
 def _create_user(client, admin, username: str) -> str:
@@ -46,7 +41,7 @@ def _create_user(client, admin, username: str) -> str:
 
 def test_system_admin_cannot_delete_foreign_entry_assignment():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         _create_user(client, admin, "alice-r5")
         bob_id = _create_user(client, admin, "bob-r5")
         carol_id = _create_user(client, admin, "carol-r5")
@@ -155,7 +150,7 @@ def test_build_zip_unique_prefixes_for_equal_and_similar_names(db):
 
 def test_acl_set_is_audited():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         target_id = _create_user(client, admin, "target-r5")
         folder = client.post(
             "/api/folders", headers=admin, json={"name": "acl-r5"}

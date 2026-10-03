@@ -10,32 +10,13 @@ from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
+
+from .helpers import fake_store_blob, fixed_get_object, login
 
 PAYLOAD = b"job zip"
 
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(PAYLOAD), "ContentLength": len(PAYLOAD)}
-
-
-def _login(client) -> str:
-    return client.post(
-        "/api/auth/login", json={"username": "admin", "password": "admin"}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(PAYLOAD)
 
 
 def _wait_ready(client, token, timeout=10.0) -> dict:
@@ -50,11 +31,11 @@ def _wait_ready(client, token, timeout=10.0) -> dict:
 
 
 def test_archive_job_progress_and_download(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "jobs"}).json()["id"]
         client.put(
             f"/api/uploads/simple?parent_id={folder}&name=a.txt",
@@ -95,11 +76,11 @@ def test_archive_job_progress_and_download(monkeypatch):
 
 
 def test_archive_job_cancel(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "canc"}).json()["id"]
         client.put(
             f"/api/uploads/simple?parent_id={folder}&name=a.txt",
@@ -129,7 +110,7 @@ def test_archive_job_status_unknown_token():
         assert client.get("/api/archive/jobs/gibtsnicht").status_code == 401
 
         # Gültiger Token, aber kein (mehr vorhandener) Job -> 404.
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post(
             "/api/folders", headers=admin, json={"name": "unknown-job"}
         ).json()["id"]

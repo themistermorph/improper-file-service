@@ -2,53 +2,22 @@
 
 from __future__ import annotations
 
-import io
-
 from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
 
+from .helpers import auth, fake_store_blob, range_get_object
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    with open(local_path, "rb") as handle:
-        data = handle.read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}",
-        sha256=sha,
-        size=len(data),
-        status=BlobStatus.ready,
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"hello world"
-    if start is not None or end is not None:
-        begin = start or 0
-        finish = end if end is not None else len(payload) - 1
-        payload = payload[begin : finish + 1]
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
-
-
-def _login(client: TestClient) -> dict:
-    response = client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
-    assert response.status_code == 200
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+_fake_get_object = range_get_object(b"hello world")
 
 
 def test_api_flow(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
 
         response = client.get("/api/entries", headers=headers)
         assert response.status_code == 200
@@ -92,11 +61,11 @@ def test_api_flow(monkeypatch):
 
 
 def test_resumable_upload(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
         folder_id = client.post(
             "/api/folders", headers=headers, json={"name": "res"}
         ).json()["id"]

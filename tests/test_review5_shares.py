@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -13,21 +12,9 @@ from ifs.core import content, namespace
 from ifs.db import session_scope
 from ifs.models import Blob, BlobStatus
 
+from .helpers import fake_store_blob, fixed_get_object, login
 
-def _fake_store_blob(db, local_path, mime=None):
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"payload"
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
+_fake_get_object = fixed_get_object(b"payload")
 
 
 def _make_blob(db, data: bytes) -> Blob:
@@ -40,18 +27,12 @@ def _make_blob(db, data: bytes) -> Blob:
     return blob
 
 
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
-
-
 def test_upload_toctou_renames_instead_of_overwrite(monkeypatch):
     """Konkurrierende Datei während des Streamens -> Umbenennen statt Überschreiben."""
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "race"}).json()["id"]
         token = client.post(
             "/api/shares",
@@ -74,7 +55,7 @@ def test_upload_toctou_renames_instead_of_overwrite(monkeypatch):
                 parent = namespace.get_entry(other, folder_id)
                 blob = _make_blob(other, competing)
                 namespace.apply_write(other, parent, "x.txt", admin_id, blob, "text/plain")
-            return _fake_store_blob(db, local_path, mime)
+            return fake_store_blob(db, local_path, mime)
 
         monkeypatch.setattr(content, "store_blob", racing_store_blob)
 
@@ -95,11 +76,11 @@ def test_upload_toctou_renames_instead_of_overwrite(monkeypatch):
 
 def test_delete_share_writes_audit_entry(monkeypatch):
     """`DELETE /api/shares/{token}` muss als `share.revoke` auditieren."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post(
             "/api/folders", headers=admin, json={"name": "audit-share"}
         ).json()["id"]
@@ -123,10 +104,10 @@ def test_delete_share_writes_audit_entry(monkeypatch):
 
 def test_negative_max_downloads_rejected(monkeypatch):
     """Negatives `max_downloads` wird bei Create und PATCH mit 422 abgelehnt."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "limit"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt",
@@ -152,10 +133,10 @@ def test_negative_max_downloads_rejected(monkeypatch):
 
 def test_overwrite_share_replaces_existing_file(monkeypatch):
     """`overwrite=true` an der Freigabe ersetzt weiterhin bestehende Dateien."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "over"}).json()["id"]
         client.put(
             f"/api/uploads/simple?parent_id={folder}&name=keep.txt",

@@ -11,6 +11,7 @@ from ifs.errors import Conflict
 from ifs.models import PrincipalType, RoleScope
 
 from .conftest import make_user
+from .helpers import login
 
 
 def test_builtin_roles_created(db):
@@ -92,17 +93,9 @@ def test_group_role_assignment(db):
 # --- API ------------------------------------------------------------------
 
 
-def _login(client: TestClient, username: str, password: str) -> str:
-    response = client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    )
-    assert response.status_code == 200, response.text
-    return response.json()["access_token"]
-
-
 def test_roles_api_flow():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
 
         listing = client.get("/api/roles", headers=admin).json()
         names = {role["name"] for role in listing}
@@ -143,7 +136,7 @@ def test_roles_api_flow():
         )
         assert assigned.status_code == 201, assigned.text
 
-        gina = {"Authorization": f"Bearer {_login(client, 'gina', 'geheim123')}"}
+        gina = {"Authorization": f"Bearer {login(client, 'gina', 'geheim123')}"}
         assert client.get(f"/api/entries/{folder_id}", headers=gina).status_code == 200
         # Schreiben (Unterordner) ist mit "reviewer" (read,write) erlaubt:
         assert client.post(
@@ -159,7 +152,7 @@ def test_roles_api_flow():
 
 def test_system_role_grants_admin_endpoints():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         user_id = client.post(
             "/api/users",
             headers=admin,
@@ -168,7 +161,7 @@ def test_system_role_grants_admin_endpoints():
         system_roles = client.get("/api/roles?scope=system", headers=admin).json()
         admin_role = next(role for role in system_roles if role["name"] == "admin")
 
-        vera = {"Authorization": f"Bearer {_login(client, 'vera', 'geheim123')}"}
+        vera = {"Authorization": f"Bearer {login(client, 'vera', 'geheim123')}"}
         assert client.get("/api/users", headers=vera).status_code == 403
 
         assigned = client.post(

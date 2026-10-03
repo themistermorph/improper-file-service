@@ -19,6 +19,7 @@ from ifs.core import audit, system_stats
 from ifs.db import get_engine
 
 from .conftest import make_user
+from .helpers import login
 
 
 @pytest.fixture
@@ -37,12 +38,6 @@ def sql_statements():
         event.remove(engine, "before_cursor_execute", _before_cursor_execute)
 
 
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
-
-
 def _counts_sql(statements: list[str]) -> list[str]:
     """Statements, die die kombinierten users/entries-Kennzahlen abfragen."""
     return [s for s in statements if "count(" in s.lower() and "from users" in s.lower()]
@@ -59,7 +54,7 @@ def test_polling_reuses_db_metrics_within_ttl(monkeypatch, sql_statements):
     monkeypatch.setattr(system_stats, "_DB_METRICS_TTL", 60.0)
     system_stats.reset_db_metrics_cache()
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         sql_statements.clear()
         first = client.get("/api/system/stats", headers=headers)
         second = client.get("/api/system/stats", headers=headers)
@@ -118,7 +113,7 @@ def test_metrics_shares_combined_counters(monkeypatch, sql_statements):
     monkeypatch.setattr(system_stats, "_DB_METRICS_TTL", 60.0)
     system_stats.reset_db_metrics_cache()
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         assert client.get("/api/system/stats", headers=headers).status_code == 200
         sql_statements.clear()
         response = client.get("/metrics", headers=headers)
@@ -168,7 +163,7 @@ def test_audit_list_recent_filter_pagination_and_join(sql_statements, db):
 
 def test_audit_endpoint_fresh_filtered_and_uncached(sql_statements):
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         created = client.post(
             "/api/users",
             headers=headers,

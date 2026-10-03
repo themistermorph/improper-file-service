@@ -9,39 +9,18 @@ from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
 
+from .helpers import fake_store_blob, fixed_get_object, login
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"bulk"
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
-
-
-def _login(client):
-    return client.post(
-        "/api/auth/login", json={"username": "admin", "password": "admin"}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"bulk")
 
 
 def test_bulk_move_delete_and_archive(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
 
         src = client.post("/api/folders", headers=headers, json={"name": "src"}).json()["id"]
         dst = client.post("/api/folders", headers=headers, json={"name": "dst"}).json()["id"]

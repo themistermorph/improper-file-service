@@ -2,39 +2,18 @@
 
 from __future__ import annotations
 
-import io
-
 from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
 
+from .helpers import fake_store_blob, range_get_object
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"# Titel\nInhalt\n"
-    if start is not None or end is not None:
-        begin = start or 0
-        finish = end if end is not None else len(payload) - 1
-        payload = payload[begin : finish + 1]
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
+_fake_get_object = range_get_object(b"# Titel\nInhalt\n")
 
 
 def test_preview_flow(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:

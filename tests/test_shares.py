@@ -9,40 +9,21 @@ from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
+
+from .helpers import fake_store_blob, fixed_get_object, login
 
 PAYLOAD = b"freigabe"
 
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(PAYLOAD), "ContentLength": len(PAYLOAD)}
-
-
-def _login(client, username, password):
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(PAYLOAD)
 
 
 def test_share_overview_and_revoke(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "share-me"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt",
@@ -63,7 +44,7 @@ def test_share_overview_and_revoke(monkeypatch):
         client.post(
             "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
         )
-        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}
         assert client.get("/api/shares", headers=sam).json() == []
 
         # Widerrufen
@@ -72,11 +53,11 @@ def test_share_overview_and_revoke(monkeypatch):
 
 
 def test_share_update_and_revoke(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "upd"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt",
@@ -110,11 +91,11 @@ def test_share_update_and_revoke(monkeypatch):
 
 
 def test_delete_entry_revokes_links_automatically(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "del"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt",
@@ -131,7 +112,7 @@ def test_delete_entry_revokes_links_automatically(monkeypatch):
 
 
 def test_revoke_share_of_trashed_entry(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     from uuid import UUID
@@ -141,7 +122,7 @@ def test_revoke_share_of_trashed_entry(monkeypatch):
     from ifs.utils import utcnow
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "legacy"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt",
@@ -160,11 +141,11 @@ def test_revoke_share_of_trashed_entry(monkeypatch):
 
 
 def test_share_folder_downloads_as_zip(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "team"}).json()["id"]
         client.put(
             f"/api/uploads/simple?parent_id={folder}&name=a.txt",
@@ -205,11 +186,11 @@ def test_share_folder_downloads_as_zip(monkeypatch):
 
 
 def test_share_folder_upload(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "drop"}).json()["id"]
         token = client.post(
             "/api/shares", headers=admin, json={"entry_id": folder, "allow_upload": True}
@@ -259,11 +240,11 @@ def test_share_folder_upload(monkeypatch):
 
 
 def test_share_upload_requires_permission(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "closed"}).json()["id"]
         token = client.post(
             "/api/shares", headers=admin, json={"entry_id": folder}
@@ -288,11 +269,11 @@ def test_share_upload_requires_permission(monkeypatch):
 
 
 def test_share_upload_password_protected(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "pwdrop"}).json()["id"]
         token = client.post(
             "/api/shares",
@@ -313,11 +294,11 @@ def test_share_upload_password_protected(monkeypatch):
 
 
 def test_bulk_revoke_shares(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "bulk-share"}).json()["id"]
         first = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=a.txt", headers=admin, content=b"eins"
@@ -343,7 +324,7 @@ def test_bulk_revoke_shares(monkeypatch):
 
 def test_audit_includes_actor_username():
     with TestClient(main.app) as client:
-        token = _login(client, "admin", "admin")
+        token = login(client, "admin", "admin")
         headers = {"Authorization": f"Bearer {token}"}
         rows = client.get("/api/audit?limit=50", headers=headers).json()
         login_events = [r for r in rows if r["action"] == "auth.login"]
@@ -356,17 +337,17 @@ def test_audit_includes_actor_username():
 
 def test_display_name_in_shares_and_audit(monkeypatch):
     """Benutzer-Anzeigename statt Benutzername in Freigaben und Audit."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
         client.post(
             "/api/users",
             headers=admin,
             json={"username": "erika", "password": "geheim123", "display_name": "Erika M."},
         )
-        erika = {"Authorization": f"Bearer {_login(client, 'erika', 'geheim123')}"}
+        erika = {"Authorization": f"Bearer {login(client, 'erika', 'geheim123')}"}
         folder = client.post("/api/folders", headers=erika, json={"name": "share-me"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt",

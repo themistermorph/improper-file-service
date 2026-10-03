@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from types import SimpleNamespace
 from uuid import UUID
@@ -16,34 +15,17 @@ from ifs.core import content, namespace
 from ifs.core import uploads as uploads_core
 from ifs.db import session_scope
 from ifs.errors import BadRequest, Conflict
-from ifs.models import Blob, BlobStatus, UploadSession, UploadStatus
+from ifs.models import UploadSession, UploadStatus
 
 from .conftest import make_user
-
-
-def _fake_store_blob(db, local_path, mime=None):
-    with open(local_path, "rb") as handle:
-        data = handle.read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+from .helpers import fake_store_blob, login
 
 
 def _make_user(client, admin, username="bob", password="geheim123"):
     user_id = client.post(
         "/api/users", headers=admin, json={"username": username, "password": password}
     ).json()["id"]
-    headers = {"Authorization": f"Bearer {_login(client, username, password)}"}
+    headers = {"Authorization": f"Bearer {login(client, username, password)}"}
     return user_id, headers
 
 
@@ -63,7 +45,7 @@ def test_patch_413_persists_abort(monkeypatch):
     )
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "limit"}).json()["id"]
         upload_id = client.post(
             "/api/uploads", headers=admin, json={"parent_id": folder, "name": "big.bin"}
@@ -112,7 +94,7 @@ def test_patch_quota_exceeded_persists_abort(monkeypatch):
     )
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post(
             "/api/folders", headers=admin, json={"name": "core-limit"}
         ).json()["id"]
@@ -140,12 +122,12 @@ def test_begin_append_normalizes_spool(monkeypatch):
     """Reste abgebrochener Versuche werden auf den Offset gekürzt."""
     captured: dict = {}
 
-    def fake_store_blob(db, local_path, mime=None):
+    def capturing_store_blob(db, local_path, mime=None):
         with open(local_path, "rb") as handle:
             captured["data"] = handle.read()
-        return _fake_store_blob(db, local_path, mime)
+        return fake_store_blob(db, local_path, mime)
 
-    monkeypatch.setattr(content, "store_blob", fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", capturing_store_blob)
 
     with session_scope() as db:
         owner = make_user(db, "spool-owner")
@@ -208,10 +190,10 @@ def test_complete_rejects_manipulated_spool(monkeypatch):
 
 
 def test_admin_cannot_abort_foreign_upload(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         _bob_id, bob = _make_user(client, admin, "bob-r5")
 
         folder = client.post("/api/folders", headers=bob, json={"name": "bobs"}).json()["id"]
@@ -239,7 +221,7 @@ def test_admin_cannot_abort_foreign_upload(monkeypatch):
 
 def test_upload_create_rejects_negative_size():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         root = client.get("/api/root", headers=admin).json()["id"]
 
         response = client.post(

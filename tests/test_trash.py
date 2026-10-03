@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import io
-
 import pytest
 from fastapi.testclient import TestClient
 
 from ifs import main
 from ifs.core import content, namespace
 from ifs.errors import Conflict
-from ifs.models import Blob, BlobStatus, Entry
+from ifs.models import Entry
 
 from .conftest import make_blob, make_user
+from .helpers import fake_store_blob, fixed_get_object, login
 
 
 def test_soft_delete_marks_subtree(db):
@@ -93,26 +92,11 @@ def test_purge_removes_subtree(db):
 # --- API ------------------------------------------------------------------
 
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"hello trash"
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
+_fake_get_object = fixed_get_object(b"hello trash")
 
 
 def test_trash_api_flow(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
@@ -157,12 +141,6 @@ def test_trash_api_flow(monkeypatch):
         assert client.get(f"/api/entries/{folder_id}", headers=headers).status_code == 404
 
 
-def _login(client) -> str:
-    return client.post(
-        "/api/auth/login", json={"username": "admin", "password": "admin"}
-    ).json()["access_token"]
-
-
 def _make_trashed_folder(client, headers, name):
     folder_id = client.post("/api/folders", headers=headers, json={"name": name}).json()["id"]
     entry_id = client.put(
@@ -175,11 +153,11 @@ def _make_trashed_folder(client, headers, name):
 
 
 def test_bulk_restore_trash(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         first, first_file = _make_trashed_folder(client, headers, "bulk-restore-1")
         second, _second_file = _make_trashed_folder(client, headers, "bulk-restore-2")
 
@@ -198,11 +176,11 @@ def test_bulk_restore_trash(monkeypatch):
 
 
 def test_bulk_purge_trash(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         first, first_file = _make_trashed_folder(client, headers, "bulk-purge-1")
         second, _ = _make_trashed_folder(client, headers, "bulk-purge-2")
 
@@ -220,11 +198,11 @@ def test_bulk_purge_trash(monkeypatch):
 
 
 def test_bulk_restore_reports_failures(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         trashed, _ = _make_trashed_folder(client, headers, "bulk-mixed")
         active = client.post("/api/folders", headers=headers, json={"name": "aktiv"}).json()["id"]
 

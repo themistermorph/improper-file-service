@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from types import SimpleNamespace
 
 import pytest
@@ -12,30 +11,10 @@ from pyftpdlib.exceptions import AuthenticationFailed
 from ifs import main
 from ifs.core import content, ratelimit
 from ifs.ftp.server import IFSAuthorizer
-from ifs.models import Blob, BlobStatus
 
+from .helpers import fake_store_blob, fixed_get_object, login
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(b"data"), "ContentLength": 4}
-
-
-def _login(client) -> str:
-    return client.post(
-        "/api/auth/login", json={"username": "admin", "password": "admin"}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"data")
 
 
 def test_login_rate_limit_and_no_enumeration(monkeypatch):
@@ -71,11 +50,11 @@ def test_quota_enforced(monkeypatch):
     monkeypatch.setattr(
         "ifs.core.quota.get_settings", lambda: SimpleNamespace(default_quota_bytes=10)
     )
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "q"}).json()["id"]
 
         too_big = client.put(
@@ -103,11 +82,11 @@ def test_upload_size_limit_rejected_early(monkeypatch):
     monkeypatch.setattr(
         "ifs.api.uploads.get_settings", lambda: SimpleNamespace(max_upload_size=5)
     )
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "lim"}).json()["id"]
 
         response = client.put(

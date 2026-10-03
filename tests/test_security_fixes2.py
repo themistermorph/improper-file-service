@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -13,40 +12,19 @@ from ifs import main
 from ifs.core import authz, content, namespace
 from ifs.core import quota as quota_core
 from ifs.db import session_scope
-from ifs.models import ACL, Blob, BlobStatus, Entry
+from ifs.models import ACL, Entry
 
 from .conftest import make_user
+from .helpers import fake_store_blob, fixed_get_object, login
 
-
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"payload"
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
-
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"payload")
 
 
 def _make_user(client, admin, username="bob", password="geheim123"):
     user_id = client.post(
         "/api/users", headers=admin, json={"username": username, "password": password}
     ).json()["id"]
-    headers = {"Authorization": f"Bearer {_login(client, username, password)}"}
+    headers = {"Authorization": f"Bearer {login(client, username, password)}"}
     return user_id, headers
 
 
@@ -55,11 +33,11 @@ def _make_user(client, admin, username="bob", password="geheim123"):
 
 def test_f1_sharer_cannot_create_drop_link(monkeypatch):
     """`allow_upload` erfordert das `write`-Recht am Eintrag."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob_id, bob = _make_user(client, admin)
 
         folder = client.post(
@@ -111,11 +89,11 @@ def test_f1_sharer_cannot_create_drop_link(monkeypatch):
 
 def test_f1_upload_blocked_after_write_revoked(monkeypatch):
     """Nach Entzug des `write`-Rechts ist der anonyme Upload sofort gesperrt."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob_id, bob = _make_user(client, admin)
 
         folder = client.post(
@@ -156,11 +134,11 @@ def test_f1_upload_blocked_after_write_revoked(monkeypatch):
 
 def test_f1_overwrite_is_share_property(monkeypatch):
     """Teil B: Anonymes Überschreiben nur bei `overwrite=true` an der Freigabe."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "keep"}).json()["id"]
         client.put(
             f"/api/uploads/simple?parent_id={folder}&name=keep.txt",
@@ -204,11 +182,11 @@ def test_f1_overwrite_is_share_property(monkeypatch):
 
 def test_f2_move_requires_read_on_source(monkeypatch):
     """Verschieben verlangt zusätzlich `read` auf der Quelle."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob_id, bob = _make_user(client, admin)
 
         private = client.post(
@@ -271,11 +249,11 @@ def test_f2_move_requires_read_on_source(monkeypatch):
 
 def test_f2_restore_requires_read_on_source(monkeypatch):
     """Gleiche Klasse wie F2: Restore in einen lesbaren Ordner verlangt `read`."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob_id, bob = _make_user(client, admin)
 
         private = client.post("/api/folders", headers=admin, json={"name": "rest-priv"}).json()[
@@ -342,14 +320,14 @@ def test_f2_restore_requires_read_on_source(monkeypatch):
 
 def test_f3_restore_respects_quota(monkeypatch):
     """Wiederherstellen prüft die Quota des betroffenen Besitzers erneut."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     monkeypatch.setattr(
         quota_core, "get_settings", lambda: SimpleNamespace(default_quota_bytes=100)
     )
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         first = client.post("/api/folders", headers=admin, json={"name": "first"}).json()["id"]
         uploaded = client.put(
             f"/api/uploads/simple?parent_id={first}&name=a.bin",
@@ -417,7 +395,7 @@ def test_h3_version_hides_environment():
 
 def test_h4_permission_lists_are_bounded():
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "acls"}).json()["id"]
 
         too_many = client.post(

@@ -22,12 +22,7 @@ from ifs.core import uploads as uploads_core
 from ifs.db import session_scope
 
 from .conftest import make_user
-
-
-def _login(client: TestClient) -> str:
-    return client.post(
-        "/api/auth/login", json={"username": "admin", "password": "admin"}
-    ).json()["access_token"]
+from .helpers import login
 
 
 def _fake_upload(calls: list[tuple[str, str]]):
@@ -98,7 +93,7 @@ def test_simple_upload_hasht_im_stream(monkeypatch):
     expected = hashlib.sha256(payload).hexdigest()
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         root = client.get("/api/root", headers=auth).json()["id"]
         response = client.put(
             f"/api/uploads/simple?parent_id={root}&name=stream.bin",
@@ -201,7 +196,7 @@ def test_resume_und_dedup_verhalten_unveraendert(monkeypatch):
     monkeypatch.setattr(content, "upload_file", _fake_upload(uploads))
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post(
             "/api/folders", headers=auth, json={"name": "opt-resume"}
         ).json()["id"]

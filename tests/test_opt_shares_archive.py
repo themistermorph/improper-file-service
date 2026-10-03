@@ -25,6 +25,7 @@ from ifs.db import get_engine, session_scope
 from ifs.models import Blob, BlobStatus, Entry, Share, User
 
 from .conftest import make_user
+from .helpers import login
 
 
 @pytest.fixture
@@ -41,12 +42,6 @@ def query_counter():
         yield statements
     finally:
         event.remove(engine, "before_cursor_execute", _record)
-
-
-def _login(client) -> str:
-    return client.post(
-        "/api/auth/login", json={"username": "admin", "password": "admin"}
-    ).json()["access_token"]
 
 
 def _admin(db) -> User:
@@ -70,7 +65,7 @@ def _make_blob(db, name: str) -> Blob:
 
 def test_shares_liste_queryzahl_konstant(query_counter):
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
 
         with session_scope() as db:
             admin = _admin(db)
@@ -134,7 +129,7 @@ def test_shares_liste_queryzahl_konstant(query_counter):
 
 def test_bulk_revoke_queryzahl_ergebnis_und_audit(query_counter):
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
 
         with session_scope() as db:
             admin = _admin(db)
@@ -173,7 +168,7 @@ def test_bulk_revoke_queryzahl_ergebnis_und_audit(query_counter):
 
 def test_bulk_delete_queryzahl_und_partialsemantik(query_counter):
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
 
         with session_scope() as db:
             admin = _admin(db)
@@ -318,7 +313,7 @@ def test_share_zip_download_revoke_und_archiv_token(monkeypatch):
     monkeypatch.setattr(content, "get_object", fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post(
             "/api/folders", headers=headers, json={"name": "opt-share"}
         ).json()["id"]
@@ -379,7 +374,7 @@ def test_archive_job_endwerte_und_zip_inhalt(monkeypatch):
     monkeypatch.setattr(content, "get_object", fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = {"Authorization": f"Bearer {_login(client)}"}
+        headers = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post(
             "/api/folders", headers=headers, json={"name": "opt-job"}
         ).json()["id"]

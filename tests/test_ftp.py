@@ -22,6 +22,8 @@ from ifs.db import session_scope
 from ifs.models import Blob, BlobStatus, User
 from ifs.security import hash_password
 
+from .helpers import fake_store_blob, range_get_object
+
 
 def _write_self_signed(cert_path, key_path) -> None:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -50,29 +52,7 @@ def _write_self_signed(cert_path, key_path) -> None:
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}",
-        sha256=sha,
-        size=len(data),
-        status=BlobStatus.ready,
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"ftp content"
-    if start is not None or end is not None:
-        begin = start or 0
-        finish = end if end is not None else len(payload) - 1
-        payload = payload[begin : finish + 1]
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
+_fake_get_object = range_get_object(b"ftp content")
 
 
 def test_ftps_end_to_end(monkeypatch, tmp_path):
@@ -80,7 +60,7 @@ def test_ftps_end_to_end(monkeypatch, tmp_path):
 
     from ifs.ftp.server import build_handler
 
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with session_scope() as db:
@@ -162,7 +142,7 @@ def test_ftp_enforces_max_upload_size(monkeypatch, tmp_path):
 
     from ifs.ftp.server import build_handler
 
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with session_scope() as db:

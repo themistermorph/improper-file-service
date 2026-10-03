@@ -20,8 +20,8 @@ pip install -e ".[dev]"
 Die Tests laufen ohne externe Dienste (SQLite + Fakes für den Objektspeicher):
 
 ```bash
-python -m pytest
-python -m pytest -n auto        # parallel ausführen (pytest-xdist)
+python -m pytest                # parallel (Standard, pytest-xdist)
+python -m pytest -n0            # seriell, z. B. zum Debuggen
 python -m ruff check src tests
 ```
 

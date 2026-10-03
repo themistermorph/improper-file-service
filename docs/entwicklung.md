@@ -66,7 +66,8 @@ py -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 
 # Tests und Lint
-.venv\Scripts\python -m pytest
+.venv\Scripts\python -m pytest          # parallel (Standard)
+.venv\Scripts\python -m pytest -n0      # seriell (Debuggen)
 .venv\Scripts\python -m ruff check src tests
 ```
 

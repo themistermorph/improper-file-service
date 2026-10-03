@@ -19,14 +19,7 @@ from ifs.db import get_engine, session_scope
 from ifs.models import Group, PrincipalType, RoleAssignment
 
 from .conftest import make_user
-
-
-def _login(client: TestClient, username: str = "admin", password: str = "admin") -> str:
-    response = client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    )
-    assert response.status_code == 200, response.text
-    return response.json()["access_token"]
+from .helpers import login
 
 
 class _QueryCounter:
@@ -83,7 +76,7 @@ def _add_membership(client: TestClient, admin: dict, user_id: str, group_id: str
 def test_benutzerliste_abfragen_wachsen_nicht_linear():
     """GET /users löst keine Gruppen-Abfrage je Benutzer/Mitgliedschaft aus."""
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
 
         # Referenzwert: leere Trefferliste (Auth + Zählung + Auswahl).
         empty, empty_count = _count_queries(
@@ -137,7 +130,7 @@ def test_benutzerliste_abfragen_wachsen_nicht_linear():
 def test_benutzerdetail_gruppen_wachsen_nicht_linear():
     """GET /users/{id} lädt alle Gruppen in einer Sammelabfrage (kein N+1)."""
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         user_id = _create_user(client, admin, "opt-detail-user")
         groups = [
             _create_group(client, admin, f"opt-detail-gruppe-{index}") for index in range(4)
@@ -167,7 +160,7 @@ def test_benutzerdetail_gruppen_wachsen_nicht_linear():
 def test_systemrollenliste_filtert_ressourcenzuweisungen():
     """GET /users/{id}/roles liefert nur systemweite Zuweisungen, konstant."""
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         user_id = _create_user(client, admin, "opt-rollen-user")
         folder_id = client.post(
             "/api/folders", headers=admin, json={"name": "opt-rollen-folder"}
@@ -227,7 +220,7 @@ def test_systemrollenliste_filtert_ressourcenzuweisungen():
 def test_rollen_loeschen_entfernt_zuweisungen_ohne_n_plus_1():
     """DELETE /roles/{id} räumt Zuweisungen mit einer Sammelabfrage auf."""
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         role_ids: dict[str, str] = {}
         for name in ("opt-role-klein", "opt-role-gross"):
             response = client.post(
@@ -309,7 +302,7 @@ def test_rechtebuendel_und_gruppenzuordnung_unveraendert(db):
 def test_letzter_aktiver_admin_bleibt_geschuetzt():
     """Der letzte aktive Administrator kann sich nicht selbst deaktivieren."""
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         admin_id = client.get("/api/users?q=admin", headers=admin).json()["items"][0]["id"]
 
         response = client.post(f"/api/users/{admin_id}/deactivate", headers=admin)

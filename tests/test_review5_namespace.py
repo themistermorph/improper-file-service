@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from datetime import UTC
 from email.utils import parsedate_to_datetime
 from types import SimpleNamespace
@@ -16,37 +15,13 @@ from ifs.core import content, namespace
 from ifs.core import quota as quota_core
 from ifs.db import session_scope
 from ifs.errors import QuotaExceeded
-from ifs.models import Blob, BlobStatus, Entry, Version
+from ifs.models import Entry, Version
 from ifs.utils import as_utc
 
 from .conftest import make_blob, make_user
+from .helpers import auth, fake_store_blob, range_get_object
 
-
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    with open(local_path, "rb") as handle:
-        data = handle.read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    payload = b"review5-inhalt"
-    if start is not None or end is not None:
-        payload = payload[start or 0 : (end + 1 if end is not None else None)]
-    return {"Body": io.BytesIO(payload), "ContentLength": len(payload)}
-
-
-def _login(client: TestClient) -> dict:
-    response = client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
-    assert response.status_code == 200
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+_fake_get_object = range_get_object(b"review5-inhalt")
 
 
 def _set_quota_limit(monkeypatch, value: int) -> None:
@@ -125,12 +100,12 @@ def test_folder_copy_quota_not_double_counted(monkeypatch, db):
 
 
 def test_folder_copy_quota_api(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     _set_quota_limit(monkeypatch, 10)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
         root = client.get("/api/root", headers=headers).json()["id"]
         src = client.post("/api/folders", headers=headers, json={"name": "src"}).json()["id"]
         sub = client.post(
@@ -194,12 +169,12 @@ def test_restore_version_quota(monkeypatch, db):
 
 
 def test_restore_version_quota_api(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     _set_quota_limit(monkeypatch, 0)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
         folder = client.post("/api/folders", headers=headers, json={"name": "roll"}).json()["id"]
         url = f"/api/uploads/simple?parent_id={folder}&name=f.bin"
         entry_id = client.put(url, headers=headers, content=b"x" * 20).json()["id"]
@@ -219,11 +194,11 @@ def test_restore_version_quota_api(monkeypatch):
 
 
 def test_last_modified_header_uses_utc(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        headers = _login(client)
+        headers = auth(client)
         folder = client.post("/api/folders", headers=headers, json={"name": "lm"}).json()["id"]
         entry_id = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=lm.txt",

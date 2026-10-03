@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import io
-
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -11,39 +9,19 @@ from pydantic import ValidationError
 from ifs import main
 from ifs.config import Settings
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
 from ifs.utils import content_disposition, safe_mime
 
+from .helpers import fake_store_blob, fixed_get_object, login
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(b"data"), "ContentLength": 4}
-
-
-def _login(client) -> str:
-    return client.post(
-        "/api/auth/login", json={"username": "admin", "password": "admin"}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"data")
 
 
 def test_scoped_tokens_are_not_access_tokens(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        access = _login(client)
+        access = login(client)
         auth = {"Authorization": f"Bearer {access}"}
         assert client.get("/api/me", headers=auth).status_code == 200
 
@@ -67,11 +45,11 @@ def test_scoped_tokens_are_not_access_tokens(monkeypatch):
 
 
 def test_filename_and_mime_header_injection(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "hdr"}).json()["id"]
 
         # Steuerzeichen im Dateinamen werden abgelehnt
@@ -132,11 +110,11 @@ def test_utils_header_helpers():
 
 def test_mime_case_does_not_bypass_active_content_protection(monkeypatch):
     """Gemischte Groß-/Kleinschreibung im MIME-Typ darf Attachment/Sandbox nicht aushebeln."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "case"}).json()["id"]
 
         entry = client.put(

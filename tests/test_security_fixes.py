@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -14,30 +13,11 @@ from ifs import main
 from ifs.api import deps as deps_module
 from ifs.core import content, ratelimit
 from ifs.db import session_scope
-from ifs.models import Blob, BlobStatus, RoleAssignment
+from ifs.models import RoleAssignment
 
+from .helpers import fake_store_blob, fixed_get_object, login
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(b"secret"), "ContentLength": 6}
-
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"secret")
 
 
 def _make_readonly_reader(client, admin) -> tuple[dict, str, str]:
@@ -49,7 +29,7 @@ def _make_readonly_reader(client, admin) -> tuple[dict, str, str]:
     bob_id = client.post(
         "/api/users", headers=admin, json={"username": "bob", "password": "geheim123"}
     ).json()["id"]
-    bob = {"Authorization": f"Bearer {_login(client, 'bob', 'geheim123')}"}
+    bob = {"Authorization": f"Bearer {login(client, 'bob', 'geheim123')}"}
 
     conf = client.post("/api/folders", headers=admin, json={"name": "conf"}).json()["id"]
     team = client.post("/api/folders", headers=admin, json={"name": "team"}).json()["id"]
@@ -76,11 +56,11 @@ def _make_readonly_reader(client, admin) -> tuple[dict, str, str]:
 
 def test_m1_copy_requires_share_permission(monkeypatch):
     """Ohne `share` auf der Quelle ist weder direktes Teilen noch copy erlaubt."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob, secret, target = _make_readonly_reader(client, admin)
 
         # Direktes Teilen ist verboten.
@@ -104,11 +84,11 @@ def test_m1_copy_requires_share_permission(monkeypatch):
 
 def test_m1_copy_allowed_with_share_permission(monkeypatch):
     """Mit `share` auf der Quelle bleibt copy funktionsfähig."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         bob, secret, target = _make_readonly_reader(client, admin)
 
         # share nachtraeglich auf dem Quellordner gewaehren.
@@ -146,7 +126,7 @@ def test_m1_copy_allowed_with_share_permission(monkeypatch):
 
 def test_m2_share_upload_size_limit_declared(monkeypatch):
     """Zu grosse Share-Uploads werden anhand Content-Length frueh abgelehnt."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     monkeypatch.setattr(
         "ifs.api.shares.get_settings",
@@ -154,7 +134,7 @@ def test_m2_share_upload_size_limit_declared(monkeypatch):
     )
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "drop"}).json()["id"]
         token = client.post(
             "/api/shares", headers=admin, json={"entry_id": folder, "allow_upload": True}
@@ -172,7 +152,7 @@ def test_m2_share_upload_size_limit_declared(monkeypatch):
 
 def test_m2_share_upload_size_limit_streaming(monkeypatch):
     """Auch ohne Content-Length greift die Chunk-fuer-Chunk-Pruefung."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     monkeypatch.setattr(
         "ifs.api.shares.get_settings",
@@ -180,7 +160,7 @@ def test_m2_share_upload_size_limit_streaming(monkeypatch):
     )
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "drop2"}).json()["id"]
         token = client.post(
             "/api/shares", headers=admin, json={"entry_id": folder, "allow_upload": True}
@@ -199,12 +179,12 @@ def test_m2_share_upload_size_limit_streaming(monkeypatch):
 
 def test_m2_share_upload_rate_limited(monkeypatch):
     """Der oeffentliche Upload-Endpunkt ist pro Freigabe+IP rate-limitiert."""
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     ratelimit.install_share_limiter(ratelimit.FixedWindowLimiter(2, 300))
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "flood"}).json()["id"]
         token = client.post(
             "/api/shares", headers=admin, json={"entry_id": folder, "allow_upload": True}
@@ -240,11 +220,11 @@ def test_m2_share_upload_limit_property():
 
 
 def test_n1_archive_job_requires_valid_token(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "job"}).json()["id"]
         client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt", headers=auth, content=b"data"
@@ -273,11 +253,11 @@ def test_n1_archive_job_requires_valid_token(monkeypatch):
 
 
 def test_n2_share_metadata_requires_password(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
 
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "meta"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt", headers=auth, content=b"data"
@@ -398,7 +378,7 @@ def test_n5_is_secure_request_honors_forwarded_proto(monkeypatch):
 
 def test_n7_delete_user_removes_role_assignments(monkeypatch):
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         user_id = client.post(
             "/api/users", headers=admin, json={"username": "roll", "password": "geheim123"}
         ).json()["id"]
@@ -436,7 +416,7 @@ def test_conflict_does_not_touch_object_storage(monkeypatch):
     monkeypatch.setattr(content, "store_blob", _bomb)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         root = client.get("/api/root", headers=admin).json()["id"]
         created = client.post(
             "/api/folders",
@@ -461,7 +441,7 @@ def test_sha_mismatch_does_not_touch_object_storage(monkeypatch):
     monkeypatch.setattr(content, "store_blob", _bomb)
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         root = client.get("/api/root", headers=admin).json()["id"]
         session = client.post(
             "/api/uploads",
@@ -482,14 +462,14 @@ def test_sha_mismatch_does_not_touch_object_storage(monkeypatch):
 def test_copy_counts_against_quota(monkeypatch):
     from ifs.core import quota as quota_core
 
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     monkeypatch.setattr(
         quota_core, "get_settings", lambda: SimpleNamespace(default_quota_bytes=5)
     )
 
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=admin, json={"name": "quota"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt",

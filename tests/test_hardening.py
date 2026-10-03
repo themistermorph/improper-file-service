@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -12,30 +11,10 @@ from starlette.requests import Request
 from ifs import main
 from ifs.api import deps
 from ifs.core import content
-from ifs.models import Blob, BlobStatus
 
+from .helpers import fake_store_blob, fixed_get_object, login
 
-def _fake_store_blob(db, local_path, mime=None):
-    import hashlib
-
-    data = open(local_path, "rb").read()
-    sha = hashlib.sha256(data).hexdigest()
-    blob = Blob(
-        storage_key=f"cas/{sha[:2]}/{sha}", sha256=sha, size=len(data), status=BlobStatus.ready
-    )
-    db.add(blob)
-    db.flush()
-    return blob
-
-
-def _fake_get_object(key, start=None, end=None):
-    return {"Body": io.BytesIO(b"data"), "ContentLength": 4}
-
-
-def _login(client, username="admin", password="admin") -> str:
-    return client.post(
-        "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
+_fake_get_object = fixed_get_object(b"data")
 
 
 def _request_with(peer: str, forwarded: str | None) -> Request:
@@ -76,19 +55,19 @@ def test_info_endpoints_locked_down():
         assert client.get("/openapi.json").status_code == 404
         assert client.get("/metrics").status_code == 401
 
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         assert client.get("/metrics", headers=admin).status_code == 200
 
         client.post("/api/users", headers=admin, json={"username": "meter", "password": "geheim123"})
-        user = {"Authorization": f"Bearer {_login(client, 'meter', 'geheim123')}"}
+        user = {"Authorization": f"Bearer {login(client, 'meter', 'geheim123')}"}
         assert client.get("/metrics", headers=user).status_code == 403
 
 
 def test_invalid_range_and_offset_do_not_500(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         folder = client.post("/api/folders", headers=auth, json={"name": "r"}).json()["id"]
         entry = client.put(
             f"/api/uploads/simple?parent_id={folder}&name=f.txt", headers=auth, content=b"data"
@@ -109,10 +88,10 @@ def test_invalid_range_and_offset_do_not_500(monkeypatch):
 
 
 def test_principal_and_copy_plausibility(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     with TestClient(main.app) as client:
-        auth = {"Authorization": f"Bearer {_login(client)}"}
+        auth = {"Authorization": f"Bearer {login(client)}"}
         parent = client.post("/api/folders", headers=auth, json={"name": "p"}).json()["id"]
         child = client.post(
             "/api/folders", headers=auth, json={"parent_id": parent, "name": "c"}
@@ -144,14 +123,14 @@ def test_principal_and_copy_plausibility(monkeypatch):
 
 
 def test_shares_revoked_on_deactivation(monkeypatch):
-    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
     with TestClient(main.app) as client:
-        admin = {"Authorization": f"Bearer {_login(client)}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         carol = client.post(
             "/api/users", headers=admin, json={"username": "carol", "password": "geheim123", "is_admin": True}
         ).json()["id"]
-        carol_auth = {"Authorization": f"Bearer {_login(client, 'carol', 'geheim123')}"}
+        carol_auth = {"Authorization": f"Bearer {login(client, 'carol', 'geheim123')}"}
 
         folder = client.post("/api/folders", headers=carol_auth, json={"name": "cs"}).json()["id"]
         entry = client.put(

@@ -23,8 +23,10 @@ os.environ["IFS_FTP_ENABLED"] = "false"
 os.environ["IFS_ADMIN_USERNAME"] = "admin"
 os.environ["IFS_ADMIN_PASSWORD"] = "admin"
 
+import hashlib
+import hmac
+
 import pytest
-from argon2 import PasswordHasher
 from sqlalchemy import event
 
 from ifs import security
@@ -34,9 +36,25 @@ from ifs.db import Base, create_all, get_engine, reset_engine
 from ifs.models import Blob, BlobStatus, User
 from ifs.security import hash_password
 
-# Argon2 ist im Betrieb bewusst langsam; in Tests würde das pro Hash ~0,1 s
-# kosten. Für die Korrektheit genügen minimale Parameter.
-security._hasher = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1)
+from .helpers import reset_content
+
+
+class _FastHasher:
+    """Schneller, deterministischer Passwort-Hash – nur für Tests.
+
+    Argon2id ist im Betrieb bewusst langsam (~0,1 s je Hash). Die Tests prüfen
+    Authentifizierung und Rechte, nicht die Hash-Härte; deshalb wird der Hasher
+    in der Testumgebung ersetzt. Das senkt die Laufzeit pro Login deutlich.
+    """
+
+    def hash(self, password: str) -> str:
+        return "fast$" + hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+    def verify(self, password_hash: str, password: str) -> bool:
+        return hmac.compare_digest(password_hash, self.hash(password))
+
+
+security._hasher = _FastHasher()
 
 # Kein echter S3-Zugriff beim Start jedes TestClient-Lifespans.
 content_module.ensure_bucket = lambda: None
@@ -72,6 +90,7 @@ def _fresh_db(_schema):
     from ifs.core import archive_jobs
 
     archive_jobs.reset()
+    reset_content()
     # Alle Tabellen in Abhängigkeitsreihenfolge leeren (schneller als DDL).
     with get_engine().begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
