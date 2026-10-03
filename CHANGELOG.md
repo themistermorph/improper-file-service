@@ -15,6 +15,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   in der App unter „Veröffentlichungen“ aufgelistet und beim Löschen eines Eintrags
   sowie beim Deaktivieren/Löschen eines Kontos automatisch zurückgezogen.
   Neue Migration `migrations/sql/0008_published_entries.sql`.
+- **Testlauf deutlich schneller:** Das Schema wird nur noch einmal je Worker
+  angelegt und zwischen den Tests geleert, Argon2 läuft in Tests mit minimalen
+  Parametern, der S3-Bucket-Check des App-Starts entfällt und SQLite schreibt
+  ohne `fsync`. Zusätzlich ist `pytest-xdist` verfügbar
+  (`python -m pytest -n auto`). Laufzeit der Suite: ~228 s → ~26 s seriell,
+  ~22 s parallel (auf 4 Kernen).
 
 ## [0.1.2] – 2026-10-03
 

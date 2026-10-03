@@ -21,6 +21,7 @@ Die Tests laufen ohne externe Dienste (SQLite + Fakes für den Objektspeicher):
 
 ```bash
 python -m pytest
+python -m pytest -n auto        # parallel ausführen (pytest-xdist)
 python -m ruff check src tests
 ```
 

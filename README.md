@@ -129,6 +129,7 @@ Tests:
 
 ```bash
 .venv\Scripts\python -m pytest
+.venv\Scripts\python -m pytest -n auto        # parallel (pytest-xdist)
 .venv\Scripts\python -m ruff check src tests
 ```
 
