@@ -17,7 +17,7 @@ Diese Anleitung beschreibt, wie das Projekt erstmals in ein GitHub-Repository
    - `.github/ISSUE_TEMPLATE/config.yml` (Links).
 2. **Secrets prüfen:** Es dürfen **keine** Secrets im Repo liegen. `.gitignore`
    schließt `.env`, `certs/`, `ADMIN_CREDENTIALS.txt`, `seaweedfs/s3.json`,
-   `seaweedfs/Caddyfile`, `deploy/known_hosts` und `UEBERGABE-*.md` aus.
+   `seaweedfs/Caddyfile`, `deploy/known_hosts` und `for-agents/` aus.
    Kontrolle:
    ```bash
    git status --ignored

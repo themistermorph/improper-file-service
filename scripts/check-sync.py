@@ -16,7 +16,7 @@ from deploy_common import connect
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REMOTE = "/home/ifs/ifs"
-EXCLUDE_DIRS = {".venv", ".git", ".github", ".pytest_cache", ".ruff_cache", "__pycache__", "certs", "deploy"}
+EXCLUDE_DIRS = {".venv", ".git", ".github", ".pytest_cache", ".ruff_cache", "__pycache__", "certs", "deploy", "for-agents"}
 INCLUDE_SUFFIXES = {".py", ".md", ".html", ".toml", ".yml", ".yaml", ".ini", ".mako", ".sql"}
 INCLUDE_NAMES = {".env.example", "Dockerfile", "requirements.txt", ".dockerignore"}
 REMOTE_FIND = (
@@ -26,7 +26,7 @@ REMOTE_FIND = (
     "-o -name '.env.example' -o -name 'Dockerfile' -o -name 'requirements.txt' "
     "-o -name '.dockerignore' \\) "
     "-not -path './.venv/*' -not -path './.pytest_cache/*' -not -path './.ruff_cache/*' "
-    "-not -path './deploy/*' | sort | xargs -r sha256sum"
+    "-not -path './deploy/*' -not -path './for-agents/*' | sort | xargs -r sha256sum"
 )
 
 
