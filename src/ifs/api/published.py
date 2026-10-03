@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core import archive, audit, authz, namespace
+from ..core import archive, audit, authz, namespace, ratelimit
 from ..errors import PermissionDenied
 from ..models import Entry, EntryType, PublishedEntry, User
 from ..utils import content_disposition
@@ -56,7 +56,12 @@ def _to_public(published: PublishedEntry, entry: Entry, username: str | None) ->
 
 
 def _to_out(
-    db: Session, published: PublishedEntry, entry: Entry, username: str | None
+    db: Session,
+    published: PublishedEntry,
+    entry: Entry,
+    username: str | None,
+    *,
+    include_path: bool = True,
 ) -> PublishedOut:
     return PublishedOut(
         entry_id=entry.id,
@@ -64,7 +69,7 @@ def _to_out(
         type=entry.type,
         size=entry.size,
         mime=entry.mime,
-        path=namespace.path_of(db, entry),
+        path=namespace.path_of(db, entry) if include_path else None,
         published_by=published.published_by,
         published_by_username=username,
         published_at=published.created_at,
@@ -85,7 +90,10 @@ def list_published(
         .where(Entry.trashed_at.is_(None))
     )
     if q:
-        stmt = stmt.where(Entry.name.ilike(f"%{q}%"))
+        # LIKE-Wildcards (%/_/\) escapen, damit die Suche den Begriff literal
+        # interpretiert; ``escape="\\"`` funktioniert mit SQLite und PostgreSQL.
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(Entry.name.ilike(f"%{escaped}%", escape="\\"))
     stmt = (
         stmt.order_by(PublishedEntry.created_at.desc()).limit(limit).offset(offset)
     )
@@ -115,8 +123,16 @@ def list_my_published(
     rows = db.execute(stmt).all()
     publishers = _load_publishers(db, {published.published_by for published, _ in rows})
     return [
-        _to_out(db, published, entry, publishers[published.published_by].username
-                if published.published_by in publishers else None)
+        _to_out(
+            db,
+            published,
+            entry,
+            publishers[published.published_by].username
+            if published.published_by in publishers else None,
+            # Systemadmins sehen fremde Veroeffentlichungen ohne vollen Pfad:
+            # der virtuelle Pfad ist nur fuer eigene Eintraege bestimmt.
+            include_path=published.published_by == user.id,
+        )
         for published, entry in rows
     ]
 
@@ -160,6 +176,15 @@ def download_published(
     entry = db.get(Entry, entry_id)
     if entry is None or entry.trashed_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Eintrag ist nicht verfügbar")
+    # DoS-Schutz: anonyme Downloads pro Client-IP+Eintrag begrenzen. Gilt fuer
+    # Dateien und Ordner (ZIP). Audit-Eintraege bleiben unveraendert.
+    key = f"{client_ip(request) or 'unknown'}|{entry_id}"
+    if not ratelimit.allow_published_download(key):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Zu viele Downloads – bitte später erneut versuchen.",
+            headers={"Retry-After": str(ratelimit.published_download_retry_after(key))},
+        )
     if entry.type == EntryType.folder:
         return _serve_folder(db, entry, request)
     return stream_entry_content(db, entry, request, download=True)
@@ -175,6 +200,12 @@ def publish_entry(
     user: User = Depends(get_current_user),
 ) -> PublishedOut:
     entry = namespace.get_entry(db, entry_id)
+    # Die Wurzel ist kein sinnvolles oeffentliches Ziel (sie umfasst den
+    # gesamten eigenen Baum) und wird daher nicht veroeffentlicht.
+    if entry.parent_id is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Die Wurzel kann nicht veröffentlicht werden"
+        )
     # `share` allein reicht nicht: Wer den Inhalt nicht lesen darf, darf ihn auch
     # nicht öffentlich zugänglich machen (sonst wäre `share` faktisch `read`).
     authz.authorize(db, user, "read", entry)
@@ -189,7 +220,12 @@ def publish_entry(
             db, "publish.create", actor_id=user.id, target_entry=entry.id,
             protocol="http", ip=client_ip(request), details={"entry_id": str(entry.id)},
         )
-    return _to_out(db, published, entry, user.username)
+    # Bei idempotentem Re-Publish den tatsaechlichen Ersteller nennen, nicht den
+    # aktuell anfragenden Benutzer (z. B. Admin).
+    publisher = db.get(User, published.published_by)
+    return _to_out(
+        db, published, entry, publisher.username if publisher else user.username
+    )
 
 
 @router.delete("/published/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -62,8 +62,25 @@ git tag -a v0.1.0 -m "IFS 0.1.0 (Pre-Release)"
 git push origin v0.1.0
 ```
 
-Der Tag stößt `.github/workflows/release.yml` an: Es werden **sdist + wheel** gebaut
-und als **Draft-Release** mit generierten Notes angehängt.
+Der Tag stößt `.github/workflows/release.yml` an. Der Workflow ist in zwei Jobs
+getrennt:
+
+1. **`build`** (nur Leserechte, `contents: read`): prüft zuerst, dass der Tag auf
+   `main` liegt (sonst schlägt der Lauf fehl), baut dann **sdist + wheel** und
+   erzeugt eine `SHA256SUMS`-Datei. Die Artefakte werden als `dist`-Artifact
+   hochgeladen. Es wird **kein** pip-Cache verwendet, damit der Release-Build
+   cachefrei und reproduzierbar ist; Actions und Build-Toolchain (`build==1.6.1`)
+   sind gepinnt.
+2. **`release`** (`contents: write`, `id-token: write`, `attestations: write`):
+   lädt das `dist`-Artifact herunter, hängt bei **öffentlichen** Repos eine
+   Build-Provenance-Attestierung an und erstellt das **Draft-Release** mit
+   generierten Notes inklusive `SHA256SUMS`.
+
+Der `release`-Job läuft im GitHub-Environment **`release`**. Es wird empfohlen,
+dort einen **Required Reviewer (Approval)** zu hinterlegen, damit die
+Veröffentlichung manuell freigegeben werden muss.
+
+> Voraussetzung: Der Release-Tag (`vX.Y.Z`) muss auf dem `main`-Branch liegen.
 
 Release als Pre-Release veröffentlichen:
 
@@ -87,9 +104,14 @@ Alternativ im GitHub-Web: Draft öffnen → „Set as a pre-release" aktivieren 
 - [ ] `CHANGELOG.md`: neuer Abschnitt + Link
 - [ ] `python -m ruff check src tests` und `python -m pytest` grün
 - [ ] Tag `vX.Y.Z` (Pre-Release: `-rc.N` oder als Pre-release markiert)
+- [ ] Tag liegt auf `main`
+- [ ] Environment `release` mit Required Reviewer (Approval) konfiguriert
+- [ ] Draft-Release: `SHA256SUMS` und ggf. Build-Provenance vorhanden
 - [ ] Docker-Images/Deployment auf die Version verweisen
 
 ## 5. CI-Erwartungen
 
 - `ruff check src tests` → sauber
 - `pytest` → alle Tests grün (SQLite + Fakes, keine externen Dienste nötig)
+- `secret-scan` (gitleaks) → keine Secrets im Verlauf (nur bei öffentlichen Repos;
+  private Repos bräuchten ein `GITLEAKS_LICENSE`-Secret)

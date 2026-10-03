@@ -156,6 +156,7 @@ class FixedWindowLimiter:
 _account_limiter: LoginRateLimiter | None = None
 _ip_limiter: LoginRateLimiter | None = None
 _share_upload_limiter: FixedWindowLimiter | None = None
+_published_download_limiter: FixedWindowLimiter | None = None
 _init_lock = threading.Lock()
 
 
@@ -230,13 +231,36 @@ def share_upload_retry_after(key: str) -> int:
     return _share_limiter().retry_after(key)
 
 
+def _published_download_limiter_instance() -> FixedWindowLimiter:
+    global _published_download_limiter
+    if _published_download_limiter is None:
+        with _init_lock:
+            if _published_download_limiter is None:
+                settings = get_settings()
+                _published_download_limiter = FixedWindowLimiter(
+                    settings.published_download_max_requests,
+                    settings.published_download_window_seconds,
+                )
+    return _published_download_limiter
+
+
+def allow_published_download(key: str) -> bool:
+    """Erlaubt/verbietet einen anonymen Download einer Veroeffentlichung fuer ``key``."""
+    return _published_download_limiter_instance().allow(key)
+
+
+def published_download_retry_after(key: str) -> int:
+    return _published_download_limiter_instance().retry_after(key)
+
+
 def reset() -> None:
     """Setzt alle Zähler und die Konfiguration zurück (für Tests)."""
-    global _account_limiter, _ip_limiter, _share_upload_limiter
+    global _account_limiter, _ip_limiter, _share_upload_limiter, _published_download_limiter
     with _init_lock:
         _account_limiter = None
         _ip_limiter = None
         _share_upload_limiter = None
+        _published_download_limiter = None
 
 
 def install(account: LoginRateLimiter, by_ip: LoginRateLimiter) -> None:
@@ -252,3 +276,10 @@ def install_share_limiter(limiter: FixedWindowLimiter) -> None:
     global _share_upload_limiter
     with _init_lock:
         _share_upload_limiter = limiter
+
+
+def install_published_limiter(limiter: FixedWindowLimiter) -> None:
+    """Ersetzt den Veroeffentlichungs-Download-Limiter (für Tests)."""
+    global _published_download_limiter
+    with _init_lock:
+        _published_download_limiter = limiter

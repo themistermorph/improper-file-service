@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     # Rate-Limit fuer oeffentliche Share-Uploads (pro Freigabe+IP).
     share_upload_max_requests: int = 60
     share_upload_window_seconds: int = 300
+    # Rate-Limit fuer anonyme Downloads von Veroeffentlichungen (pro Eintrag+IP).
+    published_download_max_requests: int = 120
+    published_download_window_seconds: int = 300
     default_quota_bytes: int = 0  # 0 = unbegrenzt (Gesamt-Quota pro Besitzer)
     trash_retention_days: int = 30
 

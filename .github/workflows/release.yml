@@ -4,25 +4,88 @@ on:
   push:
     tags: ["v*"]
 
+# Least Privilege: Standardmäßig nur Leserechte. Der release-Job erhält gezielt
+# Schreibrechte, sodass Build-Kompromittierungen nichts veröffentlichen können.
 permissions:
-  contents: write
+  contents: read
+
+# Verhindert, dass sich parallele Release-Läufe für denselben Tag überholen.
+# cancel-in-progress: false, damit ein laufender Release nicht halbfertig abgebrochen wird.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
+    # Build-Job braucht nur Lesezugriff auf den Repo-Inhalt.
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # Actions sind auf unveränderliche Commit-SHAs gepinnt (Supply-Chain-Schutz).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Volle Historie nötig, damit der Vorfahren-Check gegen origin/main gelingt.
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-          cache: pip
-      - name: Build sdist + wheel
+          # Kein pip-Cache: der Release-Build soll cachefrei und reproduzierbar sein.
+          cache: false
+
+      # Guard: Der Release-Tag muss auf dem main-Branch liegen.
+      - name: Guard – Tag liegt auf main
+        shell: bash
         run: |
-          python -m pip install --upgrade pip build
-          python -m build
-      - name: Create draft release with assets
-        uses: softprops/action-gh-release@v2
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      # Build-Tool exakt gepinnt statt "latest", um Supply-Chain-Risiken zu minimieren.
+      - name: Build-Toolchain installieren
+        run: python -m pip install "build==1.6.1"
+
+      - name: sdist + wheel bauen
+        run: python -m build
+
+      # SHA256SUMS erzeugen, damit die Release-Artefakte nachprüfbar sind.
+      - name: SHA256SUMS erzeugen
+        run: |
+          cd dist
+          sha256sum ./* > SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    # Environment mit manueller Freigabe (Approval) schützt das Veröffentlichen.
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist
+
+      # Build-Provenance nur für öffentliche Repos: private Repos ohne GitHub
+      # Advanced Security können keine Attestierungen erzeugen.
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        if: ${{ github.event.repository.visibility == 'public' }}
+        with:
+          subject-path: dist/*
+
+      - name: Draft-Release mit Assets anlegen
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: true
           generate_release_notes: true
           files: dist/*
+          fail_on_unmatched_files: true

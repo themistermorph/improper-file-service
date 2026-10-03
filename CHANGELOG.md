@@ -6,6 +6,20 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Security
+- **Veröffentlichungen:** Anonyme Downloads der öffentlichen Galerie sind pro IP+Eintrag
+  rate-limitiert (`429`/`Retry-After`); fremde Veröffentlichungen werden Systemadmins
+  ohne `path` gemeldet; die eigene Wurzel ist nicht veröffentlichbar (`400`); beim
+  erneuten Veröffentlichen wird der ursprüngliche Ersteller korrekt als
+  `published_by_username` gemeldet; die Galerie-Suche behandelt `%`, `_` und `\` als
+  Literale. Die öffentliche Anzeige des Benutzernamens des Veröffentlichenden bleibt ein
+  bewusst akzeptiertes Restrisiko.
+- **Release-Prozess:** Getrennte `build`- (nur Lesen) und `release`-Jobs (Schreiben,
+  Environment `release`), alle Actions auf Commit-SHAs gepinnt; `SHA256SUMS` und
+  Build-Provenance werden veröffentlicht, die Toolchain exakt gepinnt; der Release
+  verifiziert den Tag auf `main` und verhindert parallele Läufe; `ci.yml` erhält
+  `contents: read`; kein pip-Cache im Release-Build; Gitleaks-Secret-Scan in der CI.
+
 ### Added
 - **Veröffentlichungen (öffentliche Galerie):** Dateien und Ordner können ausdrücklich
   veröffentlicht werden und erscheinen dann ohne Anmeldung unter der neuen, teilbaren

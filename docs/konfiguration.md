@@ -108,6 +108,8 @@ IFS_S3_USE_SSL=true
 | `IFS_SHARE_UPLOAD_MAX_SIZE` | int | `104857600` | Hartes Größenlimit für **öffentliche Share-Uploads** in Bytes (100 MiB). Greift zusätzlich zu `IFS_MAX_UPLOAD_SIZE`; `0` = unbegrenzt. |
 | `IFS_SHARE_UPLOAD_MAX_REQUESTS` | int | `60` | Maximale öffentliche Share-Uploads pro Freigabe+IP je Zeitfenster. |
 | `IFS_SHARE_UPLOAD_WINDOW_SECONDS` | int | `300` | Zeitfenster für `IFS_SHARE_UPLOAD_MAX_REQUESTS`. |
+| `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` | int | `120` | Maximale anonyme Downloads einer Veröffentlichung pro Eintrag+IP je Zeitfenster. |
+| `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS` | int | `300` | Zeitfenster für `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS`. |
 | `IFS_DEFAULT_QUOTA_BYTES` | int | `0` | Gesamt-Quota pro Besitzer in Bytes. `0` = unbegrenzt. Wird bei jedem Schreiben geprüft (`413` bei Überschreitung). |
 
 > Der Spool ist eine **Zwischenablage**: Resumable Uploads sammeln Chunks dort und

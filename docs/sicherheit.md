@@ -435,3 +435,49 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   Systemadmins sichtbar (die genutzten Endpunkte sind admin-only); `logout()` räumt
   Auswahl, ZIP-Poll und Modals auf; Breadcrumb-Doppel-Escaping, 416 bei leeren
   Textvorschauen, 429-Loginmeldung und der Rollen-Zuweisungsdialog sind korrigiert.
+
+---
+
+## 19. Maßnahmen aus dem sechsten Sicherheits-Review (Veröffentlichungen & Release-Prozess)
+
+**In-App-Veröffentlichungen (öffentliche Galerie `/published`):**
+
+- **V1 – Download-Rate-Limit:** Anonyme Downloads veröffentlichter Dateien/Ordner sind
+  pro IP+Eintrag begrenzt (`IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS`, Standard 120;
+  `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS`, Standard 300); bei Überschreitung `429` mit
+  `Retry-After`. Dadurch wird unkontrolliertes Wiederholen (und die daraus folgende
+  Audit-Schreib-/Spool-Last) gebremst. Hinweis: Das Ordner-ZIP wird weiterhin je Anfrage
+  erzeugt; ein Cache bleibt Ausbaustufe.
+- **V2 – Admin-Pfadleck:** `GET /api/published/mine` liefert Systemadmins fremde
+  Veröffentlichungen weiterhin als Metadaten, aber ohne `path`; der volle virtuelle Pfad
+  wird nur für eigene Veröffentlichungen ausgegeben (konsistent zur Per-User-Isolation).
+- **V3 – Wurzel nicht veröffentlichbar:** Die eigene Wurzel (`parent_id IS NULL`) kann
+  nicht veröffentlicht werden (`400`), verhindert das versehentliche öffentliche
+  Bereitstellen des gesamten Heims.
+- **V4 – Publisher-Attribution:** Beim erneuten Veröffentlichen wird der ursprüngliche
+  Ersteller korrekt als `published_by_username` gemeldet.
+- **V5 – Such-Wildcards:** Die Namenssuche der Galerie behandelt `%`, `_` und `\` als
+  Literale (LIKE-Escape).
+- **V6 – Akzeptiertes Restrisiko:** Die öffentliche Galerie zeigt den Benutzernamen des
+  Veröffentlichenden (Attribution). Das ist eine bewusste Design-Entscheidung; wer
+  veröffentlicht, gibt seinen Loginnamen öffentlich preis.
+
+**Software-Release-Prozess (GitHub Actions):**
+
+- **R1 – Least Privilege:** Getrennter `build`-Job (nur `contents: read`) und
+  `release`-Job (`contents: write`), der nur die gebauten Artefakte anhängt. Der Build
+  führt getaggten Code aus und hat damit keinen Schreibzugriff mehr. `release` nutzt das
+  Environment `release` (Approval empfohlen).
+- **R2 – SHA-Pinning:** Alle Actions sind auf Commit-SHAs statt veränderliche Tags
+  gepinnt.
+- **R3 – Integrität/Provenance:** `SHA256SUMS` wird mitveröffentlicht; für öffentliche
+  Repos wird zusätzlich eine Build-Provenance (SLSA) via
+  `actions/attest-build-provenance` erzeugt.
+- **R4 – Reproduzierbarkeit:** Die Build-Toolchain ist exakt gepinnt (`build`,
+  `setuptools`, `wheel`).
+- **R5 – Tag-Gate:** Der Release-Workflow verifiziert, dass der getaggte Commit auf
+  `main` liegt; `concurrency` verhindert parallele Läufe.
+- **R6 – CI-Rechte:** `ci.yml` setzt `permissions: contents: read`.
+- **R7 – Kein pip-Cache im Release-Build.**
+- **R8 – Secret-Scan:** Die CI enthält einen Gitleaks-Secret-Scan (für öffentliche
+  Repos; private benötigen eine Lizenz).

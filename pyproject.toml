@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# Build-Toolchain exakt gepinnt, um Reproduzierbarkeit und Supply-Chain-Sicherheit
+# zu erhöhen (keine unkontrollierten Versionssprünge im Release-Build).
+requires = ["setuptools==84.0.0", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]

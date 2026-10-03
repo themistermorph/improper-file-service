@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least Privilege: CI benötigt nur Leserechte auf den Repo-Inhalt.
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -13,8 +17,9 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # Actions sind auf unveränderliche Commit-SHAs gepinnt (Supply-Chain-Schutz).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -26,3 +31,16 @@ jobs:
         run: python -m ruff check src tests
       - name: Tests
         run: python -m pytest
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    # gitleaks nutzt das GITHUB_TOKEN für öffentliche Repos. Private Repos
+    # bräuchten zusätzlich ein GITLEAKS_LICENSE-Secret und sind hier ausgenommen.
+    if: ${{ github.event.repository.visibility == 'public' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -7,7 +7,7 @@ import io
 from fastapi.testclient import TestClient
 
 from ifs import main
-from ifs.core import content
+from ifs.core import content, ratelimit
 from ifs.models import Blob, BlobStatus
 
 PAYLOAD = b"published-content"
@@ -36,12 +36,12 @@ def _login(client, username, password):
     ).json()["access_token"]
 
 
-def _upload(client, headers, name="f.txt"):
+def _upload(client, headers, name="f.txt", content_bytes=PAYLOAD):
     folder = client.post("/api/folders", headers=headers, json={"name": "pub"}).json()["id"]
     return client.put(
         f"/api/uploads/simple?parent_id={folder}&name={name}",
         headers=headers,
-        content=PAYLOAD,
+        content=content_bytes,
     ).json()
 
 
@@ -231,3 +231,97 @@ def test_mine_isolated_between_users(monkeypatch):
         assert client.get("/api/published/mine", headers=sam).json() == []
         # Admin sieht alle Veröffentlichungen.
         assert len(client.get("/api/published/mine", headers=admin).json()) == 1
+
+
+def test_published_download_rate_limited(monkeypatch):
+    """A1: Anonyme Downloads sind pro Eintrag+IP limitiert (DoS-Schutz)."""
+    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+    ratelimit.install_published_limiter(
+        ratelimit.FixedWindowLimiter(max_events=1, window_seconds=60)
+    )
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        entry = _upload(client, admin)
+        assert client.post(f"/api/published/{entry['id']}", headers=admin).status_code == 201
+
+        assert client.get(f"/api/published/{entry['id']}/content").status_code == 200
+        second = client.get(f"/api/published/{entry['id']}/content")
+        assert second.status_code == 429
+        assert "Retry-After" in second.headers
+
+
+def test_mine_hides_foreign_path_for_admin(monkeypatch):
+    """A2: Systemadmins sehen fremde Veröffentlichungen ohne vollen Pfad."""
+    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        own = _upload(client, admin)
+        client.post(f"/api/published/{own['id']}", headers=admin)
+
+        client.post(
+            "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
+        )
+        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        foreign = _upload(client, sam, name="fremd.txt", content_bytes=b"fremd-content")
+        client.post(f"/api/published/{foreign['id']}", headers=sam)
+
+        mine = {
+            item["entry_id"]: item
+            for item in client.get("/api/published/mine", headers=admin).json()
+        }
+        # Eigenes File: Pfad sichtbar; fremdes File: Pfad bewusst ausgeblendet.
+        assert mine[own["id"]]["path"] == "/pub/f.txt"
+        assert mine[foreign["id"]]["path"] is None
+        assert mine[foreign["id"]]["published_by_username"] == "sam"
+
+
+def test_publish_root_is_rejected(monkeypatch):
+    """A3: Die eigene Wurzel darf nicht veröffentlicht werden."""
+    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        root_id = client.get("/api/root", headers=admin).json()["id"]
+        response = client.post(f"/api/published/{root_id}", headers=admin)
+        assert response.status_code == 400
+
+
+def test_republish_keeps_original_publisher(monkeypatch):
+    """A4: Idempotentes Re-Publish nennt den Ersteller, nicht den Aufrufer."""
+    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        entry = _upload(client, admin)
+        created = client.post(f"/api/published/{entry['id']}", headers=admin)
+        assert created.status_code == 201
+        assert created.json()["published_by_username"] == "admin"
+
+        # Erneutes POST durch den Admin bleibt idempotent.
+        again = client.post(f"/api/published/{entry['id']}", headers=admin)
+        assert again.status_code == 201
+        assert again.json()["published_by_username"] == "admin"
+
+        # Auch ein berechtigter zweiter Nutzer darf den Namen nicht überschreiben.
+        sam_id = client.post(
+            "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
+        ).json()["id"]
+        assert client.post(
+            f"/api/entries/{entry['id']}/acl",
+            headers=admin,
+            json={
+                "principal_type": "user",
+                "principal_id": sam_id,
+                "perms": ["read", "share"],
+            },
+        ).status_code == 201
+        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        republished = client.post(f"/api/published/{entry['id']}", headers=sam)
+        assert republished.status_code == 201
+        assert republished.json()["published_by_username"] == "admin"
