@@ -17,6 +17,7 @@ from ..models import (
     Entry,
     Group,
     PrincipalType,
+    PublishedEntry,
     RoleAssignment,
     Share,
     User,
@@ -176,12 +177,19 @@ def _revoke_created_shares(db: Session, user: User) -> None:
     db.execute(delete(Share).where(Share.created_by == user.id))
 
 
+def _revoke_created_publications(db: Session, user: User) -> None:
+    # Deaktivierte/gelöschte Konten dürfen keine öffentlichen Dateien mehr zeigen.
+    db.execute(delete(PublishedEntry).where(PublishedEntry.published_by == user.id))
+
+
 def deactivate_user(db: Session, user: User) -> None:
     _ensure_not_last_active_admin(db, user)
     user.is_active = False
     user.token_version += 1
-    # Freigaben eines deaktivierten Kontos dürfen nicht weiterleben.
+    # Freigaben und Veröffentlichungen eines deaktivierten Kontos dürfen nicht
+    # weiterleben.
     _revoke_created_shares(db, user)
+    _revoke_created_publications(db, user)
     db.flush()
 
 
@@ -260,6 +268,7 @@ def delete_user(db: Session, user: User, transfer_to: User | None = None) -> Non
     _delete_credentials(db, user)
     _clear_group_memberships(db, user)
     _revoke_created_shares(db, user)
+    _revoke_created_publications(db, user)
     if root is not None:
         # Wurzel (samt evtl. noch enthaltenem Papierkorb) entfernen.
         db.delete(root)

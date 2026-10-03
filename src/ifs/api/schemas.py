@@ -176,6 +176,32 @@ class ShareUpdate(BaseModel):
     overwrite: bool | None = None
 
 
+class PublishedOut(BaseModel):
+    """Veröffentlichung in der eigenen Verwaltungsansicht (mit Pfad)."""
+
+    entry_id: UUID
+    name: str
+    type: EntryType
+    size: int
+    mime: str | None = None
+    path: str | None = None
+    published_by: UUID | None = None
+    published_by_username: str | None = None
+    published_at: datetime
+
+
+class PublishedPublicOut(BaseModel):
+    """Öffentliche Galerie: bewusst ohne interne Pfade/Besitzer-IDs."""
+
+    entry_id: UUID
+    name: str
+    type: EntryType
+    size: int
+    mime: str | None = None
+    published_by_username: str | None = None
+    published_at: datetime
+
+
 class AclCreate(BaseModel):
     principal_type: PrincipalType
     principal_id: UUID

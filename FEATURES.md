@@ -225,6 +225,7 @@ weiterarbeiten.
 | V10 | **Benachrichtigungen** | E-Mail/Webhook bei Upload/Freigabe | mittel |
 | V11 | **2FA/MFA & OIDC/SSO** | Sichere Anmeldung, zentrale Identität | groß |
 | V12 | **Monitoring-Dashboard** | Health/Metriken/Jobstatus in der UI | klein |
+| V13 | **Veröffentlichungen** ✅ umgesetzt | Dateien und Ordner (als ZIP) in einer öffentlichen Galerie (`/published`, ohne Login) bereitstellen und zurückziehen | klein |
 
 ---
 

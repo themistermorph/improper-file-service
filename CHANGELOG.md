@@ -4,6 +4,18 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+- **Veröffentlichungen (öffentliche Galerie):** Dateien und Ordner können ausdrücklich
+  veröffentlicht werden und erscheinen dann ohne Anmeldung unter der neuen, teilbaren
+  Seite `/published`. Ordner werden beim Download als ZIP geliefert; Dateien mit
+  Range-Support. Dort ist zudem eine Namensfilterung möglich. Veröffentlichungen werden
+  über `POST/DELETE /api/published/{id}` verwaltet,
+  in der App unter „Veröffentlichungen“ aufgelistet und beim Löschen eines Eintrags
+  sowie beim Deaktivieren/Löschen eines Kontos automatisch zurückgezogen.
+  Neue Migration `migrations/sql/0008_published_entries.sql`.
+
 ## [0.1.2] – 2026-10-03
 
 ### Performance
@@ -130,6 +142,7 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Login-Rate-Limit ist pro Prozess (In-Memory); für den vorgesehenen Maßstab
   (eine API-Instanz) ausgelegt.
 
+[Unreleased]: https://github.com/themistermorph/inproper-file-service/compare/v0.1.2...HEAD
 [0.1.2]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.2
 [0.1.1]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.1
 [0.1.0]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.0

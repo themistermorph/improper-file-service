@@ -327,6 +327,29 @@ class Share(Base):
     )
 
 
+class PublishedEntry(Base):
+    """Datei, die ihr Eigentümer in der öffentlichen Galerie bereitstellt.
+
+    Eine Datei kann höchstens einmal veröffentlicht werden (``entry_id`` ist
+    Primärschlüssel). Das Löschen des Eintrags bzw. der Papierkorb entfernt die
+    Veröffentlichung (siehe ``namespace.soft_delete``); die Galerie zeigt nur
+    aktive Dateien.
+    """
+
+    __tablename__ = "published_entries"
+
+    entry_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE"), primary_key=True
+    )
+    published_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        # Galerie-Auflistung: neueste Veröffentlichung zuerst.
+        Index("ix_published_entries_created", "created_at"),
+    )
+
+
 class UploadSession(Base):
     __tablename__ = "upload_sessions"
 

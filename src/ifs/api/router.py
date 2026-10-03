@@ -10,6 +10,7 @@ from . import (
     entries,
     monitor,
     preview,
+    published,
     roles,
     shares,
     trash,
@@ -30,5 +31,6 @@ api_router.include_router(archive.router)
 api_router.include_router(trash.router)
 api_router.include_router(uploads.router)
 api_router.include_router(shares.router)
+api_router.include_router(published.router)
 api_router.include_router(admin.router)
 api_router.include_router(monitor.router)

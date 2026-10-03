@@ -153,7 +153,9 @@ def test_soft_delete_query_anzahl_unabhaengig_von_breite(db):
     assert big.trashed_at is not None
     assert namespace.resolve_path(db, "/loesch-gross", root) is None
     assert len(big_queries) <= len(small_queries) + 1
-    assert len(big_queries) <= 5
+    # Zwei Bulk-DELETEs (Freigaben + Veröffentlichungen) fallen zusätzlich an,
+    # bleiben aber unabhängig von der Baumbreite.
+    assert len(big_queries) <= 6
 
 
 def test_list_trash_query_anzahl_unabhaengig_von_anzahl(db):

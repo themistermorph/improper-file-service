@@ -31,7 +31,7 @@ Fremdschlüssel), um einen zyklischen FK zwischen `entries` und `versions` zu ve
 ```
 
 Weitere Tabellen: `credentials`, `acl`, `roles`, `role_assignments`, `shares`,
-`upload_sessions`, `audit_log`, `outbox`.
+`published_entries`, `upload_sessions`, `audit_log`, `outbox`.
 
 ---
 
@@ -138,6 +138,13 @@ Details: [Sicherheit](sicherheit.md).
 `token` (PK), `entry_id`, `created_by`, `password_hash`, `expires_at`, `max_downloads`,
 `downloads`, `allow_upload`, `overwrite`, `created_at`.
 
+### `published_entries`
+
+`entry_id` (PK, FK auf `entries` `ON DELETE CASCADE`), `published_by`, `created_at`.
+Ein Eintrag kann höchstens einmal veröffentlicht sein; Ordner werden beim Download als
+ZIP geliefert. Die öffentliche Galerie (`/published`) listet nur aktive Einträge;
+Papierkorb und deaktivierte Konten ziehen die Veröffentlichung automatisch zurück.
+
 ### `upload_sessions`
 
 `id`, `owner_id`, `parent_id`, `name`, `size_expected`, `sha256_expected`, `offset`,
@@ -199,7 +206,8 @@ Leser sehen dadurch entweder die alte oder die neue Version – nie einen Zwisch
 ## 5. Löschen, Papierkorb, Garbage Collection
 
 1. **Soft-Delete:** `DELETE` setzt `trashed_at`, `trashed_by` und `original_parent_id` im
-   gesamten Teilbaum. Zugehörige **Freigabelinks werden automatisch widerrufen**.
+   gesamten Teilbaum. Zugehörige **Freigabelinks und Veröffentlichungen werden
+   automatisch widerrufen**.
 2. **Wiederherstellen:** Reaktiviert den Teilbaum; der Zielordner wird bei Bedarf
    reaktiviert, Namenskonflikte werden abgewiesen (`409`).
 3. **Papierkorb-Frist:** Der Worker löscht Einträge nach `IFS_TRASH_RETENTION_DAYS`

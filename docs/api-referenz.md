@@ -11,8 +11,8 @@ Interaktive Dokumentation: `GET /docs` (Swagger UI), `GET /redoc`, Schema unter
 
 ### Authentifizierung
 
-Alle Endpunkte außer Login, Freigabe-Download, Health und Version benötigen einen
-Bearer-Token:
+Alle Endpunkte außer Login, Freigabe-Download, öffentlicher Galerie (`/api/published`),
+Health und Version benötigen einen Bearer-Token:
 
 ```
 Authorization: Bearer <access_token>
@@ -569,7 +569,32 @@ Antwort: `ShareDetailOut`. Widerrufen entfernt den Link endgültig (`GET`/Downlo
 
 ---
 
-## 7. Benutzer und Administration
+## 7. Veröffentlichungen
+
+Eine Veröffentlichung stellt eine **Datei oder einen Ordner** ohne Anmeldung in der
+öffentlichen Galerie unter `/published` bereit. Ordner werden beim Download als **ZIP**
+geliefert (wie bei Freigaben). Die Veröffentlichung ist schlanker als eine Freigabe (kein
+Passwort, kein Ablauf, kein Downloadlimit) und wird in `published_entries` geführt.
+Erforderlich sind `read`- und `share`-Recht am Eintrag.
+
+| Methode & Pfad | Auth | Beschreibung |
+|---|---|---|
+| `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, type, size, mime, published_by_username, published_at }]` |
+| `GET /api/published/{entry_id}/content` | – | Öffentlicher Download: Datei (Range-Support) bzw. Ordner (ZIP) |
+| `GET /api/published/mine` | Bearer | Eigene Veröffentlichungen inkl. `path` (Systemadmins sehen alle) |
+| `POST /api/published/{entry_id}` | Bearer | Datei veröffentlichen (`201`; idempotent) |
+| `DELETE /api/published/{entry_id}` | Bearer | Veröffentlichung zurückziehen (`204`) |
+
+Die Galerie-Seite ist unter `GET /published` erreichbar und lädt ihre Daten aus
+`GET /api/published`.
+
+> **Automatischer Widerruf:** Beim Löschen (`DELETE /api/entries/{id}`) sowie beim
+> Deaktivieren oder Löschen eines Kontos werden zugehörige Veröffentlichungen
+> automatisch zurückgezogen.
+
+---
+
+## 8. Benutzer und Administration
 
 ### 7.1 Selbstbedienung (jeder angemeldete Benutzer)
 
@@ -687,7 +712,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 ---
 
-## 8. System
+## 9. System
 
 | Pfad | Beschreibung |
 |---|---|
@@ -699,7 +724,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 ---
 
-## 9. Berechtigungsmodell in Kürze
+## 10. Berechtigungsmodell in Kürze
 
 | Aktion | benötigtes Recht |
 |---|---|
@@ -710,6 +735,8 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 | Freigabe erstellen | `read` + `share` |
 | Freigabe widerrufen | `share` (Ersteller, `share`-Berechtigte oder Systemadmin) |
 | Freigabe ändern (PATCH) | Ersteller oder `share`; kein Admin-Override |
+| Veröffentlichen (Galerie) | `read` + `share` |
+| Veröffentlichung zurückziehen | Ersteller, `share`-Berechtigte oder Systemadmin |
 | ACL setzen | `admin` am Eintrag |
 | Ressourcenrolle zuweisen (`entry_id`) | `admin` am Eintrag |
 | Benutzer/Gruppen/Audit | globale Adminrolle |

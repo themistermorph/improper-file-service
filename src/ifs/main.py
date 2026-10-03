@@ -7,7 +7,7 @@ import pathlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -167,6 +167,14 @@ def create_app() -> FastAPI:
 
     web_dir = pathlib.Path(__file__).parent / "web"
     if web_dir.exists():
+        # Öffentliche Galerie unter eigener, teilbarer URL. Muss vor dem
+        # Catch-all-Mount registriert werden, damit /published nicht vom
+        # StaticFiles-Handler (der kein solches Verzeichnis kennt) beantwortet wird.
+        @app.get("/published", include_in_schema=False)
+        @app.get("/published/", include_in_schema=False)
+        async def published_gallery() -> FileResponse:
+            return FileResponse(web_dir / "published.html")
+
         app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
 
     return app

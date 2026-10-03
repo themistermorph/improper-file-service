@@ -43,6 +43,7 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 - **Selbstbedienung**: eigenes Profil und Passwort ändern
 - **Rollen**: benannte Rechtebündel (systemweit oder pro Eintrag) – ergänzen die ACLs
 - **Freigaben**: Übersicht aller Links mit Kopieren, Öffnen und Widerrufen; Dateien und **Ordner** (als ZIP), optional Upload per Drop-Link
+- **Veröffentlichungen**: Dateien und **Ordner** (als ZIP) ausdrücklich in einer **öffentlichen Galerie** (`/published`, ohne Login, inkl. Download) bereitstellen und jederzeit zurückziehen
 - **Bulk-Aktionen**: Mehrfachauswahl zum Sammel-Download (.zip), Verschieben und Löschen
 - **Versionen**: Historie je Datei mit Download und Rollback
 - **Audit-Log**: Admin-Ansicht der Ereignisse mit Filter
@@ -54,7 +55,8 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 - **Web-UI**: Dateimanager unter `/` (Browsen, Ordner, Drag-&-Drop-Upload mit Fortschritt,
   resumable Upload, Download, **ZIP-Download für Ordner mit minimierbarer Fortschrittsanzeige**,
   **Verschieben** (einzeln und mehrfach), Umbenennen, Löschen, Details,
-  Freigabelinks, **Vorschau** für Text/Code, HTML, PDF, Bilder, Video und Audio)
+  Freigabelinks, **Veröffentlichungen** (öffentliche Galerie unter `/published`),
+  **Vorschau** für Text/Code, HTML, PDF, Bilder, Video und Audio)
 
 ---
 
@@ -191,6 +193,11 @@ GET    /api/shares/{token}/content     öffentlicher Download (Ordner als ZIP)
 GET    /api/shares/{token}/content/NAME  Download mit Dateiname (curl -O)
 POST   /api/shares/{token}/upload      öffentlicher Upload in Ordner (allow_upload)
 POST   /api/shares/bulk/revoke         mehrere Freigaben widerrufen
+GET    /api/published                  öffentliche Galerie (ohne Login)
+GET    /api/published/{id}/content     öffentlicher Download (ohne Login)
+GET    /api/published/mine             eigene Veröffentlichungen
+POST   /api/published/{id}             Datei veröffentlichen
+DELETE /api/published/{id}             Veröffentlichung zurückziehen
 GET    /api/users?q=...                Benutzer auflisten (Admin)
 POST   /api/users                      Benutzer anlegen (Admin)
 POST   /api/users/bulk/active          mehrere aktivieren/deaktivieren (Admin)
@@ -265,8 +272,9 @@ alembic upgrade head
 
 > **Bestehende Installation (Upgrade):** Die SQL-Migrationen unter
 > `migrations/sql/` nacheinander anwenden, insbesondere
-> `0004_unique_entry_names.sql`, `0005_share_overwrite.sql` und
-> `0006_per_user_roots.sql`. **Vor** dem Unique-Index aus 0006 muss für jeden
+> `0004_unique_entry_names.sql`, `0005_share_overwrite.sql`,
+> `0006_per_user_roots.sql` und `0008_published_entries.sql`. **Vor** dem
+> Unique-Index aus 0006 muss für jeden
 > Benutzer eine Wurzel existieren (Per-User-Wurzel), sonst schlägt die Migration
 > fehl. Beispiel:
 >

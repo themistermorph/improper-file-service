@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from ..errors import BadRequest, Conflict, NotFound
-from ..models import Blob, Entry, EntryType, Share, User, Version
+from ..models import Blob, Entry, EntryType, PublishedEntry, Share, User, Version
 from ..utils import normalize_path, safe_mime, utcnow
 from . import authz, events, quota
 
@@ -427,11 +427,16 @@ def soft_delete(db: Session, entry: Entry, actor_id: UUID | None = None) -> None
     trashed_ids: list[UUID] = []
     _trash_subtree(db, entry, actor_id, trashed_ids)
 
-    # Freigabelinks auf gelöschte Einträge automatisch widerrufen.
+    # Freigabelinks und Veröffentlichungen auf gelöschte Einträge automatisch
+    # widerrufen – das Papierkorb-Item darf nicht in der Galerie auftauchen.
     revoked = 0
     if trashed_ids:
         result = db.execute(delete(Share).where(Share.entry_id.in_(trashed_ids)))
         revoked = result.rowcount or 0
+        result = db.execute(
+            delete(PublishedEntry).where(PublishedEntry.entry_id.in_(trashed_ids))
+        )
+        revoked += result.rowcount or 0
         db.flush()
 
     events.emit(

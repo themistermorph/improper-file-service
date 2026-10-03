@@ -165,6 +165,8 @@
   <header>
     <div class="brand">IFS<span>.</span> Dateisystem</div>
     <div class="account">
+      <a class="btn secondary small" id="nav-gallery" href="/published"
+         target="_blank" rel="noopener" title="Öffentlich veröffentlichte Dateien ansehen">🌐 Veröffentlichungen</a>
       <button class="btn ghost small hidden" id="btn-refresh" onclick="refreshCurrent()" title="Aktualisieren">⟳</button>
       <button class="btn secondary small hidden" id="account-btn" onclick="toggleAccountMenu(event)">
         <span id="who">…</span> ▾
@@ -197,6 +199,7 @@
       <div class="nav">
         <button class="btn small active" id="nav-files" onclick="showView('files')">📁 Dateien</button>
         <button class="btn small secondary" id="nav-shared" onclick="showView('shared')">📥 Mit mir geteilt</button>
+        <button class="btn small secondary" id="nav-published" onclick="showView('published')">📤 Meine Veröffentlichungen</button>
       </div>
 
       <div id="files-view">
@@ -380,6 +383,24 @@
         </div>
       </div>
 
+      <div id="published-view" class="hidden">
+        <div class="toolbar">
+          <button class="btn secondary" onclick="loadPublished()">Aktualisieren</button>
+          <a class="btn secondary" href="/published" target="_blank" rel="noopener">🌐 Öffentliche Galerie</a>
+          <span class="muted" style="font-size:13px">Dateien veröffentlichst du im Dateimanager über „…“ → „Veröffentlichen“.</span>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Pfad</th><th>Veröffentlicht von</th><th>Datum</th>
+                  <th class="right">Größe</th><th></th></tr>
+            </thead>
+            <tbody id="published-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="published-empty">Keine Dateien veröffentlicht.</div>
+        </div>
+      </div>
+
       <div id="audit-view" class="hidden">
         <div class="toolbar">
           <input id="audit-q" class="grow" type="text"
@@ -453,6 +474,8 @@
       sharesSelected: new Set(),
       shared: [],
       sharedPath: [],
+      published: [],
+      publishedIds: new Set(),
       audit: [],
       system: null,
       systemTimer: null,
@@ -653,7 +676,7 @@
         document.getElementById("app").classList.remove("hidden");
         document.getElementById("btn-refresh").classList.remove("hidden");
         showView("files");
-        await refreshTrashBadge();
+        await Promise.all([refreshTrashBadge(), refreshPublishedIds()]);
       } catch (e) { toast(e.message, "err"); }
     }
 
@@ -727,6 +750,13 @@
         const tdName = document.createElement("td");
         tdName.className = "name";
         tdName.innerHTML = (e.type === "folder" ? "📁" : "📄") + " " + esc(e.name);
+        if (state.publishedIds.has(e.id)) {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.style.marginLeft = "6px";
+          chip.textContent = "🌐 veröffentlicht";
+          tdName.appendChild(chip);
+        }
         tdName.title = e.path;
         tdName.onclick = () => {
           if (e.type === "folder") return openFolder(e);
@@ -755,6 +785,11 @@
         }
         if (e.type === "file") {
           menuItems.push({ label: "Versionen", handler: () => versionsDialog(e) });
+        }
+        if (state.publishedIds.has(e.id)) {
+          menuItems.push({ label: "Nicht mehr veröffentlichen", handler: () => unpublishEntry(e) });
+        } else {
+          menuItems.push({ label: "Veröffentlichen", handler: () => publishEntry(e) });
         }
         menuItems.push({ label: "Link", handler: () => shareDialog(e) });
         // Eigentümer-Verwaltung ist derzeit nur mit Systemadmin möglich:
@@ -1216,6 +1251,7 @@
       document.getElementById("roles-view").classList.toggle("hidden", view !== "roles");
       document.getElementById("shares-view").classList.toggle("hidden", view !== "shares");
       document.getElementById("shared-view").classList.toggle("hidden", view !== "shared");
+      document.getElementById("published-view").classList.toggle("hidden", view !== "published");
       document.getElementById("audit-view").classList.toggle("hidden", view !== "audit");
       document.getElementById("system-view").classList.toggle("hidden", view !== "system");
       document.getElementById("profile-view").classList.toggle("hidden", view !== "profile");
@@ -1223,6 +1259,8 @@
       if (navFiles) navFiles.className = "btn small" + (view === "files" ? " active" : " secondary");
       const navShared = document.getElementById("nav-shared");
       if (navShared) navShared.className = "btn small" + (view === "shared" ? " active" : " secondary");
+      const navPublished = document.getElementById("nav-published");
+      if (navPublished) navPublished.className = "btn small" + (view === "published" ? " active" : " secondary");
       closeAccountMenu();
       closeRowMenu();
       if (view !== "system") clearSystemTimer();
@@ -1231,6 +1269,7 @@
       else if (view === "roles") loadRoles();
       else if (view === "shares") loadShares();
       else if (view === "shared") loadShared();
+      else if (view === "published") loadPublished();
       else if (view === "audit") loadAudit();
       else if (view === "system") loadSystem();
       else if (view === "profile") loadProfile();
@@ -1244,6 +1283,7 @@
       else if (state.view === "roles") loadRoles();
       else if (state.view === "shares") loadShares();
       else if (state.view === "shared") loadShared();
+      else if (state.view === "published") loadPublished();
       else if (state.view === "audit") loadAudit();
       else if (state.view === "system") loadSystem();
       else if (state.view === "profile") loadProfile();
@@ -2525,6 +2565,98 @@
         shareEditAfter = null;
         if (after) after(); else loadShares();
       } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    // ---------- Veröffentlichungen (öffentliche Galerie) ----------
+    function publishedLink(entry) {
+      return location.origin + "/api/published/" + entry.entry_id + "/content";
+    }
+
+    // Nur die IDs vorhalten, damit der Dateimanager veröffentliche Dateien
+    // markieren und die passende Aktion anbieten kann.
+    async function refreshPublishedIds() {
+      try {
+        state.published = await apiJson("GET", "/api/published/mine");
+        state.publishedIds = new Set((state.published || []).map(item => item.entry_id));
+      } catch (e) { /* Markierung ist optional */ }
+    }
+
+    async function loadPublished() {
+      try {
+        state.published = await apiJson("GET", "/api/published/mine");
+        state.publishedIds = new Set((state.published || []).map(item => item.entry_id));
+        renderPublished();
+      } catch (e) { toast("Veröffentlichungen laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function renderPublished() {
+      const tbody = document.getElementById("published-rows");
+      const frag = document.createDocumentFragment();
+      const items = state.published || [];
+      document.getElementById("published-empty").classList.toggle("hidden", items.length > 0);
+      for (const item of items) {
+        const tr = document.createElement("tr");
+
+        const tdName = document.createElement("td");
+        tdName.textContent = (item.type === "folder" ? "📁 " : "📄 ") + item.name;
+        tr.appendChild(tdName);
+
+        const tdPath = document.createElement("td");
+        tdPath.className = "muted";
+        tdPath.textContent = item.path || "–";
+        tr.appendChild(tdPath);
+
+        const tdBy = document.createElement("td");
+        tdBy.textContent = item.published_by_username || "–";
+        tr.appendChild(tdBy);
+
+        const tdDate = document.createElement("td");
+        tdDate.className = "muted nowrap";
+        tdDate.textContent = fmtDate(item.published_at);
+        tr.appendChild(tdDate);
+
+        const tdSize = document.createElement("td");
+        tdSize.className = "right nowrap";
+        tdSize.textContent = item.type === "folder" ? "ZIP" : fmtSize(item.size);
+        tr.appendChild(tdSize);
+
+        const tdAct = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+        wrap.appendChild(action("Kopieren", "secondary", () => {
+          copyText(publishedLink(item))
+            .then(() => toast("Link kopiert.", "ok"))
+            .catch(() => toast("Kopieren nicht möglich – Link bitte manuell markieren.", "err"));
+        }));
+        wrap.appendChild(action("Öffnen", "secondary", () => window.open("/published", "_blank")));
+        wrap.appendChild(action("Zurückziehen", "danger", () => unpublishEntry(item)));
+        tdAct.appendChild(wrap);
+        tr.appendChild(tdAct);
+
+        frag.appendChild(tr);
+      }
+      tbody.replaceChildren(frag);
+    }
+
+    async function publishEntry(entry) {
+      try {
+        await apiJson("POST", "/api/published/" + entry.id);
+        toast("Datei veröffentlicht.", "ok");
+        await refreshPublishedIds();
+        if (state.view === "files") render();
+      } catch (e) { toast("Veröffentlichen fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    async function unpublishEntry(entry, after = null) {
+      if (!confirm(`Veröffentlichung von '${entry.name}' aufheben?`)) return;
+      try {
+        await api("DELETE", "/api/published/" + (entry.entry_id || entry.id));
+        toast("Veröffentlichung aufgehoben.", "ok");
+        await refreshPublishedIds();
+        if (after) after();
+        else if (state.view === "published") loadPublished();
+        else if (state.view === "files") render();
+      } catch (e) { toast("Aufheben fehlgeschlagen: " + e.message, "err"); }
     }
 
     // ---------- Audit-Log ----------

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Veröffentlichte Dateien – IFS</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #161a22; --panel2: #1b2029; --border: #2a3040;
+      --text: #e6e8ec; --muted: #9aa4b2; --accent: #3b82f6; --accent2: #2563eb;
+      --danger: #b91c1c; --ok: #16a34a; --warn: #d97706;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background: var(--bg); color: var(--text); }
+    a { color: #93c5fd; }
+    header { display: flex; align-items: center; justify-content: space-between;
+             gap: 12px; padding: 14px 20px; background: var(--panel);
+             border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
+    header .brand { font-weight: 700; letter-spacing: .3px; }
+    header .brand span { color: var(--accent); }
+    header .actions { display: flex; gap: 10px; align-items: center; }
+    .btn { display: inline-block; background: var(--accent); color: #fff; border: 0;
+           border-radius: 8px; padding: 7px 13px; cursor: pointer; text-decoration: none;
+           font: inherit; }
+    .btn:hover { background: var(--accent2); }
+    .btn.secondary { background: #2b3342; }
+    .btn.secondary:hover { background: #364155; }
+    main { max-width: 1100px; margin: 0 auto; padding: 22px 20px 60px; }
+    h1 { font-size: 22px; margin: 6px 0 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    input[type="search"] { flex: 1; max-width: 420px; padding: 9px 12px; border-radius: 8px;
+                           border: 1px solid var(--border); background: #0b0e13;
+                           color: var(--text); font: inherit; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 14px; }
+    .card { background: var(--panel); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 16px; display: flex;
+            flex-direction: column; gap: 8px; }
+    .card .icon { font-size: 26px; }
+    .card .name { font-weight: 600; overflow-wrap: anywhere; }
+    .card .meta { color: var(--muted); font-size: 13px; }
+    .card .actions { margin-top: auto; display: flex; gap: 8px; padding-top: 6px; }
+    .empty, .error { padding: 40px; text-align: center; color: var(--muted);
+                     border: 1px dashed var(--border); border-radius: var(--radius); }
+    .error { color: #fca5a5; }
+    .spinner { padding: 40px; text-align: center; color: var(--muted); }
+    footer { max-width: 1100px; margin: 0 auto; padding: 0 20px 40px;
+             color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">IFS<span>.</span> Veröffentlichte Dateien</div>
+    <div class="actions">
+      <a class="btn secondary" href="/">Zur Anmeldung</a>
+    </div>
+  </header>
+
+  <main>
+    <h1>Veröffentlichte Dateien</h1>
+    <p class="sub">Dateien, die Benutzer ausdrücklich zur öffentlichen Einsicht freigegeben haben.</p>
+
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Nach Dateiname filtern…" />
+    </div>
+
+    <div id="status" class="spinner">Lade veröffentlichte Dateien…</div>
+    <div id="grid" class="grid hidden"></div>
+  </main>
+
+  <footer>
+    Downloads sind ohne Anmeldung möglich. Veröffentlichte Dateien können jederzeit
+    von ihren Eigentümern zurückgezogen werden.
+  </footer>
+
+  <script>
+    const state = { items: [], filter: "" };
+
+    function esc(text) {
+      return String(text).replace(/[&<>"]/g, c => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]
+      ));
+    }
+
+    function fmtSize(bytes) {
+      if (!bytes) return "0 B";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + " MB";
+      return (bytes / 1024 ** 3).toFixed(2) + " GB";
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return "–";
+      try { return new Date(iso).toLocaleString(); } catch (e) { return "–"; }
+    }
+
+    async function load() {
+      const statusEl = document.getElementById("status");
+      try {
+        const res = await fetch("/api/published", { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        state.items = await res.json();
+        render();
+      } catch (e) {
+        statusEl.className = "error";
+        statusEl.textContent = "Veröffentlichte Dateien konnten nicht geladen werden.";
+        statusEl.classList.remove("hidden");
+        document.getElementById("grid").classList.add("hidden");
+      }
+    }
+
+    function render() {
+      const statusEl = document.getElementById("status");
+      const grid = document.getElementById("grid");
+      const filter = state.filter.toLowerCase();
+      const items = state.items.filter(it => !filter || it.name.toLowerCase().includes(filter));
+
+      if (state.items.length === 0) {
+        statusEl.className = "empty";
+        statusEl.textContent = "Es sind derzeit keine Dateien veröffentlicht.";
+        statusEl.classList.remove("hidden");
+        grid.classList.add("hidden");
+        return;
+      }
+
+      statusEl.classList.add("hidden");
+      grid.classList.remove("hidden");
+      const frag = document.createDocumentFragment();
+
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.style.gridColumn = "1 / -1";
+        empty.textContent = "Keine Datei passt zum Filter.";
+        frag.appendChild(empty);
+      }
+
+      for (const item of items) {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const isFolder = item.type === "folder";
+
+        const icon = document.createElement("div");
+        icon.className = "icon";
+        icon.textContent = isFolder ? "📁" : "📄";
+        card.appendChild(icon);
+
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = item.name;
+        name.title = item.name;
+        card.appendChild(name);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const publisher = item.published_by_username ? "von " + item.published_by_username : "";
+        meta.textContent = [
+          isFolder ? "Ordner" : fmtSize(item.size),
+          publisher,
+          fmtDate(item.published_at),
+        ].filter(Boolean).join(" · ");
+        card.appendChild(meta);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const link = document.createElement("a");
+        link.className = "btn";
+        link.href = "/api/published/" + encodeURIComponent(item.entry_id) + "/content";
+        link.textContent = isFolder ? "⬇ als ZIP" : "⬇ Download";
+        link.setAttribute("download", isFolder ? item.name + ".zip" : item.name);
+        actions.appendChild(link);
+        card.appendChild(actions);
+
+        frag.appendChild(card);
+      }
+
+      grid.replaceChildren(frag);
+    }
+
+    document.getElementById("search").addEventListener("input", (event) => {
+      state.filter = event.target.value.trim();
+      render();
+    });
+
+    load();
+  </script>
+</body>
+</html>
