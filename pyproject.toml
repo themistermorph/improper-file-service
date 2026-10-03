@@ -38,6 +38,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    # Starlette bevorzugt httpx2 für den TestClient und warnt sonst über httpx.
+    "httpx2>=2.13",
     "httpx>=0.27",
     "ruff>=0.5",
 ]
