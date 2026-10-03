@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ifs"
-version = "0.1.5"
+version = "0.1.6"
 description = "Webbasiertes Dateisystem mit HTTP(S)- und FTPS-Zugriff auf einen S3-kompatiblen Speicher"
 requires-python = ">=3.11"
 keywords = ["file-manager", "filesystem", "s3", "ftps", "fastapi", "self-hosted"]

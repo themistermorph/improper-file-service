@@ -6,6 +6,8 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.1.6] – 2026-10-04
+
 ### Tests
 - **Schnellere Test-Suite:** Parallele Ausführung ist jetzt Standard
   (`addopts = "-q -n auto"`, abschaltbar mit `-n0` für gezieltes Debuggen).
