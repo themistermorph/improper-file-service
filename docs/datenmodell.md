@@ -43,7 +43,7 @@ Weitere Tabellen: `credentials`, `acl`, `roles`, `role_assignments`, `shares`,
 |---|---|---|
 | `id` | UUID (v7) | Primärschlüssel |
 | `username` | varchar(255) | eindeutig, indexiert |
-| `display_name` | varchar(255) | optionaler Anzeigename |
+| `display_name` | varchar(255) | optionaler Anzeigename; wird in Listen statt des Benutzernamens angezeigt (Fallback: Benutzername) |
 | `email` | varchar(255) | optional |
 | `password_hash` | varchar(255) | Argon2id |
 | `is_admin` | bool | globaler Admin |

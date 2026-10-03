@@ -379,3 +379,28 @@ def test_republish_keeps_original_publisher(monkeypatch):
         republished = client.post(f"/api/published/{entry['id']}", headers=sam)
         assert republished.status_code == 201
         assert republished.json()["published_by_username"] == "admin"
+
+
+def test_publisher_display_name_in_gallery(monkeypatch):
+    """Der Benutzer-Anzeigename erscheint in Galerie und Verwaltungsliste."""
+    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        client.post(
+            "/api/users",
+            headers=admin,
+            json={"username": "erika", "password": "geheim123", "display_name": "Erika M."},
+        )
+        erika = {"Authorization": f"Bearer {_login(client, 'erika', 'geheim123')}"}
+        entry = _upload(client, erika)
+        assert client.post(f"/api/published/{entry['id']}", headers=erika).status_code == 201
+
+        gallery = client.get("/api/published").json()
+        assert gallery[0]["published_by_username"] == "erika"
+        assert gallery[0]["published_by_display_name"] == "Erika M."
+
+        mine = client.get("/api/published/mine", headers=erika).json()
+        assert mine[0]["published_by_username"] == "erika"
+        assert mine[0]["published_by_display_name"] == "Erika M."

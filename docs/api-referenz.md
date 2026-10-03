@@ -424,7 +424,7 @@ Vollständiges Beispiel: [Tutorial 4](../tutorials/04-resumable-uploads.md).
 
 Listet Freigaben – Nicht-Admins sehen nur ihre eigenen, Administratoren alle. Optional auf
 einen Eintrag gefiltert. Zusätzliche Felder: `entry_name`, `entry_path`,
-`created_by_username`, `created_at`.
+`created_by_username`, `created_by_display_name`, `created_at`.
 
 ### `POST /api/shares`
 
@@ -586,7 +586,7 @@ die eigene **Wurzel** (`parent_id IS NULL`) kann nicht veröffentlicht werden (`
 
 | Methode & Pfad | Auth | Beschreibung |
 |---|---|---|
-| `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, type, size, mime, published_by_username, published_at }]`. `q` filtert den Namen; `%`, `_` und `\` werden literal behandelt. |
+| `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, type, size, mime, published_by_username, published_by_display_name, published_at }]`. `q` filtert den Namen; `%`, `_` und `\` werden literal behandelt. |
 | `GET /api/published/{entry_id}/content` | – | Öffentlicher Download: Datei (Range-Support) bzw. Ordner (ZIP). Rate-limitiert pro Eintrag+IP (`429` mit `Retry-After`). |
 | `GET /api/published/mine` | Bearer | Eigene Veröffentlichungen inkl. `path`; Systemadmins sehen zusätzlich fremde, bei diesen wird `path` ausgelassen. |
 | `POST /api/published/{entry_id}` | Bearer | Datei oder Ordner veröffentlichen (`201`; idempotent – erneutes Veröffentlichen meldet weiterhin den ursprünglichen `published_by_username`). Optionaler Body `{ "public_name": "..." }`. |
@@ -626,6 +626,12 @@ Ausführlich: [Tutorial 11](../tutorials/11-veroeffentlichungen.md).
 `UserOut` enthält `id`, `username`, `display_name`, `email`, `is_admin`, `is_active`,
 `last_login_at`, `created_at`.
 
+> **Anzeigename:** Ist `display_name` gesetzt, wird in der Weboberfläche überall
+> der Anzeigename statt des Benutzernamens angezeigt (Kopfzeile, Freigaben,
+> Veröffentlichungen, Audit, Auswahllisten). Die API liefert dazu zusätzlich zu
+> den `*_username`-Feldern entsprechende `*_display_name`-Felder; ist der
+> Anzeigename leer, bleibt der Benutzername die Anzeige (Fallback).
+
 > Nach einer Passwortänderung wird die **Token-Version** des Benutzers erhöht; alle
 > bisherigen Tokens sind sofort ungültig (Neuanmeldung erforderlich).
 
@@ -656,7 +662,7 @@ Dateien, verlangt das Löschen `transfer_to` (`409` sonst).
 | `GET /api/groups` · `POST /api/groups` | Gruppen auflisten/anlegen (`name`) |
 | `POST /api/groups/{group_id}/members` | Mitglied hinzufügen (`user_id`) → `204` |
 | `POST /api/entries/{entry_id}/acl` | ACL-Eintrag setzen (`principal_type`, `principal_id`, `perms[]`) → `201` |
-| `GET /api/audit?limit=&offset=&action=` | Audit-Log (neueste zuerst, max. 500); enthält `actor_username` |
+| `GET /api/audit?limit=&offset=&action=` | Audit-Log (neueste zuerst, max. 500); enthält `actor_username` und `actor_display_name` |
 | `GET /api/system/stats` | Admin-Monitoring: CPU, RAM, Speicherplatz, Netzwerk-Raten (↑/↓), Laufzeit, IFS-Zähler und SeaweedFS-Volumes |
 
 `GET /api/system/stats` liefert nur für Admins Werte. CPU- und Netzwerk-Raten werden

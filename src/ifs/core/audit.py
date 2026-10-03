@@ -43,19 +43,21 @@ def list_recent(
     limit: int = 100,
     offset: int = 0,
     action: str | None = None,
-) -> list[tuple[AuditLog, str | None]]:
+) -> list[tuple[AuditLog, str | None, str | None]]:
     """Neueste Audit-Einträge, optional nach Aktion gefiltert.
 
     Reihenfolge (absteigend nach ``ts``) und Pagination bleiben unverändert.
-    Die Actor-Benutzernamen kommen per OUTER JOIN aus demselben Statement –
-    das spart den zweiten Roundtrip der bisherigen Einzelabfrage.
+    Benutzername und Anzeigename des Actors kommen per OUTER JOIN aus demselben
+    Statement – das spart den zweiten Roundtrip der bisherigen Einzelabfrage.
     """
     limit = min(max(int(limit), 1), _MAX_LIMIT)
     offset = max(int(offset), 0)
-    stmt = select(AuditLog, User.username).outerjoin(User, AuditLog.actor_id == User.id)
+    stmt = select(AuditLog, User.username, User.display_name).outerjoin(
+        User, AuditLog.actor_id == User.id
+    )
     if action:
         stmt = stmt.where(AuditLog.action == action)
     rows = db.execute(
         stmt.order_by(AuditLog.ts.desc()).limit(limit).offset(offset)
     ).all()
-    return [(row[0], row[1]) for row in rows]
+    return [(row[0], row[1], row[2]) for row in rows]

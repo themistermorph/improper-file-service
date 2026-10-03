@@ -159,7 +159,8 @@
 
         const meta = document.createElement("div");
         meta.className = "meta";
-        const publisher = item.published_by_username ? "von " + item.published_by_username : "";
+        const publisherName = item.published_by_display_name || item.published_by_username;
+        const publisher = publisherName ? "von " + publisherName : "";
         meta.textContent = [
           isFolder ? "Ordner" : fmtSize(item.size),
           publisher,

@@ -503,6 +503,13 @@
     }
     function fmtDate(iso) { return new Date(iso).toLocaleString(); }
     function esc(text) { return String(text).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+    // Bevorzugt den (Benutzer-)Anzeigenamen, fällt auf den Benutzernamen zurück.
+    function personName(displayName, username) { return displayName || username || "–"; }
+    function setWho() {
+      const me = state.me || {};
+      document.getElementById("who").textContent =
+        personName(me.display_name, me.username) + (me.is_admin ? " (Admin)" : "");
+    }
     // Entprellt häufige Eingaben (Suche/Filter), damit nicht jeder
     // Tastendruck sofort neu rendert bzw. lädt.
     function debounce(fn, wait) {
@@ -661,7 +668,7 @@
           apiJson("GET", "/api/root"),
         ]);
         state.me = me;
-        document.getElementById("who").textContent = me.username + (me.is_admin ? " (Admin)" : "");
+        setWho();
         document.getElementById("account-btn").classList.remove("hidden");
         if (me.is_admin) {
           document.getElementById("menu-users").classList.remove("hidden");
@@ -1648,7 +1655,7 @@
         others = data.items.filter(item => !state.usersSelected.has(item.id));
       } catch (e) { /* optional */ }
       const options = others
-        .map(item => `<option value="${item.id}">${esc(item.username)}</option>`)
+        .map(item => `<option value="${item.id}">${esc(personName(item.display_name, item.username))}</option>`)
         .join("");
       openModal(`
         <h2>${ids.length} Benutzer löschen</h2>
@@ -1711,7 +1718,7 @@
 
     function userEditDialog(u) {
       openModal(`
-        <h2>Benutzer bearbeiten – ${esc(u.username)}</h2>
+        <h2>Benutzer bearbeiten – ${esc(personName(u.display_name, u.username))}</h2>
         <div class="field"><label>Anzeigename</label><input id="eu-display" value="${esc(u.display_name || "")}" /></div>
         <div class="field"><label>E-Mail</label><input id="eu-email" value="${esc(u.email || "")}" /></div>
         <label class="checkline"><input type="checkbox" id="eu-admin" ${u.is_admin ? "checked" : ""} /> Administrator</label>
@@ -1735,7 +1742,7 @@
 
     function userPasswordDialog(u) {
       openModal(`
-        <h2>Passwort zurücksetzen – ${esc(u.username)}</h2>
+        <h2>Passwort zurücksetzen – ${esc(personName(u.display_name, u.username))}</h2>
         <div class="field"><label>Neues Passwort (min. 8 Zeichen)</label><input id="pu-password" type="password" /></div>
         <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
         <button class="btn" onclick="submitUserPassword('${u.id}')">Zurücksetzen</button></div>`);
@@ -1770,10 +1777,10 @@
         others = data.items.filter(item => item.id !== u.id);
       } catch (e) { /* optional */ }
       const options = others
-        .map(item => `<option value="${item.id}">${esc(item.username)}</option>`)
+        .map(item => `<option value="${item.id}">${esc(personName(item.display_name, item.username))}</option>`)
         .join("");
       openModal(`
-        <h2>Benutzer löschen – ${esc(u.username)}</h2>
+        <h2>Benutzer löschen – ${esc(personName(u.display_name, u.username))}</h2>
         <p class="muted">Besitzt der Benutzer Dateien, muss der Besitz übertragen werden.</p>
         <div class="field"><label>Besitz übertragen an (optional)</label>
           <select id="du-transfer"><option value="">– nicht übertragen –</option>${options}</select></div>
@@ -1806,7 +1813,7 @@
             ).join("")
           : '<p class="muted">Es gibt noch keine Gruppen.</p>';
         openModal(`
-          <h2>Gruppen – ${esc(u.username)}</h2>
+          <h2>Gruppen – ${esc(personName(u.display_name, u.username))}</h2>
           ${rows}
           <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
           <button class="btn" onclick="submitUserGroups('${u.id}')">Speichern</button></div>`);
@@ -1851,6 +1858,7 @@
           email: document.getElementById("me-email").value.trim(),
         };
         state.me = await apiJson("PATCH", "/api/me", body);
+        setWho();
         toast("Profil gespeichert.", "ok");
       } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
     }
@@ -2011,7 +2019,7 @@
       try {
         if (type === "user") {
           const data = await apiJson("GET", "/api/users?limit=200");
-          for (const u of data.items) select.appendChild(new Option(u.username, u.id));
+          for (const u of data.items) select.appendChild(new Option(personName(u.display_name, u.username), u.id));
         } else {
           const groups = await apiJson("GET", "/api/groups");
           for (const g of groups) select.appendChild(new Option(g.name, g.id));
@@ -2167,7 +2175,7 @@
           `<label class="checkline"><input type="checkbox" class="srole" value="${role.id}" ${mineIds.has(role.id) ? "checked" : ""} /> ${esc(role.name)} <span class="muted">${esc(role.description || "")}</span></label>`
         ).join("");
         openModal(`
-          <h2>Systemrollen – ${esc(u.username)}</h2>
+          <h2>Systemrollen – ${esc(personName(u.display_name, u.username))}</h2>
           ${rows}
           <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
           <button class="btn" onclick="submitUserRoles('${u.id}')">Speichern</button></div>`);
@@ -2406,7 +2414,7 @@
         tr.appendChild(tdEntry);
 
         const tdBy = document.createElement("td");
-        tdBy.textContent = s.created_by_username || "–";
+        tdBy.textContent = personName(s.created_by_display_name, s.created_by_username);
         tr.appendChild(tdBy);
 
         const tdExp = document.createElement("td");
@@ -2611,7 +2619,7 @@
         tr.appendChild(tdPath);
 
         const tdBy = document.createElement("td");
-        tdBy.textContent = item.published_by_username || "–";
+        tdBy.textContent = personName(item.published_by_display_name, item.published_by_username);
         tr.appendChild(tdBy);
 
         const tdDate = document.createElement("td");
@@ -2729,7 +2737,7 @@
       const tbody = document.getElementById("audit-rows");
       const items = (state.audit || []).filter(row => {
         if (!filter) return true;
-        const hay = [row.action, row.actor_username, row.ip, row.target_entry, row.protocol, row.result]
+        const hay = [row.action, row.actor_display_name, row.actor_username, row.ip, row.target_entry, row.protocol, row.result]
           .filter(Boolean).join(" ").toLowerCase();
         return hay.includes(filter);
       });
@@ -2739,7 +2747,7 @@
       tbody.innerHTML = items.map(row => {
         const cells = [
           fmtDate(row.ts),
-          row.actor_username || "–",
+          personName(row.actor_display_name, row.actor_username),
           row.action,
           row.protocol || "–",
           row.ip || "–",

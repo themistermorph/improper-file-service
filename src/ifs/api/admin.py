@@ -102,6 +102,7 @@ def list_audit(
             "ts": row.ts.isoformat(),
             "actor_id": str(row.actor_id) if row.actor_id else None,
             "actor_username": username,
+            "actor_display_name": display_name,
             "action": row.action,
             "target_entry": str(row.target_entry) if row.target_entry else None,
             "protocol": row.protocol,
@@ -109,5 +110,5 @@ def list_audit(
             "result": row.result,
             "details": row.details,
         }
-        for row, username in rows
+        for row, username, display_name in rows
     ]

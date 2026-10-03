@@ -6,6 +6,16 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.1.5] – 2026-10-03
+
+### Fixed
+- **Benutzer-Anzeigename:** Ist ein Anzeigename (`display_name`) gesetzt, wird er
+  jetzt in der Weboberfläche konsequent statt des Benutzernamens angezeigt –
+  Kopfzeile, Freigaben (`created_by_display_name`), Veröffentlichungen
+  (`published_by_display_name`), Audit-Log (`actor_display_name`) sowie
+  Benutzer-Auswahllisten und -Dialoge. Ohne Anzeigename bleibt der Benutzername
+  (Fallback). Die API liefert die Anzeigenamen als zusätzliche Felder.
+
 ## [0.1.4] – 2026-10-03
 
 ### Performance

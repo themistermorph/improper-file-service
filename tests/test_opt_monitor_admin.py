@@ -150,17 +150,17 @@ def test_audit_list_recent_filter_pagination_and_join(sql_statements, db):
 
     sql_statements.clear()
     rows = audit.list_recent(db, limit=50)
-    assert [row.action for row, _ in rows] == ["opt.second", "opt.first"]
-    assert all(username == "auditor" for _, username in rows)
+    assert [row.action for row, _, _ in rows] == ["opt.second", "opt.first"]
+    assert all(username == "auditor" for _, username, _ in rows)
     combined = _audit_sql(sql_statements)
     assert len(combined) == 1, "Actor-Namen verursachen einen zweiten Roundtrip"
     assert "join users" in combined[0].lower()
 
     filtered = audit.list_recent(db, action="opt.first")
-    assert [row.action for row, _ in filtered] == ["opt.first"]
+    assert [row.action for row, _, _ in filtered] == ["opt.first"]
 
     window = audit.list_recent(db, limit=1, offset=1)
-    assert [row.action for row, _ in window] == ["opt.first"]
+    assert [row.action for row, _, _ in window] == ["opt.first"]
 
     # Klemmung wie bisher: limit 0 -> 1.
     assert len(audit.list_recent(db, limit=0)) == 1
@@ -186,6 +186,7 @@ def test_audit_endpoint_fresh_filtered_and_uncached(sql_statements):
             "ts",
             "actor_id",
             "actor_username",
+            "actor_display_name",
             "action",
             "target_entry",
             "protocol",

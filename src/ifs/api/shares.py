@@ -149,6 +149,7 @@ def _detail(
         entry_type=entry.type.value if entry else None,
         created_by=share.created_by,
         created_by_username=creator.username if creator else None,
+        created_by_display_name=creator.display_name if creator else None,
         expires_at=share.expires_at,
         max_downloads=share.max_downloads,
         downloads=share.downloads,

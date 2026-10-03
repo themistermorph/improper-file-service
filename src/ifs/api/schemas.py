@@ -164,6 +164,8 @@ class ShareDetailOut(ShareOut):
     entry_type: str | None = None
     created_by: UUID | None = None
     created_by_username: str | None = None
+    # Anzeigename des Erstellers (Fallback: `created_by_username`).
+    created_by_display_name: str | None = None
     created_at: datetime | None = None
 
 
@@ -189,6 +191,8 @@ class PublishedOut(BaseModel):
     path: str | None = None
     published_by: UUID | None = None
     published_by_username: str | None = None
+    # Anzeigename des Veröffentlichenden (Fallback: `published_by_username`).
+    published_by_display_name: str | None = None
     published_at: datetime
 
 
@@ -202,6 +206,8 @@ class PublishedPublicOut(BaseModel):
     size: int
     mime: str | None = None
     published_by_username: str | None = None
+    # Anzeigename des Veröffentlichenden (Fallback: `published_by_username`).
+    published_by_display_name: str | None = None
     published_at: datetime
 
 

@@ -54,7 +54,12 @@ def _clean_public_name(value: str | None) -> str | None:
     return cleaned or None
 
 
-def _to_public(published: PublishedEntry, entry: Entry, username: str | None) -> PublishedPublicOut:
+def _to_public(
+    published: PublishedEntry,
+    entry: Entry,
+    username: str | None,
+    display_name: str | None = None,
+) -> PublishedPublicOut:
     return PublishedPublicOut(
         entry_id=entry.id,
         name=_effective_name(published, entry),
@@ -62,6 +67,7 @@ def _to_public(published: PublishedEntry, entry: Entry, username: str | None) ->
         size=entry.size,
         mime=entry.mime,
         published_by_username=username,
+        published_by_display_name=display_name,
         published_at=published.created_at,
     )
 
@@ -71,6 +77,7 @@ def _to_out(
     published: PublishedEntry,
     entry: Entry,
     username: str | None,
+    display_name: str | None = None,
     *,
     include_path: bool = True,
 ) -> PublishedOut:
@@ -84,6 +91,7 @@ def _to_out(
         path=namespace.path_of(db, entry) if include_path else None,
         published_by=published.published_by,
         published_by_username=username,
+        published_by_display_name=display_name,
         published_at=published.created_at,
     )
 
@@ -111,11 +119,18 @@ def list_published(
     )
     rows = db.execute(stmt).all()
     publishers = _load_publishers(db, {published.published_by for published, _ in rows})
-    return [
-        _to_public(published, entry, publishers[published.published_by].username
-                   if published.published_by in publishers else None)
-        for published, entry in rows
-    ]
+    result: list[PublishedPublicOut] = []
+    for published, entry in rows:
+        publisher = publishers.get(published.published_by)
+        result.append(
+            _to_public(
+                published,
+                entry,
+                publisher.username if publisher else None,
+                publisher.display_name if publisher else None,
+            )
+        )
+    return result
 
 
 @router.get("/published/mine", response_model=list[PublishedOut])
@@ -134,19 +149,22 @@ def list_my_published(
         stmt = stmt.where(PublishedEntry.published_by == user.id)
     rows = db.execute(stmt).all()
     publishers = _load_publishers(db, {published.published_by for published, _ in rows})
-    return [
-        _to_out(
-            db,
-            published,
-            entry,
-            publishers[published.published_by].username
-            if published.published_by in publishers else None,
-            # Systemadmins sehen fremde Veroeffentlichungen ohne vollen Pfad:
-            # der virtuelle Pfad ist nur fuer eigene Eintraege bestimmt.
-            include_path=published.published_by == user.id,
+    result: list[PublishedOut] = []
+    for published, entry in rows:
+        publisher = publishers.get(published.published_by)
+        result.append(
+            _to_out(
+                db,
+                published,
+                entry,
+                publisher.username if publisher else None,
+                publisher.display_name if publisher else None,
+                # Systemadmins sehen fremde Veroeffentlichungen ohne vollen Pfad:
+                # der virtuelle Pfad ist nur fuer eigene Eintraege bestimmt.
+                include_path=published.published_by == user.id,
+            )
         )
-        for published, entry in rows
-    ]
+    return result
 
 
 def _serve_folder(db: Session, entry: Entry, request: Request, download_name: str) -> Response:
@@ -251,7 +269,11 @@ def publish_entry(
     # aktuell anfragenden Benutzer (z. B. Admin).
     publisher = db.get(User, published.published_by)
     return _to_out(
-        db, published, entry, publisher.username if publisher else user.username
+        db,
+        published,
+        entry,
+        publisher.username if publisher else user.username,
+        publisher.display_name if publisher else user.display_name,
     )
 
 
@@ -291,7 +313,11 @@ def update_published(
     )
     publisher = db.get(User, published.published_by) if published.published_by else None
     return _to_out(
-        db, published, entry, publisher.username if publisher else user.username
+        db,
+        published,
+        entry,
+        publisher.username if publisher else user.username,
+        publisher.display_name if publisher else user.display_name,
     )
 
 

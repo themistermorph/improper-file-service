@@ -352,3 +352,39 @@ def test_audit_includes_actor_username():
 
         filtered = client.get("/api/audit?action=user.create", headers=headers).json()
         assert all(r["action"] == "user.create" for r in filtered)
+
+
+def test_display_name_in_shares_and_audit(monkeypatch):
+    """Benutzer-Anzeigename statt Benutzername in Freigaben und Audit."""
+    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        client.post(
+            "/api/users",
+            headers=admin,
+            json={"username": "erika", "password": "geheim123", "display_name": "Erika M."},
+        )
+        erika = {"Authorization": f"Bearer {_login(client, 'erika', 'geheim123')}"}
+        folder = client.post("/api/folders", headers=erika, json={"name": "share-me"}).json()["id"]
+        entry = client.put(
+            f"/api/uploads/simple?parent_id={folder}&name=f.txt",
+            headers=erika,
+            content=PAYLOAD,
+        ).json()
+        created = client.post("/api/shares", headers=erika, json={"entry_id": entry["id"]}).json()
+
+        listing = client.get("/api/shares", headers=erika).json()
+        item = next(s for s in listing if s["token"] == created["token"])
+        assert item["created_by_username"] == "erika"
+        assert item["created_by_display_name"] == "Erika M."
+
+        rows = client.get("/api/audit?limit=100", headers=admin).json()
+        events = [
+            r
+            for r in rows
+            if r["action"] == "share.create" and r["actor_username"] == "erika"
+        ]
+        assert events
+        assert events[0]["actor_display_name"] == "Erika M."
