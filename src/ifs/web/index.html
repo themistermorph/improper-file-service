@@ -173,7 +173,6 @@
       </button>
       <div id="account-menu" class="menu hidden">
         <button onclick="showView('trash')">🗑 Papierkorb <span id="trash-badge" class="badge hidden"></span></button>
-        <button onclick="showView('shares')">🔗 Freigaben</button>
         <button onclick="showView('profile')">👤 Profil</button>
         <button id="menu-users" class="hidden" onclick="showView('users')">👥 Benutzer</button>
         <button id="menu-roles" class="hidden" onclick="showView('roles')">🎭 Rollen</button>
@@ -200,6 +199,7 @@
         <button class="btn small active" id="nav-files" onclick="showView('files')">📁 Dateien</button>
         <button class="btn small secondary" id="nav-shared" onclick="showView('shared')">📥 Mit mir geteilt</button>
         <button class="btn small secondary" id="nav-published" onclick="showView('published')">📤 Meine Veröffentlichungen</button>
+        <button class="btn small secondary" id="nav-shares" onclick="showView('shares')">🔗 Freigaben</button>
       </div>
 
       <div id="files-view">
@@ -1261,6 +1261,8 @@
       if (navShared) navShared.className = "btn small" + (view === "shared" ? " active" : " secondary");
       const navPublished = document.getElementById("nav-published");
       if (navPublished) navPublished.className = "btn small" + (view === "published" ? " active" : " secondary");
+      const navShares = document.getElementById("nav-shares");
+      if (navShares) navShares.className = "btn small" + (view === "shares" ? " active" : " secondary");
       closeAccountMenu();
       closeRowMenu();
       if (view !== "system") clearSystemTimer();

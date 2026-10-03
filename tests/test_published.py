@@ -91,6 +91,17 @@ def test_main_page_links_to_gallery():
         assert 'href="/published"' in page.text
 
 
+def test_shares_nav_item_next_to_publications():
+    """Freigaben stehen in der Navigation direkt neben den Veröffentlichungen."""
+    with TestClient(main.app) as client:
+        page = client.get("/").text
+    assert 'id="nav-published"' in page
+    assert 'id="nav-shares"' in page
+    assert page.index('id="nav-published"') < page.index('id="nav-shares"')
+    # Nicht mehr zusätzlich im Kontomenü: genau eine Verwendung.
+    assert page.count("showView('shares')") == 1
+
+
 def test_gallery_page_defines_hidden_helper():
     """Regression: Ohne .hidden bleibt die Lade-/Statuszeile sichtbar."""
     with TestClient(main.app) as client:
