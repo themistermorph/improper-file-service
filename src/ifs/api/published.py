@@ -24,7 +24,7 @@ from ..models import Entry, EntryType, PublishedEntry, User
 from ..utils import content_disposition
 from .deps import client_ip, get_current_user, get_db
 from .entries import stream_entry_content
-from .schemas import PublishedOut, PublishedPublicOut
+from .schemas import PublishedInput, PublishedOut, PublishedPublicOut
 
 router = APIRouter(tags=["published"])
 
@@ -43,10 +43,21 @@ def _load_publishers(db: Session, user_ids: set[UUID]) -> dict[UUID, User]:
     return users
 
 
+def _effective_name(published: PublishedEntry, entry: Entry) -> str:
+    """Anzeigename in der Galerie: öffentlicher Name, sonst interner Name."""
+    return published.public_name or entry.name
+
+
+def _clean_public_name(value: str | None) -> str | None:
+    """Trimmt den öffentlichen Namen; leer/None bedeutet „internen Namen nutzen"."""
+    cleaned = (value or "").strip()
+    return cleaned or None
+
+
 def _to_public(published: PublishedEntry, entry: Entry, username: str | None) -> PublishedPublicOut:
     return PublishedPublicOut(
         entry_id=entry.id,
-        name=entry.name,
+        name=_effective_name(published, entry),
         type=entry.type,
         size=entry.size,
         mime=entry.mime,
@@ -66,6 +77,7 @@ def _to_out(
     return PublishedOut(
         entry_id=entry.id,
         name=entry.name,
+        public_name=published.public_name,
         type=entry.type,
         size=entry.size,
         mime=entry.mime,
@@ -137,7 +149,7 @@ def list_my_published(
     ]
 
 
-def _serve_folder(db: Session, entry: Entry, request: Request) -> Response:
+def _serve_folder(db: Session, entry: Entry, request: Request, download_name: str) -> Response:
     """Streamt den veröffentlichten Ordner samt Teilbaum als ZIP."""
     audit.record(
         db, "publish.download", target_entry=entry.id, protocol="http",
@@ -148,7 +160,7 @@ def _serve_folder(db: Session, entry: Entry, request: Request) -> Response:
     headers = {
         "Content-Type": "application/zip",
         "Content-Length": str(size),
-        "Content-Disposition": content_disposition(f"{entry.name}.zip"),
+        "Content-Disposition": content_disposition(f"{download_name}.zip"),
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "no-store",
     }
@@ -185,9 +197,12 @@ def download_published(
             "Zu viele Downloads – bitte später erneut versuchen.",
             headers={"Retry-After": str(ratelimit.published_download_retry_after(key))},
         )
+    download_name = _effective_name(published, entry)
     if entry.type == EntryType.folder:
-        return _serve_folder(db, entry, request)
-    return stream_entry_content(db, entry, request, download=True)
+        return _serve_folder(db, entry, request, download_name)
+    return stream_entry_content(
+        db, entry, request, download=True, download_name=download_name
+    )
 
 
 @router.post(
@@ -196,6 +211,7 @@ def download_published(
 def publish_entry(
     entry_id: UUID,
     request: Request,
+    payload: PublishedInput | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> PublishedOut:
@@ -211,18 +227,69 @@ def publish_entry(
     authz.authorize(db, user, "read", entry)
     authz.authorize(db, user, "share", entry)
 
+    public_name = _clean_public_name(payload.public_name) if payload else None
     published = db.get(PublishedEntry, entry.id)
     if published is None:
-        published = PublishedEntry(entry_id=entry.id, published_by=user.id)
+        published = PublishedEntry(
+            entry_id=entry.id, published_by=user.id, public_name=public_name
+        )
         db.add(published)
         db.flush()
         audit.record(
             db, "publish.create", actor_id=user.id, target_entry=entry.id,
             protocol="http", ip=client_ip(request), details={"entry_id": str(entry.id)},
         )
+    elif payload is not None and payload.public_name is not None:
+        # Idempotentes Re-Publish darf den Anzeigenamen aktualisieren.
+        published.public_name = public_name
+        db.flush()
+        audit.record(
+            db, "publish.update", actor_id=user.id, target_entry=entry.id,
+            protocol="http", ip=client_ip(request), details={"entry_id": str(entry.id)},
+        )
     # Bei idempotentem Re-Publish den tatsaechlichen Ersteller nennen, nicht den
     # aktuell anfragenden Benutzer (z. B. Admin).
     publisher = db.get(User, published.published_by)
+    return _to_out(
+        db, published, entry, publisher.username if publisher else user.username
+    )
+
+
+def _can_manage(
+    db: Session, user: User, published: PublishedEntry, entry: Entry | None
+) -> bool:
+    """Verwaltungsrecht: Ersteller, `share`-Berechtigte oder Systemadmin."""
+    if published.published_by == user.id:
+        return True
+    if entry is not None and authz.can(db, user, "share", entry):
+        return True
+    return authz.is_system_admin(db, user)
+
+
+@router.patch("/published/{entry_id}", response_model=PublishedOut)
+def update_published(
+    entry_id: UUID,
+    payload: PublishedInput,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> PublishedOut:
+    """Ändert den öffentlichen Anzeigenamen nachträglich (leer = interner Name)."""
+    published = db.get(PublishedEntry, entry_id)
+    if published is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Eintrag ist nicht veröffentlicht")
+    # Nur aktive Einträge lassen sich umbenennen (trash-Aufräumen bleibt dem
+    # separaten Widerruf vorbehalten).
+    entry = namespace.get_entry(db, entry_id)
+    if not _can_manage(db, user, published, entry):
+        raise PermissionDenied("Kein Recht, diese Veröffentlichung zu verwalten")
+    published.public_name = _clean_public_name(payload.public_name)
+    db.flush()
+    audit.record(
+        db, "publish.update", actor_id=user.id, target_entry=entry_id,
+        protocol="http", ip=client_ip(request), details={"entry_id": str(entry_id)},
+    )
+    publisher = db.get(User, published.published_by) if published.published_by else None
     return _to_out(
         db, published, entry, publisher.username if publisher else user.username
     )
@@ -242,10 +309,7 @@ def unpublish_entry(
     # Auch nach dem Verschieben in den Papierkorb darf die Veröffentlichung
     # widerrufen werden; verwalten darf sie der Ersteller, wer `share` am Eintrag
     # hat oder (als Missbrauchsschutz) ein Systemadmin.
-    manageable = published.published_by == user.id
-    if not manageable and entry is not None:
-        manageable = authz.can(db, user, "share", entry)
-    if not manageable and not authz.is_system_admin(db, user):
+    if not _can_manage(db, user, published, entry):
         raise PermissionDenied("Kein Recht, diese Veröffentlichung zu verwalten")
     db.delete(published)
     audit.record(

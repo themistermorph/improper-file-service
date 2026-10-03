@@ -25,6 +25,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
     serialisieren.
 
 ### Added
+- **Veröffentlichungen – öffentlicher Anzeigename:** Beim Veröffentlichen kann ein
+  abweichender Anzeigename gesetzt werden (`public_name`), der in der Galerie und im
+  Download-Dateinamen (`Content-Disposition`, bei Ordnern `<name>.zip`) verwendet wird.
+  Der Name lässt sich nachträglich über `PATCH /api/published/{id}` ändern; leer/`null`
+  verwendet wieder den internen Namen. Neue Migration
+  `migrations/sql/0009_published_public_name.sql`.
 - Neue Durchsatz-Einstellungen `IFS_FTP_TRANSFER_BUFFER_BYTES` und
   `IFS_FTP_S3_READAHEAD_BYTES` (FTPS) sowie `IFS_S3_MAX_POOL_CONNECTIONS` (S3).
   Details unter [Konfiguration](docs/konfiguration.md) und

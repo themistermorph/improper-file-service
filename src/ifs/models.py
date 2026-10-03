@@ -342,6 +342,8 @@ class PublishedEntry(Base):
         Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE"), primary_key=True
     )
     published_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    # Öffentlicher Anzeigename; leer = interner Datei-/Ordnername.
+    public_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (

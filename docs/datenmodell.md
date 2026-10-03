@@ -140,10 +140,12 @@ Details: [Sicherheit](sicherheit.md).
 
 ### `published_entries`
 
-`entry_id` (PK, FK auf `entries` `ON DELETE CASCADE`), `published_by`, `created_at`.
-Ein Eintrag kann höchstens einmal veröffentlicht sein; Ordner werden beim Download als
-ZIP geliefert. Die öffentliche Galerie (`/published`) listet nur aktive Einträge;
-Papierkorb und deaktivierte Konten ziehen die Veröffentlichung automatisch zurück.
+`entry_id` (PK, FK auf `entries` `ON DELETE CASCADE`), `published_by`, `public_name`,
+`created_at`. Ein Eintrag kann höchstens einmal veröffentlicht sein; Ordner werden beim
+Download als ZIP geliefert. `public_name` ist der optionale öffentliche Anzeigename
+(leer = interner Name). Die öffentliche Galerie (`/published`) listet nur aktive
+Einträge; Papierkorb und deaktivierte Konten ziehen die Veröffentlichung automatisch
+zurück.
 
 ### `upload_sessions`
 

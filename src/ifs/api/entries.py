@@ -419,6 +419,7 @@ def stream_entry_content(
     download: bool = False,
     actor_id: UUID | None = None,
     inline_active: bool = False,
+    download_name: str | None = None,
 ) -> Response:
     """Streamt den aktuellen Inhalt eines Eintrags. Autorisierung obliegt dem Aufrufer."""
     return stream_blob(
@@ -429,6 +430,7 @@ def stream_entry_content(
         download=download,
         actor_id=actor_id,
         inline_active=inline_active,
+        download_name=download_name,
     )
 
 
@@ -441,8 +443,13 @@ def stream_blob(
     download: bool = False,
     actor_id: UUID | None = None,
     inline_active: bool = False,
+    download_name: str | None = None,
 ) -> Response:
-    """Streamt einen bestimmten Blob (mit Range-Support). Autorisierung obliegt dem Aufrufer."""
+    """Streamt einen bestimmten Blob (mit Range-Support). Autorisierung obliegt dem Aufrufer.
+
+    ``download_name`` überschreibt den Dateinamen im ``Content-Disposition``
+    (z. B. für den öffentlichen Anzeigenamen einer Veröffentlichung).
+    """
     content_type = safe_mime(entry.mime)
     # Aktive Inhalte immer als Download ausliefern (kein Inline-XSS im App-Origin),
     # außer der Aufrufer sandboxt sie selbst (Vorschau-Endpunkt). Der Vergleich ist
@@ -456,7 +463,9 @@ def stream_blob(
         "X-Content-Type-Options": "nosniff",
     }
     if download or force_attachment:
-        base_headers["Content-Disposition"] = content_disposition(entry.name)
+        base_headers["Content-Disposition"] = content_disposition(
+            download_name or entry.name
+        )
     if force_attachment:
         base_headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
 

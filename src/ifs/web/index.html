@@ -789,7 +789,7 @@
         if (state.publishedIds.has(e.id)) {
           menuItems.push({ label: "Nicht mehr veröffentlichen", handler: () => unpublishEntry(e) });
         } else {
-          menuItems.push({ label: "Veröffentlichen", handler: () => publishEntry(e) });
+          menuItems.push({ label: "Veröffentlichen", handler: () => publishDialog(e) });
         }
         menuItems.push({ label: "Link", handler: () => shareDialog(e) });
         // Eigentümer-Verwaltung ist derzeit nur mit Systemadmin möglich:
@@ -2600,7 +2600,9 @@
         const tr = document.createElement("tr");
 
         const tdName = document.createElement("td");
-        tdName.textContent = (item.type === "folder" ? "📁 " : "📄 ") + item.name;
+        tdName.textContent = (item.type === "folder" ? "📁 " : "📄 ")
+          + (item.public_name || item.name);
+        if (item.public_name) tdName.title = "Intern: " + item.name;
         tr.appendChild(tdName);
 
         const tdPath = document.createElement("td");
@@ -2630,6 +2632,7 @@
             .then(() => toast("Link kopiert.", "ok"))
             .catch(() => toast("Kopieren nicht möglich – Link bitte manuell markieren.", "err"));
         }));
+        wrap.appendChild(action("Umbenennen", "secondary", () => publishRenameDialog(item)));
         wrap.appendChild(action("Öffnen", "secondary", () => window.open("/published", "_blank")));
         wrap.appendChild(action("Zurückziehen", "danger", () => unpublishEntry(item)));
         tdAct.appendChild(wrap);
@@ -2640,13 +2643,65 @@
       tbody.replaceChildren(frag);
     }
 
-    async function publishEntry(entry) {
-      try {
-        await apiJson("POST", "/api/published/" + entry.id);
-        toast("Datei veröffentlicht.", "ok");
-        await refreshPublishedIds();
-        if (state.view === "files") render();
-      } catch (e) { toast("Veröffentlichen fehlgeschlagen: " + e.message, "err"); }
+    // Dialog für den öffentlichen Anzeigenamen (beim Veröffentlichen und später).
+    function openPublishNameModal({ title, submitLabel, internalName, value, onSubmit }) {
+      openModal(`
+        <h2>${esc(title)}</h2>
+        <p class="muted" style="font-size:13px">Intern: ${esc(internalName)}</p>
+        <div class="field"><label>Öffentlicher Dateiname</label>
+          <input id="pub-name" type="text" maxlength="255" value="${esc(value || "")}"
+                 placeholder="${esc(internalName)}" /></div>
+        <p class="muted" style="font-size:12px">Leer lassen = der interne Name wird angezeigt.</p>
+        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <button class="btn" id="pub-submit">${esc(submitLabel)}</button></div>`);
+      const input = document.getElementById("pub-name");
+      const button = document.getElementById("pub-submit");
+      input.focus();
+      input.select();
+      const submit = async () => {
+        button.disabled = true;
+        try {
+          await onSubmit(input.value.trim());
+          closeModal();
+          toast("Gespeichert.", "ok");
+          await refreshPublishedIds();
+          if (state.view === "published") loadPublished();
+          else if (state.view === "files") render();
+        } catch (e) {
+          toast("Speichern fehlgeschlagen: " + e.message, "err");
+          button.disabled = false;
+        }
+      };
+      button.onclick = submit;
+      input.onkeydown = (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); submit(); }
+      };
+    }
+
+    function publishDialog(entry) {
+      openPublishNameModal({
+        title: "Veröffentlichen",
+        submitLabel: "Veröffentlichen",
+        internalName: entry.name,
+        value: entry.name,
+        onSubmit: (publicName) => {
+          const body = publicName && publicName !== entry.name ? { public_name: publicName } : {};
+          return apiJson("POST", "/api/published/" + entry.id, body);
+        },
+      });
+    }
+
+    function publishRenameDialog(item) {
+      openPublishNameModal({
+        title: "Anzeigenamen ändern",
+        submitLabel: "Speichern",
+        internalName: item.name,
+        value: item.public_name || item.name,
+        onSubmit: (publicName) => {
+          const value = publicName && publicName !== item.name ? publicName : null;
+          return apiJson("PATCH", "/api/published/" + item.entry_id, { public_name: value });
+        },
+      });
     }
 
     async function unpublishEntry(entry, after = null) {

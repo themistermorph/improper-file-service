@@ -200,7 +200,8 @@ POST   /api/shares/bulk/revoke         mehrere Freigaben widerrufen
 GET    /api/published                  öffentliche Galerie (ohne Login)
 GET    /api/published/{id}/content     öffentlicher Download (ohne Login)
 GET    /api/published/mine             eigene Veröffentlichungen
-POST   /api/published/{id}             Datei veröffentlichen
+POST   /api/published/{id}             Datei/Ordner veröffentlichen (public_name)
+PATCH  /api/published/{id}             öffentlichen Anzeigenamen ändern
 DELETE /api/published/{id}             Veröffentlichung zurückziehen
 GET    /api/users?q=...                Benutzer auflisten (Admin)
 POST   /api/users                      Benutzer anlegen (Admin)

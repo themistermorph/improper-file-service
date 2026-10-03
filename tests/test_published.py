@@ -143,6 +143,56 @@ def test_publish_requires_permission(monkeypatch):
         assert client.post(f"/api/published/{entry['id']}", headers=sam).status_code == 403
 
 
+def test_public_name_set_change_and_clear(monkeypatch):
+    monkeypatch.setattr(content, "store_blob", _fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {_login(client, 'admin', 'admin')}"}
+        entry = _upload(client, admin)
+
+        # Beim Veröffentlichen einen abweichenden Namen setzen.
+        created = client.post(
+            f"/api/published/{entry['id']}",
+            headers=admin,
+            json={"public_name": "Quartalsbericht"},
+        )
+        assert created.status_code == 201
+        assert created.json()["name"] == "f.txt"
+        assert created.json()["public_name"] == "Quartalsbericht"
+        assert client.get("/api/published").json()[0]["name"] == "Quartalsbericht"
+
+        # Download nutzt den öffentlichen Namen im Content-Disposition.
+        download = client.get(f"/api/published/{entry['id']}/content")
+        assert "Quartalsbericht" in download.headers["content-disposition"]
+
+        # Nachträglich ändern (PATCH).
+        patched = client.patch(
+            f"/api/published/{entry['id']}",
+            headers=admin,
+            json={"public_name": "Bericht 2026"},
+        )
+        assert patched.status_code == 200
+        assert patched.json()["public_name"] == "Bericht 2026"
+        assert client.get("/api/published").json()[0]["name"] == "Bericht 2026"
+
+        # Leeren -> Rückfall auf den internen Namen.
+        cleared = client.patch(
+            f"/api/published/{entry['id']}", headers=admin, json={"public_name": None}
+        )
+        assert cleared.json()["public_name"] is None
+        assert client.get("/api/published").json()[0]["name"] == "f.txt"
+
+        # Nicht berechtigte Dritte dürfen den Namen nicht ändern.
+        client.post(
+            "/api/users", headers=admin, json={"username": "sam", "password": "geheim123"}
+        )
+        sam = {"Authorization": f"Bearer {_login(client, 'sam', 'geheim123')}"}
+        assert client.patch(
+            f"/api/published/{entry['id']}", headers=sam, json={"public_name": "Hack"}
+        ).status_code == 403
+
+
 def test_publish_folder_serves_zip(monkeypatch):
     import zipfile
 
@@ -160,17 +210,21 @@ def test_publish_folder_serves_zip(monkeypatch):
             content=PAYLOAD,
         )
 
-        created = client.post(f"/api/published/{parent_id}", headers=admin)
+        created = client.post(
+            f"/api/published/{parent_id}", headers=admin, json={"public_name": "Projekt"}
+        )
         assert created.status_code == 201
         assert created.json()["type"] == "folder"
 
         gallery = client.get("/api/published").json()
         folder_item = next(item for item in gallery if item["entry_id"] == parent_id)
         assert folder_item["type"] == "folder"
+        assert folder_item["name"] == "Projekt"
 
         download = client.get(f"/api/published/{parent_id}/content")
         assert download.status_code == 200
         assert download.headers["content-type"] == "application/zip"
+        assert "Projekt.zip" in download.headers["content-disposition"]
         with zipfile.ZipFile(io.BytesIO(download.content)) as archive:
             names = archive.namelist()
         assert "pub/f.txt" in names

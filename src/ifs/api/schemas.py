@@ -181,6 +181,8 @@ class PublishedOut(BaseModel):
 
     entry_id: UUID
     name: str
+    # Öffentlicher Anzeigename; leer = `name`.
+    public_name: str | None = None
     type: EntryType
     size: int
     mime: str | None = None
@@ -194,12 +196,19 @@ class PublishedPublicOut(BaseModel):
     """Öffentliche Galerie: bewusst ohne interne Pfade/Besitzer-IDs."""
 
     entry_id: UUID
+    # Effektiver Anzeigename (`public_name` oder interner Name).
     name: str
     type: EntryType
     size: int
     mime: str | None = None
     published_by_username: str | None = None
     published_at: datetime
+
+
+class PublishedInput(BaseModel):
+    """Beim Veröffentlichen oder nachträglichen Ändern des Anzeigenamens."""
+
+    public_name: str | None = Field(default=None, max_length=255)
 
 
 class AclCreate(BaseModel):

@@ -589,8 +589,14 @@ die eigene **Wurzel** (`parent_id IS NULL`) kann nicht veröffentlicht werden (`
 | `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, type, size, mime, published_by_username, published_at }]`. `q` filtert den Namen; `%`, `_` und `\` werden literal behandelt. |
 | `GET /api/published/{entry_id}/content` | – | Öffentlicher Download: Datei (Range-Support) bzw. Ordner (ZIP). Rate-limitiert pro Eintrag+IP (`429` mit `Retry-After`). |
 | `GET /api/published/mine` | Bearer | Eigene Veröffentlichungen inkl. `path`; Systemadmins sehen zusätzlich fremde, bei diesen wird `path` ausgelassen. |
-| `POST /api/published/{entry_id}` | Bearer | Datei oder Ordner veröffentlichen (`201`; idempotent – erneutes Veröffentlichen meldet weiterhin den ursprünglichen `published_by_username`). |
+| `POST /api/published/{entry_id}` | Bearer | Datei oder Ordner veröffentlichen (`201`; idempotent – erneutes Veröffentlichen meldet weiterhin den ursprünglichen `published_by_username`). Optionaler Body `{ "public_name": "..." }`. |
+| `PATCH /api/published/{entry_id}` | Bearer | Öffentlichen Anzeigenamen nachträglich ändern: `{ "public_name": "..." }`; `null`/leer = interner Name. |
 | `DELETE /api/published/{entry_id}` | Bearer | Veröffentlichung zurückziehen (`204`). |
+
+Der **öffentliche Anzeigename** (`public_name`, max. 255 Zeichen) ersetzt in der Galerie
+und im Download-Dateinamen (`Content-Disposition`, bei Ordnern `<name>.zip`) den internen
+Namen. Ist er leer, wird der interne Name verwendet. Verwalten (PATCH/DELETE) darf der
+Ersteller, wer `share` am Eintrag hat, oder ein Systemadmin.
 
 Anonyme Downloads sind begrenzt über `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` (Standard 120)
 je `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS` (Standard 300 s); bei Überschreitung `429`.
