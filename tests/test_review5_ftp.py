@@ -63,7 +63,10 @@ def test_s3_reader_reads_more_than_64kib(monkeypatch):
 
     assert data == payload
     assert len(data) == 102_400
-    assert len(calls) >= 2
+    # Der Read-Ahead liest den zusammenhängenden Bereich in einem Request;
+    # entscheidend ist, dass nicht mehr ein Request je 64-KiB-Block anfällt
+    # (früher wären es 2 gewesen, bei größeren Dateien entsprechend viele).
+    assert len(calls) <= 2
 
 
 def test_s3_reader_small_read_uses_single_range(monkeypatch):

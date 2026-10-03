@@ -64,7 +64,12 @@ def get_s3_client():
         aws_secret_access_key=settings.s3_secret_key,
         region_name=settings.s3_region,
         use_ssl=settings.s3_use_ssl,
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=Config(
+            signature_version="s3v4",
+            # Mehr parallele Transfers ohne Stau im Connection-Pool.
+            max_pool_connections=max(1, settings.s3_max_pool_connections),
+            s3={"addressing_style": "path"},
+        ),
     )
 
 

@@ -226,6 +226,14 @@ Resume:    REST (Download-Offset), APPE (Anhängen) – siehe ADR-6
 FTP-Clients kennen kein S3; deshalb **streamt das FTP-Gateway immer über den Core**,
 Presigned-URLs sind hier nicht anwendbar.
 
+**Durchsatz:** Der Download liest S3 mit Read-Ahead über zusammenhängende
+Range-Requests (`IFS_FTP_S3_READAHEAD_BYTES`, Standard 4 MiB) statt eines
+Requests je 64-KiB-Block. Der Datenkanal arbeitet mit gebündelten Puffern
+(`IFS_FTP_TRANSFER_BUFFER_BYTES`, Standard 256 KiB), und der S3-Connection-Pool ist
+über `IFS_S3_MAX_POOL_CONNECTIONS` (Standard 32) auf parallele Transfers
+ausgelegt. Details und Richtwerte:
+[FTPS-Handbuch → Durchsatz und Tuning](docs/ftps.md#7-durchsatz-und-tuning).
+
 ### 6.4 Rename / Move / Delete (Metadaten-only)
 
 ```

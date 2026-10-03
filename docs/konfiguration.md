@@ -73,6 +73,7 @@ IFS_DATABASE_URL=postgresql+psycopg://ifs:geheim@db:5432/ifs
 | `IFS_S3_SSE` | string \| leer | `AES256` | Serverseitige Verschlüsselung: `AES256` (SSE-S3), `aws:kms` (SSE-KMS) oder leer (aus). |
 | `IFS_S3_PRESIGN_TTL_SECONDS` | int | `300` | Gültigkeit präsignierter URLs (aktuell nur als Option vorgesehen). |
 | `IFS_CAS_DEDUP` | bool | `true` | Content-addressed Dedup: identische Inhalte werden nur einmal gespeichert. |
+| `IFS_S3_MAX_POOL_CONNECTIONS` | int | `32` | Maximale Zahl gleichzeitiger Verbindungen im S3-Connection-Pool (botocore-Standard: `10`). Ein größerer Pool verhindert, dass parallele FTPS-/HTTP-Transfers sich serialisieren. |
 
 **Provider-Beispiele**
 
@@ -159,6 +160,14 @@ IFS_S3_USE_SSL=true
 | `IFS_FTP_CERTFILE` | string | *(leer)* | Pfad zum TLS-Zertifikat (PEM). **Pflicht**, sobald FTPS aktiv ist. |
 | `IFS_FTP_KEYFILE` | string | *(leer)* | Pfad zum privaten Schlüssel (PEM). |
 | `IFS_FTP_BANNER` | string | `IFS FTPS ready` | Begrüßungstext beim Verbinden. |
+| `IFS_FTP_TRANSFER_BUFFER_BYTES` | int | `262144` | Blockgröße des FTPS-Datenkanals (Socket-Puffer und Datei-Producer) in Bytes. Untergrenze 16 KiB. Größere Blöcke senken Syscall- und TLS-Overhead, kosten pro aktivem Transfer etwas RAM. |
+| `IFS_FTP_S3_READAHEAD_BYTES` | int | `4194304` | S3-Read-Ahead je Download in Bytes (Untergrenze 64 KiB). Innerhalb eines Bereichs wird das Objekt mit **einem** S3-Request gestreamt statt mit einem Request je 64-KiB-Block. |
+
+> **Durchsatz:** Die drei Werte `IFS_FTP_TRANSFER_BUFFER_BYTES`,
+> `IFS_FTP_S3_READAHEAD_BYTES` und `IFS_S3_MAX_POOL_CONNECTIONS` sollten zur
+> Umgebung passen. Bei WAN-Anbindung sind große Read-Ahead-Bereiche und ein
+> großer Connection-Pool besonders wirksam. Messwerte und Zusammenhänge:
+> [FTPS-Handbuch → Durchsatz und Tuning](ftps.md#7-durchsatz-und-tuning).
 
 > Plain-FTP (ohne TLS) wird **nicht** unterstützt. Clients müssen explizites FTPS
 > (`AUTH TLS`) beherrschen. Details im [FTPS-Handbuch](ftps.md).
@@ -192,6 +201,7 @@ IFS_S3_USE_SSL=true
 IFS_S3_BUCKET=ifs-prod
 IFS_S3_SSE=aws:kms
 IFS_CAS_DEDUP=true
+IFS_S3_MAX_POOL_CONNECTIONS=32
 
 IFS_UPLOAD_SPOOL_DIR=/var/lib/ifs/spool
 IFS_MAX_UPLOAD_SIZE=0
@@ -203,6 +213,8 @@ IFS_FTP_PASSIVE_PORTS=30000-30099
 IFS_FTP_MASQUERADE_ADDRESS=files.example.org
 IFS_FTP_CERTFILE=/etc/ifs/ftps.crt
 IFS_FTP_KEYFILE=/etc/ifs/ftps.key
+IFS_FTP_TRANSFER_BUFFER_BYTES=262144
+IFS_FTP_S3_READAHEAD_BYTES=4194304
 
 IFS_ADMIN_USERNAME=admin
 IFS_ADMIN_PASSWORD=<starkes-passwort>

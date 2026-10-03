@@ -101,6 +101,7 @@ aws s3 ls "s3://$IFS_S3_BUCKET"
 | `PASV` liefert interne IP | NAT ohne Masquerade | `IFS_FTP_MASQUERADE_ADDRESS` setzen |
 | `550` bei `STOU` | nicht unterstützt | normalen `STOR` verwenden |
 | Rechteprobleme | kein `read`/`write`/`delete` | Rechte prüfen; identisch zu HTTP |
+| Transfer unerwartet langsam | Read-Ahead/Puffer oder S3-Connection-Pool zu klein | `IFS_FTP_S3_READAHEAD_BYTES`, `IFS_FTP_TRANSFER_BUFFER_BYTES`, `IFS_S3_MAX_POOL_CONNECTIONS` prüfen (siehe [FTPS-Handbuch → Durchsatz und Tuning](../docs/ftps.md#7-durchsatz-und-tuning)) |
 
 ### Verbindung isoliert testen
 

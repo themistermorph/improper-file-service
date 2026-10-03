@@ -6,6 +6,30 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Performance
+- **FTPS-Durchsatz deutlich erhöht** – ohne Änderung des nach außen sichtbaren
+  Verhaltens:
+  - **Download:** Das Gateway streamt S3-Objekte mit Read-Ahead
+    (`IFS_FTP_S3_READAHEAD_BYTES`, Standard 4 MiB) über einen fortlaufenden
+    Range-Request. Zuvor öffnete es für jeden 64-KiB-Block, den pyftpdlib liest,
+    einen eigenen signierten S3-Request; bei großen Dateien sinkt die Zahl der
+    Round-Trips damit von einem pro Block auf einen pro Read-Ahead-Bereich.
+  - **Upload:** Das Größenlimit wird über einen reinen Byte-Zähler statt per
+    `fstat`-Syscall je Schreibblock geprüft; `APPE`/`REST` übernehmen die bereits
+    vorhandene Dateigröße einmalig.
+  - **Datenkanal:** Socket-Puffer und Datei-Producer werden über
+    `IFS_FTP_TRANSFER_BUFFER_BYTES` (Standard 256 KiB, Minimum 16 KiB)
+    gebündelt, was die Zahl der Syscalls und TLS-Records je Transfer senkt.
+  - **S3-Connection-Pool:** `IFS_S3_MAX_POOL_CONNECTIONS` (Standard 32) hebt das
+    botocore-Limit von 10 an, damit parallele FTPS-/HTTP-Transfers sich nicht
+    serialisieren.
+
+### Added
+- Neue Durchsatz-Einstellungen `IFS_FTP_TRANSFER_BUFFER_BYTES` und
+  `IFS_FTP_S3_READAHEAD_BYTES` (FTPS) sowie `IFS_S3_MAX_POOL_CONNECTIONS` (S3).
+  Details unter [Konfiguration](docs/konfiguration.md) und
+  [FTPS-Handbuch](docs/ftps.md).
+
 ## [0.1.3] – 2026-10-03
 
 ### Security

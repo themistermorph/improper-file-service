@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     s3_sse: str | None = "AES256"
     s3_presign_ttl_seconds: int = 300
     cas_dedup: bool = True
+    # Maximale Zahl gleichzeitiger HTTP-Verbindungen (Connection-Pool) zum
+    # S3-Endpunkt. Der botocore-Standard von 10 serialisiert parallele Transfers
+    # (FTPS/HTTP); ein größerer Pool erhöht den aggregierten Durchsatz.
+    s3_max_pool_connections: int = 32
 
     # Uploads
     upload_spool_dir: str = "/var/lib/ifs/spool"
@@ -104,6 +108,14 @@ class Settings(BaseSettings):
     ftp_certfile: str | None = None
     ftp_keyfile: str | None = None
     ftp_banner: str = "IFS FTPS ready"
+    # Durchsatz: Blockgröße des FTPS-Datenkanals (Socket-Puffer und
+    # Datei-Producer). Größere Blöcke bedeuten weniger Syscalls und
+    # TLS-Records je Transfer. Mindestens 16 KiB, Standard 256 KiB.
+    ftp_transfer_buffer_bytes: int = 256 * 1024
+    # Durchsatz: S3-Read-Ahead je Download (Bytes). Innerhalb dieses Bereichs
+    # liest der Client aus einem einzigen S3-Stream statt einen Request pro
+    # 64-KiB-Block zu öffnen. Standard 4 MiB.
+    ftp_s3_readahead_bytes: int = 4 * 1024 * 1024
 
     # Admin-Seed (nur wenn ein Passwort gesetzt ist)
     admin_username: str = "admin"

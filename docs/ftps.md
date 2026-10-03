@@ -184,5 +184,72 @@ die er mindestens `read` besitzt. Details: [Sicherheit](sicherheit.md).
   Datenverbindungs-Timeouts setzt pyftpdlib mit Standardwerten.
 - **Audit:** Logins, CWDs und Transfers werden protokolliert (Audit-Log).
 
+---
+
+## 7. Durchsatz und Tuning
+
+Der FTPS-Datenpfad besteht aus drei Abschnitten, die jeweils eigene Stellschrauben
+haben:
+
+```
+Client ⇄ (TLS) ⇄ Datenkanal-Puffer ⇄ IFS-Gateway ⇄ S3-Connection-Pool ⇄ Objektspeicher
+```
+
+### 7.1 Download: S3-Read-Ahead
+
+pyftpdlib liest Dateien blockweise (Standard 64 KiB). Würde für jeden Block ein
+eigener S3-Range-Request geöffnet, entstünde **ein voller, signierter S3-Round-Trip
+pro Block** – der Durchsatz bricht dann auf WAN-Strecken ein.
+
+Das Gateway öffnet deshalb **einen zusammenhängenden Range** mit
+`IFS_FTP_S3_READAHEAD_BYTES` Bytes (Standard 4 MiB) und liest ihn als fortlaufenden
+Stream. Erst am Bereichsende oder nach einem `REST`/Seek ist ein neuer Request
+nötig. Beispiel: Für eine 1-GiB-Datei sinkt die Zahl der S3-Requests von ~16 384
+(64 KiB) auf ~256 (4 MiB). `REST`-Resume und Teil-Downloads funktionieren
+unverändert, weil bei einem Seek neu geöffnet wird.
+
+### 7.2 Datenkanal: Blockgröße
+
+`IFS_FTP_TRANSFER_BUFFER_BYTES` (Standard 256 KiB) setzt sowohl die Socket-Puffer
+(`ac_in_buffer_size`/`ac_out_buffer_size`) als auch die Blockgröße des
+Datei-Producers. Größere Blöcke bedeuten weniger `recv`/`send`-Syscalls und weniger
+TLS-Records je Transfer. Die Untergrenze liegt bei 16 KiB; darunter dominiert der
+Syscall-Overhead. Pro aktivem Transfer wird der Puffer einmal belegt.
+
+### 7.3 Parallele Transfers: S3-Connection-Pool
+
+`IFS_S3_MAX_POOL_CONNECTIONS` (Standard 32) hebt das botocore-Limit von 10 an.
+Ohne Anpassung konkurrieren mehrere gleichzeitige FTPS-/HTTP-Transfers um zu wenige
+Verbindungen und serialisieren sich; das bremst vor allem den **aggregierten**
+Durchsatz bei vielen Nutzern.
+
+### 7.4 Uploads
+
+Uploads werden lokal gespoolt und erst nach dem Transfer nach S3 geschrieben. Das
+Größenlimit wird über einen Byte-Zähler geprüft, nicht per `fstat` je Block. Für den
+Upload-Durchsatz gelten dieselben Empfehlungen wie in 7.2.
+
+### 7.5 Richtwerte
+
+| Umgebung | `IFS_FTP_TRANSFER_BUFFER_BYTES` | `IFS_FTP_S3_READAHEAD_BYTES` | `IFS_S3_MAX_POOL_CONNECTIONS` |
+|---|---|---|---|
+| LAN, wenige Nutzer | `262144` (Standard) | `4194304` (Standard) | `32` |
+| WAN, viele parallele Clients | `262144`–`1048576` | `8388608`–`16777216` | `64`+ |
+| Speicherbegrenzter Container | `65536` | `1048576` | `32` |
+
+> **Hinweis:** Ein größerer Read-Ahead-Bereich belegt nicht automatisch
+> entsprechend viel Heap – gelesen wird blockweise. Er bindet aber länger eine
+> S3-Verbindung aus dem Pool. Bei sehr vielen gleichzeitigen, langsamen Clients
+> daher den Pool (`IFS_S3_MAX_POOL_CONNECTIONS`) entsprechend groß wählen.
+
+### 7.6 Messen
+
+- **Client-seitig:** `curl --ssl-reqd -u … -T datei ftp://…` bzw. `-o` für den
+  Download; `lftp` zeigt die Rate nach dem Transfer an.
+- **Server-seitig:** Die Transfer-Logs (`ifs.ftp`, Audit-Log) enthalten Dauer und
+  Bytezahl je Transfer. Die Rate ist `bytes / elapsed`.
+- **Vergleich:** Vor dem Ändern der Werte dieselbe Datei und denselben Client
+  verwenden; TLS-Handshake und Signatur betreffen nur den Rumpf, nicht die Rate.
+
 Weiter: [Tutorial 3 – FTPS](../tutorials/03-ftps-mit-filezilla-und-curl.md) ·
 [Troubleshooting](../tutorials/10-troubleshooting.md)

@@ -185,6 +185,8 @@ docker compose up -d
 |---|---|
 | Viele gleichzeitige HTTP-Transfers | `api`-Instanzen hinter dem Ingress vervielfachen |
 | Viele FTPS-Sitzungen | `ftp` replizieren; Passive-Range je Instanz oder via L4-LB |
+| Geringer FTPS-Durchsatz bei großen Dateien | `IFS_FTP_S3_READAHEAD_BYTES` und `IFS_FTP_TRANSFER_BUFFER_BYTES` prüfen (siehe [FTPS-Handbuch](ftps.md#7-durchsatz-und-tuning)) |
+| Parallele Transfers serialisieren sich | `IFS_S3_MAX_POOL_CONNECTIONS` erhöhen |
 | Viele Hintergrundjobs | `worker` replizieren (Outbox ist idempotent ausgelegt) |
 | Speicher | S3-Backend skaliert eigenständig |
 | Metadaten | PostgreSQL vertikal skalieren, Read-Replicas für Auswertungen |

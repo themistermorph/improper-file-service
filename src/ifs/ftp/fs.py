@@ -23,7 +23,10 @@ from ..errors import IFSError
 from ..models import Entry, EntryType, User
 from ..utils import as_utc
 
-_MAX_BUFFER = 1024 * 1024
+_FALLBACK_READAHEAD = 4 * 1024 * 1024
+# Kleinstes sinnvolles Read-Ahead. Kleinere Werte würden wieder pro Block einen
+# S3-Request erzeugen und den Durchsatz zunichte machen.
+_MIN_READAHEAD = 64 * 1024
 
 
 def _as_fs_error(exc: IFSError) -> FilesystemError:
@@ -56,14 +59,32 @@ class _BlobRef:
 
 
 class _S3Reader:
-    """Datei-ähnliches Leseobjekt; nutzt S3-Range-Requests (unterstützt REST/Seek)."""
+    """Datei-ähnliches Leseobjekt; streamt S3-Ranges (unterstützt REST/Seek).
 
-    def __init__(self, blob: _BlobRef, name: str) -> None:
+    pyftpdlib liest im 64-KiB-Takt. Würde für jeden Block ein eigener
+    S3-Range-Request geöffnet, entstünde ein voller Round-Trip je Block – über
+    TLS und mit Signatur – und der Durchsatz bräche ein. Stattdessen wird beim
+    ersten Lesezugriff ein zusammenhängender Range mit ``readahead`` Bytes
+    geöffnet (am Dateiende begrenzt) und als fortlaufender Stream konsumiert.
+    Erst am Bereichsende oder nach einem ``seek`` ist ein neuer Request nötig.
+    Teilresultate über das Netz und Bereichsgrenzen werden transparent
+    zusammengesetzt; ein kürzeres Objekt als im Blob vermerkt beendet den
+    Stream statt in eine Endlosschleife zu laufen.
+    """
+
+    def __init__(
+        self, blob: _BlobRef, name: str, readahead: int = _FALLBACK_READAHEAD
+    ) -> None:
         self._blob = blob
         self.name = name
         self._pos = 0
         self._body = None
         self._closed = False
+        if not readahead or readahead <= 0:
+            readahead = _FALLBACK_READAHEAD
+        elif readahead < _MIN_READAHEAD:
+            readahead = _MIN_READAHEAD
+        self._readahead = readahead
 
     def readable(self) -> bool:
         return True
@@ -92,36 +113,59 @@ class _S3Reader:
                 pass
             self._body = None
 
+    def _open_body(self) -> bool:
+        """Öffnet den nächsten Read-Ahead-Range ab ``self._pos``."""
+        if self._pos >= self._blob.size:
+            return False
+        end = min(self._pos + self._readahead - 1, self._blob.size - 1)
+        response = content.get_object(self._blob.storage_key, self._pos, end)
+        self._body = response["Body"]
+        return True
+
+    def _read_some(self, limit: int) -> bytes:
+        """Liefert bis zu ``limit`` Bytes; wechselt an Bereichsgrenzen den Stream."""
+        while True:
+            fresh = self._body is None
+            if fresh and not self._open_body():
+                return b""
+            chunk = self._body.read(limit)
+            if chunk:
+                self._pos += len(chunk)
+                return chunk
+            # Aktueller Stream ist erschöpft.
+            self._reset()
+            if fresh:
+                # Gerade geöffneter Stream ohne Daten: Das Objekt ist kürzer als
+                # im Blob vermerkt. Abbrechen statt denselben Range erneut öffnen.
+                return b""
+            if self._pos >= self._blob.size:
+                return b""
+
     def read(self, size: int = -1) -> bytes:
         if self._closed:
             raise ValueError("I/O operation on closed file")
-        # size < 0 bzw. None bedeutet „bis EOF“; size == 0 liefert sofort b"".
-        remaining = size if size is not None and size >= 0 else -1
-        chunks: list[bytes] = []
-        # Ein einzelner S3-Range deckt nur einen Teil des Objekts ab (pyftpdlib
-        # liest in 64-KiB-Schritten). Ist der Body erschöpft, obwohl der Blob
-        # noch Bytes meldet, wird ab `self._pos` ein neuer Range geöffnet.
-        while self._pos < self._blob.size and remaining != 0:
-            fresh = self._body is None
-            if fresh:
-                end = None
-                if remaining >= 0:
-                    end = min(self._pos + remaining - 1, self._blob.size - 1)
-                response = content.get_object(self._blob.storage_key, self._pos, end)
-                self._body = response["Body"]
-            chunk = self._body.read(remaining if remaining >= 0 else _MAX_BUFFER)
-            if not chunk:
-                self._reset()
-                # Ein soeben geöffneter Body ohne Daten heißt: Das Objekt ist
-                # kürzer als im Blob vermerkt. Abbrechen statt erneut öffnen
-                # (sonst droht eine Endlosschleife an derselben Position).
-                if fresh:
+        if size is None or size < 0:
+            chunks: list[bytes] = []
+            while True:
+                chunk = self._read_some(self._readahead)
+                if not chunk:
                     break
-                continue
+                chunks.append(chunk)
+            return b"".join(chunks)
+        if size == 0:
+            return b""
+        remaining = size
+        chunks = []
+        while remaining > 0 and self._pos < self._blob.size:
+            chunk = self._read_some(remaining)
+            if not chunk:
+                break
             chunks.append(chunk)
-            self._pos += len(chunk)
-            if remaining > 0:
-                remaining -= len(chunk)
+            remaining -= len(chunk)
+        if not chunks:
+            return b""
+        if len(chunks) == 1:
+            return chunks[0]
         return b"".join(chunks)
 
     def close(self) -> None:
@@ -138,6 +182,10 @@ class _UploadWriter:
 
     Die Finalisierung (Blob + Version) erfolgt erst nach erfolgreichem Transfer
     über `IFSFilesystem.finalize_received()`.
+
+    Das Größenlimit wird über einen reinen Byte-Zähler geprüft (High-Water-Mark
+    des Offsets). Das vermeidet einen ``fstat``-Syscall pro Schreibblock –
+    pyftpdlib schreibt im 64-KiB-Takt, bei großen Dateien also tausende Male.
     """
 
     def __init__(self, path: str, name: str, limit: int | None = None) -> None:
@@ -148,26 +196,36 @@ class _UploadWriter:
         # Harte Obergrenze (IFS_MAX_UPLOAD_SIZE), damit FTP-Uploads den Spool
         # nicht unbegrenzt füllen können. None = unbegrenzt.
         self._limit = limit if limit and limit > 0 else None
+        self._pos = 0
+        self._size = 0  # High-Water-Mark des Schreiboffsets
+
+    def _check_limit(self) -> None:
+        if self._limit is not None and self._size > self._limit:
+            raise FilesystemError("Maximale Dateigröße überschritten")
 
     def write(self, data: bytes) -> int:
         if self._closed:
             raise ValueError("I/O operation on closed file")
         written = self._handle.write(data)
-        if (
-            self._limit is not None
-            and os.fstat(self._handle.fileno()).st_size > self._limit
-        ):
-            raise FilesystemError("Maximale Dateigröße überschritten")
+        self._pos += written
+        self._size = max(self._size, self._pos)
+        self._check_limit()
         return written
 
     def flush(self) -> None:
         self._handle.flush()
 
+    def sync_size(self) -> None:
+        """Übernimmt die bereits vorhandene Dateigröße (APPE/REST-Vorladen)."""
+        self._pos = self._size = os.fstat(self._handle.fileno()).st_size
+
     def tell(self) -> int:
-        return self._handle.tell()
+        return self._pos
 
     def seek(self, offset: int, whence: int = 0) -> int:
-        return self._handle.seek(offset, whence)
+        self._pos = self._handle.seek(offset, whence)
+        self._size = max(self._size, self._pos)
+        return self._pos
 
     def close(self) -> None:
         if not self._closed:
@@ -516,7 +574,9 @@ class IFSFilesystem(AbstractedFS):
                 mime=entry.mime,
                 mtime=as_utc(entry.updated_at).timestamp() if entry.updated_at else time.time(),
             )
-        return _S3Reader(ref, path)
+        return _S3Reader(
+            ref, path, readahead=get_settings().ftp_s3_readahead_bytes
+        )
 
     def _open_writer(self, path: str, mode: str):
         parent_path = posixpath.dirname(path) or "/"
@@ -568,6 +628,9 @@ class IFSFilesystem(AbstractedFS):
                         if mode.startswith("a"):
                             writer._handle.close()
                             writer._handle = open(writer._path, "ab")
+                        # Vorhandene Größe übernehmen, damit das Größenlimit und
+                        # der Offset auch beim Anhängen/Resume stimmen.
+                        writer.sync_size()
                     elif mode.startswith("r+"):
                         writer.close()
                         raise FilesystemError("REST auf nicht vorhandene Datei")

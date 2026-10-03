@@ -7,9 +7,14 @@ import posixpath
 
 from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.exceptions import AuthenticationFailed
-from pyftpdlib.handlers import TLS_FTPHandler
+from pyftpdlib.handlers import TLS_DTPHandler, TLS_FTPHandler
 from pyftpdlib.servers import ThreadedFTPServer
 from sqlalchemy import select
+
+try:  # pyftpdlib >= 2.0
+    from pyftpdlib.handlers.ftp.producers import FileProducer
+except ImportError:  # pragma: no cover - pyftpdlib 1.x
+    from pyftpdlib.handlers import FileProducer
 
 from ..config import get_settings
 from ..core import authz, namespace, ratelimit
@@ -19,6 +24,13 @@ from ..security import verify_password_safe
 from .fs import IFSFilesystem, _norm
 
 logger = logging.getLogger("ifs.ftp")
+
+# Datenkanal-Durchsatz: pyftpdlib liest/schreibt standardmäßig in 64-KiB-Blöcken.
+# Größere Puffer senken die Zahl der recv/send-Syscalls und TLS-Records je
+# Transfer. 16 KiB ist die Untergrenze (darunter wird der Durchsatz wieder
+# durch Syscall-Overhead begrenzt), Standard 256 KiB.
+_DEFAULT_TRANSFER_BUFFER = 256 * 1024
+_MIN_TRANSFER_BUFFER = 16 * 1024
 
 _PERM_ACTIONS = {
     "e": "read",
@@ -106,6 +118,17 @@ class IFSAuthorizer(DummyAuthorizer):
             return authz.can(db, user, action, entry)
 
 
+class IFSDTPHandler(TLS_DTPHandler):
+    """FTPS-Datenkanal mit größeren Puffern.
+
+    Die Puffergröße wird in :func:`build_handler` aus
+    ``IFS_FTP_TRANSFER_BUFFER_BYTES`` übernommen.
+    """
+
+    ac_in_buffer_size = _DEFAULT_TRANSFER_BUFFER
+    ac_out_buffer_size = _DEFAULT_TRANSFER_BUFFER
+
+
 class IFSFTPHandler(TLS_FTPHandler):
     abstracted_fs = IFSFilesystem
     tls_control_required = True
@@ -152,6 +175,14 @@ def build_handler() -> type[IFSFTPHandler]:
     IFSFTPHandler.banner = settings.ftp_banner
     IFSFTPHandler.passive_ports = settings.passive_port_range
     IFSFTPHandler.masquerade_address = settings.ftp_masquerade_address
+    # Durchsatz: größere Blöcke im Datenkanal und beim Datei-Producer.
+    buffer_bytes = max(
+        _MIN_TRANSFER_BUFFER, int(settings.ftp_transfer_buffer_bytes or 0)
+    )
+    IFSDTPHandler.ac_in_buffer_size = buffer_bytes
+    IFSDTPHandler.ac_out_buffer_size = buffer_bytes
+    IFSFTPHandler.dtp_handler = IFSDTPHandler
+    FileProducer.buffer_size = buffer_bytes
     # pyftpdlib baut den TLS-Kontext genau einmal je Handler-Klasse und teilt ihn
     # über alle Verbindungen (``TLS_FTPHandler.get_ssl_context``). Nach einer
     # Neukonfiguration muss der zwischengespeicherte Kontext verworfen werden,
