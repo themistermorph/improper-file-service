@@ -23,7 +23,7 @@ Diese Anleitung beschreibt, wie das Projekt erstmals in ein GitHub-Repository
    git status --ignored
    git grep -nE "(password|secret|BEGIN (RSA|OPENSSH))" -- . ':!*.example' || true
    ```
-3. **Version:** steht in `pyproject.toml` und `src/ifs/__init__.py` (aktuell `0.1.2`);
+3. **Version:** steht in `pyproject.toml` und `src/ifs/__init__.py` (aktuell `0.1.3`);
    vor einem Release in beiden Dateien angleichen.
 
 ---

@@ -6,6 +6,8 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.1.3] – 2026-10-03
+
 ### Security
 - **Veröffentlichungen:** Anonyme Downloads der öffentlichen Galerie sind pro IP+Eintrag
   rate-limitiert (`429`/`Retry-After`); fremde Veröffentlichungen werden Systemadmins
@@ -162,7 +164,8 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Login-Rate-Limit ist pro Prozess (In-Memory); für den vorgesehenen Maßstab
   (eine API-Instanz) ausgelegt.
 
-[Unreleased]: https://github.com/themistermorph/inproper-file-service/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/themistermorph/inproper-file-service/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.3
 [0.1.2]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.2
 [0.1.1]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.1
 [0.1.0]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.0
