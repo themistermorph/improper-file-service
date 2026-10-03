@@ -46,7 +46,8 @@ Klartext-Verbindungen werden abgelehnt.
 | `APPE` | lädt bestehenden Inhalt und hängt neu an |
 | `REST` + `RETR`/`STOR` | setzt Offset; Neustart ab Position |
 | `RNTO`/Move | reine Metadaten-Operation, kein Datenkopieren |
-| `DELE`/`RMD` | Soft-Delete (Papierkorb) |
+| `DELE` | Soft-Delete der Datei (Papierkorb) |
+| `RMD` | Soft-Delete des Ordners **samt Inhalt** (rekursiv, wie `DELETE /api/entries/{id}`) |
 | `SITE CHMOD` | wird akzeptiert, hat aber keine Wirkung – Rechte nur über IFS |
 | `STOU` | **nicht unterstützt** (Antwort `550`) |
 | Symbolische Links | nicht vorhanden (virtuelles Dateisystem) |

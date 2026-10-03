@@ -471,9 +471,12 @@ class IFSFilesystem(AbstractedFS):
                 entry = self._resolve(db, path)
                 if entry is None or entry.type != EntryType.folder:
                     raise FilesystemError("Verzeichnis nicht gefunden")
-                if namespace.list_children(db, entry):
-                    raise FilesystemError("Verzeichnis nicht leer")
                 authz.authorize(db, user, "delete", entry)
+                # Rekursives Soft-Delete wie beim HTTP-Endpunkt
+                # (``DELETE /api/entries/{id}``): Der gesamte Teilbaum wandert in
+                # den Papierkorb. Clients, die Ordner vorher rekursiv leeren,
+                # funktionieren unverändert; Clients mit einem einzelnen ``RMD``
+                # erhalten nicht mehr fälschlich „550 Verzeichnis nicht leer“.
                 namespace.soft_delete(db, entry, user.id)
         except IFSError as exc:
             raise _as_fs_error(exc) from exc

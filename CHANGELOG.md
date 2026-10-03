@@ -36,6 +36,14 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Details unter [Konfiguration](docs/konfiguration.md) und
   [FTPS-Handbuch](docs/ftps.md).
 
+### Fixed
+- **FTPS `RMD`:** Ordner lassen sich jetzt auch dann löschen, wenn sie noch Dateien
+  oder Unterordner enthalten. Der gesamte Teilbaum wird – konsistent zu
+  `DELETE /api/entries/{id}` – in den Papierkorb verschoben. Zuvor lehnte das
+  Gateway nicht-leere Ordner mit „550 Verzeichnis nicht leer“ ab, sodass Clients
+  ohne rekursives Löschen (z. B. manche Windows-/Mount-Clients) gar keine Ordner
+  löschen konnten.
+
 ## [0.1.3] – 2026-10-03
 
 ### Security

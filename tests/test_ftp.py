@@ -135,6 +135,13 @@ def test_ftps_end_to_end(monkeypatch, tmp_path):
         assert bytes(received) == b"ftp content"
 
         ftp.storbinary("STOR uploaded.bin", io.BytesIO(b"uploaded via ftps"))
+
+        # RMD auf einen nicht-leeren Ordner trägt den gesamten Teilbaum in den
+        # Papierkorb (früher: „550 Verzeichnis nicht leer“).
+        ftp.mkd("tempdir")
+        ftp.storbinary("STOR tempdir/inhalt.bin", io.BytesIO(b"x"))
+        ftp.rmd("tempdir")
+        assert "tempdir" not in ftp.nlst()
     finally:
         try:
             ftp.quit()

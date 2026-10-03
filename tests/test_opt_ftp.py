@@ -253,3 +253,33 @@ def test_root_operations_for_owner():
     fs_empty = _fs_for("opt-root-empty")
     with pytest.raises(FilesystemError):
         fs_empty.rmdir("/")
+
+
+def test_rmdir_non_empty_trashes_subtree():
+    """``RMD`` verschiebt den Ordner samt Inhalt in den Papierkorb (wie HTTP)."""
+    from sqlalchemy import select
+
+    with session_scope() as db:
+        user = make_user(db, "opt-rmdir")
+        user_id = user.id
+        root = namespace.ensure_root(db, user.id)
+        docs = namespace.create_folder(db, root, "docs", user.id)
+        sub = namespace.create_folder(db, docs, "sub", user.id)
+        datei = namespace.apply_write(db, docs, "datei.txt", user.id, make_blob(db, b"inhalt"))
+        tief = namespace.apply_write(db, sub, "tief.txt", user.id, make_blob(db, b"tief"))
+        subtree = {docs.id, sub.id, datei.id, tief.id}
+
+    fs = _fs_for("opt-rmdir")
+    # Früher scheiterte das mit „Verzeichnis nicht leer“.
+    fs.rmdir("/docs")
+
+    with session_scope() as db:
+        user = db.get(User, user_id)
+        root = namespace.ensure_root(db, user.id)
+        assert namespace.resolve_path(db, "/docs", root) is None
+        trashed = set(
+            db.execute(select(Entry.id).where(Entry.trashed_at.isnot(None))).scalars().all()
+        )
+        assert subtree <= trashed
+        # Nur der oberste Knoten erscheint als Papierkorb-Eintrag.
+        assert [entry.name for entry in namespace.list_trash(db, user)] == ["docs"]
