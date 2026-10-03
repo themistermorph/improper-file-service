@@ -4,7 +4,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
 
-> **Status: `0.1.3` – Pre-Release.** Der Funktionsumfang ist für den internen Betrieb
+> **Status: `0.1.4` – Pre-Release.** Der Funktionsumfang ist für den internen Betrieb
 > geeignet; API und Datenmodell können sich bis `1.0.0` noch ändern.
 > Änderungen: [`CHANGELOG.md`](CHANGELOG.md) · Release-Anleitung: [`RELEASING.md`](RELEASING.md).
 
