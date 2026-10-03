@@ -22,6 +22,9 @@ from .schemas import BulkTokenResult, BulkTokens, ShareCreate, ShareDetailOut, S
 
 router = APIRouter(tags=["shares"])
 
+# Bind-Parameter je IN-Query begrenzen (SQLite alte Builds: max. 999).
+_IN_CHUNK_SIZE = 500
+
 
 def _to_out(share: Share) -> ShareOut:
     return ShareOut(
@@ -132,14 +135,17 @@ def create_share(
     return _to_out(share)
 
 
-def _to_detail(db: Session, share: Share) -> ShareDetailOut:
-    entry = db.get(Entry, share.entry_id)
-    creator = db.get(User, share.created_by) if share.created_by else None
+def _detail(
+    share: Share,
+    entry: Entry | None,
+    creator: User | None,
+    entry_path: str | None,
+) -> ShareDetailOut:
     return ShareDetailOut(
         token=share.token,
         entry_id=share.entry_id,
         entry_name=entry.name if entry else None,
-        entry_path=namespace.path_of(db, entry) if entry else None,
+        entry_path=entry_path if entry else None,
         entry_type=entry.type.value if entry else None,
         created_by=share.created_by,
         created_by_username=creator.username if creator else None,
@@ -151,6 +157,83 @@ def _to_detail(db: Session, share: Share) -> ShareDetailOut:
         overwrite=share.overwrite,
         created_at=share.created_at,
     )
+
+
+def _fetch_entries(db: Session, entry_ids: list[UUID]) -> list[Entry]:
+    """Lädt Einträge zu den IDs (gechunkt wegen IN-Parameterlimits)."""
+    entries: list[Entry] = []
+    for start in range(0, len(entry_ids), _IN_CHUNK_SIZE):
+        chunk = entry_ids[start : start + _IN_CHUNK_SIZE]
+        entries.extend(
+            db.execute(select(Entry).where(Entry.id.in_(chunk))).scalars().all()
+        )
+    return entries
+
+
+def _path_map(db: Session, entries: list[Entry]) -> dict[UUID, str]:
+    """Pfade aller Einträge mit höchstens einer Query je Baumebene.
+
+    Entspricht ``namespace.path_of``: Die Kette endet an der Wurzel
+    (``parent_id is None``), an einem fehlenden Parent oder bei einem Zyklus.
+    """
+    nodes: dict[UUID, Entry] = {entry.id: entry for entry in entries}
+    frontier = {entry.parent_id for entry in entries if entry.parent_id is not None}
+    while frontier:
+        missing = [entry_id for entry_id in frontier if entry_id not in nodes]
+        if not missing:
+            break
+        loaded = _fetch_entries(db, missing)
+        if not loaded:
+            break
+        for node in loaded:
+            nodes[node.id] = node
+        frontier = {node.parent_id for node in loaded if node.parent_id is not None}
+    paths: dict[UUID, str] = {}
+    for entry in entries:
+        parts: list[str] = []
+        seen: set[UUID] = set()
+        node: Entry | None = entry
+        while node is not None and node.parent_id is not None:
+            if node.id in seen:
+                # Defense-in-Depth: Ein Zyklus darf nicht zur Endlosschleife führen.
+                break
+            seen.add(node.id)
+            parts.append(node.name)
+            node = nodes.get(node.parent_id)
+        paths[entry.id] = "/" + "/".join(reversed(parts))
+    return paths
+
+
+def _details(db: Session, shares: list[Share]) -> list[ShareDetailOut]:
+    """Baut mehrere Share-Details mit gebündelten Abfragen statt N+1-Lazy-Loads."""
+    entries: dict[UUID, Entry] = {}
+    creators: dict[UUID, User] = {}
+    if shares:
+        entry_ids = list({share.entry_id for share in shares})
+        entries = {entry.id: entry for entry in _fetch_entries(db, entry_ids)}
+        creator_ids = list(
+            {share.created_by for share in shares if share.created_by is not None}
+        )
+        for start in range(0, len(creator_ids), _IN_CHUNK_SIZE):
+            chunk = creator_ids[start : start + _IN_CHUNK_SIZE]
+            for user in db.execute(select(User).where(User.id.in_(chunk))).scalars().all():
+                creators[user.id] = user
+    paths = _path_map(db, list(entries.values()))
+    return [
+        _detail(
+            share,
+            entries.get(share.entry_id),
+            creators.get(share.created_by) if share.created_by is not None else None,
+            paths.get(share.entry_id),
+        )
+        for share in shares
+    ]
+
+
+def _to_detail(db: Session, share: Share) -> ShareDetailOut:
+    entry = db.get(Entry, share.entry_id)
+    creator = db.get(User, share.created_by) if share.created_by else None
+    return _detail(share, entry, creator, namespace.path_of(db, entry) if entry else None)
 
 
 @router.get("/shares", response_model=list[ShareDetailOut])
@@ -165,7 +248,7 @@ def list_shares(
     if entry_id is not None:
         stmt = stmt.where(Share.entry_id == entry_id)
     shares = db.execute(stmt.order_by(Share.created_at.desc())).scalars().all()
-    return [_to_detail(db, share) for share in shares]
+    return _details(db, shares)
 
 
 @router.patch("/shares/{token}", response_model=ShareDetailOut)
@@ -426,6 +509,17 @@ async def upload_shared(
     }
 
 
+def _manageable(
+    db: Session, user: User, share: Share, entry: Entry | None, admin_override: bool
+) -> bool:
+    """Verwaltungsrecht wie ``_authorize_manage``, aber mit geladenem Eintrag."""
+    if share.created_by == user.id:
+        return True
+    if entry is not None and authz.can(db, user, "share", entry):
+        return True
+    return bool(admin_override and authz.is_system_admin(db, user))
+
+
 def _authorize_manage(
     db: Session, user: User, share: Share, *, admin_override: bool = False
 ) -> Entry | None:
@@ -437,13 +531,9 @@ def _authorize_manage(
     Aufrufer Ersteller sein oder das `share`-Recht am Eintrag haben.
     """
     entry = db.get(Entry, share.entry_id)
-    if share.created_by == user.id:
-        return entry
-    if entry is not None and authz.can(db, user, "share", entry):
-        return entry
-    if admin_override and authz.is_system_admin(db, user):
-        return entry
-    raise PermissionDenied("Kein Recht, diese Freigabe zu verwalten")
+    if not _manageable(db, user, share, entry, admin_override):
+        raise PermissionDenied("Kein Recht, diese Freigabe zu verwalten")
+    return entry
 
 
 @router.delete("/shares/{token}", status_code=status.HTTP_204_NO_CONTENT)
@@ -466,6 +556,17 @@ def delete_share(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _load_shares(db: Session, tokens: list[str]) -> dict[str, Share]:
+    """Lädt die zu den Tokens vorhandenen Freigaben in einer Abfrage."""
+    unique_tokens = list(dict.fromkeys(tokens))
+    shares: dict[str, Share] = {}
+    for start in range(0, len(unique_tokens), _IN_CHUNK_SIZE):
+        chunk = unique_tokens[start : start + _IN_CHUNK_SIZE]
+        for share in db.execute(select(Share).where(Share.token.in_(chunk))).scalars().all():
+            shares[share.token] = share
+    return shares
+
+
 @router.post("/shares/bulk/revoke", response_model=BulkTokenResult)
 def bulk_revoke_shares(
     payload: BulkTokens,
@@ -474,14 +575,28 @@ def bulk_revoke_shares(
     user: User = Depends(get_current_user),
 ) -> BulkTokenResult:
     """Widerruft mehrere Freigaben; nicht verwaltbare Tokens landen in `failed`."""
+    # Freigaben und Einträge gebündelt laden (statt je Token). Fehlende Tokens
+    # sowie Duplikate (ein Token wird nur einmal widerrufen) landen in `failed` –
+    # exakt wie beim früheren Einzel-Lookup.
+    shares = _load_shares(db, payload.tokens)
+    entry_ids = list({share.entry_id for share in shares.values()})
+    entries = {entry.id: entry for entry in _fetch_entries(db, entry_ids)}
+
     ok = 0
     failed: list[str] = []
+    handled: set[str] = set()
     for token in payload.tokens:
+        share = shares.get(token)
+        if share is None or token in handled:
+            failed.append(token)
+            continue
+        if not _manageable(db, user, share, entries.get(share.entry_id), True):
+            failed.append(token)
+            continue
         try:
             with db.begin_nested():
-                share = _load_share(db, token)
-                _authorize_manage(db, user, share, admin_override=True)
                 db.delete(share)
+            handled.add(token)
             ok += 1
         except Exception:
             failed.append(token)

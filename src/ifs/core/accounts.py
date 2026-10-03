@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy.orm import Session, lazyload
 
 from ..errors import BadRequest, Conflict, NotFound
 from ..models import (
@@ -33,7 +33,9 @@ def validate_password(password: str) -> None:
 
 
 def get_user(db: Session, user_id: UUID) -> User:
-    user = db.get(User, user_id)
+    # Gruppen erst bei Zugriff laden: Die meisten Aufrufer brauchen sie nicht,
+    # das spart pro Aufruf eine zusätzliche Abfrage (Daten bleiben unverändert).
+    user = db.get(User, user_id, options=[lazyload(User.groups)])
     if user is None:
         raise NotFound("Benutzer nicht gefunden")
     return user
@@ -68,8 +70,14 @@ def list_users(
         stmt = stmt.where(User.is_admin.is_(admin))
 
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+    # Die Listendarstellung enthält keine Gruppen: bewusst nicht mitladen.
     rows = (
-        db.execute(stmt.order_by(User.username).limit(limit).offset(offset)).scalars().all()
+        db.execute(
+            stmt.order_by(User.username).limit(limit).offset(offset)
+            .options(lazyload(User.groups))
+        )
+        .scalars()
+        .all()
     )
     return list(rows), int(total)
 
@@ -157,15 +165,15 @@ def change_password(db: Session, user: User, current_password: str, new_password
 
 
 def principal_exists(db: Session, principal_type: PrincipalType, principal_id: UUID) -> bool:
+    # Reine Existenzprüfung: Mitglieder bzw. Gruppen nicht mitladen.
     if principal_type == PrincipalType.group:
-        return db.get(Group, principal_id) is not None
-    return db.get(User, principal_id) is not None
+        return db.get(Group, principal_id, options=[lazyload(Group.members)]) is not None
+    return db.get(User, principal_id, options=[lazyload(User.groups)]) is not None
 
 
 def _revoke_created_shares(db: Session, user: User) -> None:
-    for share in db.execute(select(Share).where(Share.created_by == user.id)).scalars().all():
-        db.delete(share)
-    db.flush()
+    # Sammel-DELETE statt Zeile für Zeile (eine Abfrage statt SELECT + N DELETE).
+    db.execute(delete(Share).where(Share.created_by == user.id))
 
 
 def deactivate_user(db: Session, user: User) -> None:
@@ -188,30 +196,25 @@ def _clear_group_memberships(db: Session, user: User) -> None:
 
 
 def _delete_credentials(db: Session, user: User) -> None:
-    for credential in db.execute(
-        select(Credential).where(Credential.user_id == user.id)
-    ).scalars().all():
-        db.delete(credential)
+    db.execute(delete(Credential).where(Credential.user_id == user.id))
 
 
 def _delete_user_acls(db: Session, user: User) -> None:
-    for acl in db.execute(
-        select(ACL).where(
+    db.execute(
+        delete(ACL).where(
             ACL.principal_type == PrincipalType.user, ACL.principal_id == user.id
         )
-    ).scalars().all():
-        db.delete(acl)
+    )
 
 
 def _delete_user_role_assignments(db: Session, user: User) -> None:
     """Entfernt verwaiste Rollenzuweisungen des Benutzers (principal_id ohne FK)."""
-    for assignment in db.execute(
-        select(RoleAssignment).where(
+    db.execute(
+        delete(RoleAssignment).where(
             RoleAssignment.principal_type == PrincipalType.user,
             RoleAssignment.principal_id == user.id,
         )
-    ).scalars().all():
-        db.delete(assignment)
+    )
 
 
 def delete_user(db: Session, user: User, transfer_to: User | None = None) -> None:

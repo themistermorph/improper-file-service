@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload
 
 from ..core import accounts, audit
 from ..errors import NotFound
@@ -30,7 +30,8 @@ router = APIRouter(tags=["users"])
 
 
 def _group_or_404(db: Session, group_id: UUID) -> Group:
-    group = db.get(Group, group_id)
+    # Mitglieder werden hier nie benötigt – bewusst erst bei Zugriff laden.
+    group = db.get(Group, group_id, options=[lazyload(Group.members)])
     if group is None:
         raise NotFound("Gruppe nicht gefunden")
     return group

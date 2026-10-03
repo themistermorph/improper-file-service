@@ -13,9 +13,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core import archive, archive_jobs, audit, authz, namespace
+from ..errors import NotFound
 from ..models import Entry, User
 from ..security import create_archive_token, decode_archive_token
 from .deps import client_ip, get_current_user, get_db
@@ -26,6 +28,8 @@ router = APIRouter(tags=["archive"])
 ARCHIVE_TTL_SECONDS = 300
 ARCHIVE_JOB_TTL_SECONDS = 3600
 CHUNK_SIZE = 1024 * 1024
+# Bind-Parameter je IN-Query begrenzen (SQLite alte Builds: max. 999).
+IN_CHUNK_SIZE = 500
 
 
 def _authenticate_archive_token(db: Session, token: str) -> tuple[User, dict]:
@@ -59,9 +63,23 @@ def _authorize_entries(db: Session, user: User, entries) -> None:
 
 
 def _load_entries(db: Session, entry_ids: list[UUID]) -> list[Entry]:
-    entries = []
+    """Lädt alle Einträge gebündelt; Reihenfolge/Duplikate bleiben wie übergeben.
+
+    Fehlende oder im Papierkorb liegende Einträge führen wie zuvor zu
+    ``NotFound`` ("Eintrag nicht gefunden").
+    """
+    unique_ids = list(dict.fromkeys(entry_ids))
+    found: dict[UUID, Entry] = {}
+    for start in range(0, len(unique_ids), IN_CHUNK_SIZE):
+        chunk = unique_ids[start : start + IN_CHUNK_SIZE]
+        for entry in db.execute(select(Entry).where(Entry.id.in_(chunk))).scalars().all():
+            found[entry.id] = entry
+    entries: list[Entry] = []
     for entry_id in entry_ids:
-        entries.append(namespace.get_entry(db, entry_id))
+        entry = found.get(entry_id)
+        if entry is None or entry.trashed_at is not None:
+            raise NotFound("Eintrag nicht gefunden")
+        entries.append(entry)
     return entries
 
 

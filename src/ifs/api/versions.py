@@ -5,9 +5,11 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core import audit, authz, namespace
+from ..errors import NotFound
 from ..models import Blob, EntryType, User, Version
 from .deps import client_ip, get_current_user, get_db
 from .entries import stream_blob
@@ -73,8 +75,16 @@ def version_content(
 ) -> Response:
     entry = namespace.get_entry(db, entry_id)
     authz.authorize(db, user, "read", entry)
-    version = namespace.get_version(db, entry, version_id)
-    blob = db.get(Blob, version.blob_id)
+    # Version und Blob in einer Abfrage laden (vorher zwei ``db.get``-Aufrufe);
+    # der Outer-Join trennt fehlende Version (404) von fehlendem Blob (500).
+    row = db.execute(
+        select(Version, Blob)
+        .outerjoin(Blob, Version.blob_id == Blob.id)
+        .where(Version.id == version_id)
+    ).first()
+    if row is None or row[0].entry_id != entry.id:
+        raise NotFound("Version nicht gefunden")
+    blob = row[1]
     if blob is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Blob fehlt")
     return stream_blob(db, entry, blob, request, download=True, actor_id=user.id)

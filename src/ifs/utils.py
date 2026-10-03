@@ -45,9 +45,27 @@ def normalize_path(path: str | None) -> str:
     """
     if not path:
         return "/"
+    if not isinstance(path, str):
+        # Nur wenn nötig allokieren; für den Normalfall (str) entfällt str().
+        path = str(path)
+    if "\\" in path:
+        path = path.replace("\\", "/")
+    if path == "/":
+        return "/"
+    # Schneller Pfad (häufigster Fall): keine leeren Segmente ('//', Endung '/'),
+    # kein '.'/'..'-Segment (erkennbar an '/.' bzw. führendem '.') – dann ist der
+    # Pfad bereits normalisiert und es genügt, den führenden Slash zu ergänzen.
+    # Damit entfallen split() und join() samt Zwischenlisten.
+    if (
+        "//" not in path
+        and "/." not in path
+        and not path.startswith(".")
+        and not path.endswith("/")
+    ):
+        return path if path.startswith("/") else "/" + path
     parts: list[str] = []
-    for segment in str(path).replace("\\", "/").split("/"):
-        if segment in ("", "."):
+    for segment in path.split("/"):
+        if not segment or segment == ".":
             continue
         if segment == "..":
             raise ValueError("Pfad-Traversal ist nicht erlaubt")
@@ -105,8 +123,10 @@ def safe_mime(mime: str | None, default: str = "application/octet-stream") -> st
 def content_disposition(filename: str, disposition: str = "attachment") -> str:
     """RFC-6266-konformer Headerwert – verhindert Header-/Zeilen-Injection."""
     safe = _CONTROL_RE.sub("", filename or "")
+    # ASCII-Vergleich statt ord()-Aufruf je Zeichen; Semantik identisch
+    # (32 <= ord(ch) < 127  <=>  " " <= ch <= "~").
     fallback = "".join(
-        ch if 32 <= ord(ch) < 127 and ch not in '"\\' else "_" for ch in safe
+        ch if " " <= ch <= "~" and ch not in '"\\' else "_" for ch in safe
     )
     fallback = fallback.strip() or "download"
     encoded = quote(safe, safe="")

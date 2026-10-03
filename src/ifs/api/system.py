@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import __version__
 from ..config import get_settings
-from ..core import authz
-from ..models import Entry, EntryType, User
+from ..core import authz, system_stats
+from ..models import User
 from .deps import get_current_user_optional, get_db
 
 router = APIRouter(tags=["system"])
@@ -45,20 +44,16 @@ def metrics(
         if not authz.is_system_admin(db, user):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Administratorrechte erforderlich")
 
-    users = db.execute(select(func.count()).select_from(User)).scalar_one()
-    entries = db.execute(select(func.count()).select_from(Entry)).scalar_one()
-    total_bytes = db.execute(
-        select(func.coalesce(func.sum(Entry.size), 0)).where(Entry.type == EntryType.file)
-    ).scalar_one()
+    ifs = system_stats.ifs_metrics(db)
     lines = [
         "# HELP ifs_users Anzahl Benutzer",
         "# TYPE ifs_users gauge",
-        f"ifs_users {users}",
+        f"ifs_users {ifs['users']}",
         "# HELP ifs_entries Anzahl Namespace-Einträge",
         "# TYPE ifs_entries gauge",
-        f"ifs_entries {entries}",
+        f"ifs_entries {ifs['entries']}",
         "# HELP ifs_stored_bytes Summe Dateigrößen",
         "# TYPE ifs_stored_bytes gauge",
-        f"ifs_stored_bytes {total_bytes}",
+        f"ifs_stored_bytes {ifs['stored_bytes']}",
     ]
     return "\n".join(lines) + "\n"

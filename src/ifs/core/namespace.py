@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import mimetypes
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from ..errors import BadRequest, Conflict, NotFound
 from ..models import Blob, Entry, EntryType, Share, User, Version
@@ -100,18 +101,70 @@ def resolve_path(db: Session, path: str, root: Entry) -> Entry | None:
     return node
 
 
+# Bind-Parameter je IN-Query begrenzen: schützt SQLite (alte Builds: max. 999
+# Variablen) und PostgreSQL (max. 65535) vor zu großen Parameterlisten.
+_IN_CHUNK_SIZE = 500
+
+
+def _children_of(
+    db: Session, parent_ids: list[UUID], trashed: bool | None = None
+) -> list[Entry]:
+    """Kinder mehrerer Eltern gebündelt laden (eine Query je Parameter-Chunk).
+
+    Ersetzt die frühere Child-Query je Knoten. ``trashed`` wählt den Filter der
+    Aufrufer: ``None`` = alle Kinder, ``False`` = nur aktive, ``True`` = nur
+    gelöschte Einträge.
+    """
+    children: list[Entry] = []
+    for start in range(0, len(parent_ids), _IN_CHUNK_SIZE):
+        chunk = parent_ids[start : start + _IN_CHUNK_SIZE]
+        statement = select(Entry).where(Entry.parent_id.in_(chunk))
+        if trashed is True:
+            statement = statement.where(Entry.trashed_at.isnot(None))
+        elif trashed is False:
+            statement = statement.where(Entry.trashed_at.is_(None))
+        children.extend(db.execute(statement).scalars().all())
+    return children
+
+
 def path_of(db: Session, entry: Entry) -> str:
+    """Pfad des Eintrags ("/a/b"); die Wurzel ergibt "/".
+
+    Die Ahnenkette wird in einer Query per rekursiver CTE geladen (statt einer
+    Lazy-Load-Query je Ebene). Das ``UNION`` (nicht ``UNION ALL``) dedupliziert
+    identische Knotenzeilen, damit ein bereits vorhandener Zyklus die Query
+    terminieren lässt; die ``seen``-Menge unten bricht zusätzlich exakt wie
+    zuvor beim ersten Wiederholungsknoten ab.
+    """
+    ancestors = (
+        select(Entry.id, Entry.parent_id, Entry.name)
+        .where(Entry.id == entry.id)
+        .cte("ancestors", recursive=True)
+    )
+    parent = aliased(Entry)
+    ancestors = ancestors.union(
+        select(parent.id, parent.parent_id, parent.name).where(
+            parent.id == ancestors.c.parent_id, ancestors.c.parent_id.isnot(None)
+        )
+    )
+    rows = db.execute(
+        select(ancestors.c.id, ancestors.c.parent_id, ancestors.c.name)
+    ).all()
+    by_id = {row.id: row for row in rows}
     parts: list[str] = []
-    node: Entry | None = entry
     seen: set[UUID] = set()
-    while node is not None and node.parent_id is not None:
-        if node.id in seen:
+    current: UUID | None = entry.id
+    while current is not None:
+        row = by_id.get(current)
+        if row is None or row.parent_id is None:
+            break
+        if row.id in seen:
             # Defense-in-Depth: Ein Zyklus im Baum (durch die Zeilensperre in
             # ``move`` verhindert) darf hier nicht zur Endlosschleife führen.
             break
-        seen.add(node.id)
-        parts.append(node.name)
-        node = node.parent
+        seen.add(row.id)
+        parts.append(row.name)
+        current = row.parent_id
     return "/" + "/".join(reversed(parts))
 
 
@@ -131,9 +184,12 @@ def get_trashed_entry(db: Session, entry_id: UUID) -> Entry:
 
 def list_children(db: Session, parent: Entry) -> list[Entry]:
     entries = db.execute(
-        select(Entry).where(Entry.parent_id == parent.id, Entry.trashed_at.is_(None))
+        select(Entry)
+        .where(Entry.parent_id == parent.id, Entry.trashed_at.is_(None))
+        # Sortierung in SQL statt in Python: Ordner zuerst, dann Name
+        # case-insensitiv (identisch zu (type != folder, name.lower())).
+        .order_by((Entry.type == EntryType.folder).desc(), func.lower(Entry.name))
     ).scalars().all()
-    entries.sort(key=lambda e: (e.type != EntryType.folder, e.name.lower()))
     return list(entries)
 
 
@@ -154,14 +210,14 @@ def create_folder(db: Session, parent: Entry, name: str, owner_id: UUID) -> Entr
     return folder
 
 
-def ensure_writable(
+def _existing_writable(
     db: Session, parent: Entry, name: str, owner_id: UUID, size: int
-) -> None:
-    """Vorabprüfung **vor** dem S3-Upload: Name, Zieltyp, Konflikt und Quota.
+) -> Entry | None:
+    """Gemeinsamer Kern von ``ensure_writable`` und ``apply_write``.
 
-    Verhindert verwaiste Objekte im Objektspeicher, wenn ein Upload sonst erst
-    nach dem Hochladen an einem absehbaren Fehler (Namenskonflikt, Quota)
-    scheitern würde. Die eigentliche Prüfung erfolgt in ``apply_write`` erneut.
+    Validiert Name, Zieltyp, Konflikt und Quota und liefert den bereits
+    vorhandenen aktiven Eintrag zurück (oder ``None``), damit ``apply_write``
+    ``find_child`` nicht doppelt ausführen muss.
     """
     validate_name(name)
     if parent.type != EntryType.folder:
@@ -175,6 +231,19 @@ def ensure_writable(
     quota_owner = owner_id if existing is None else (existing.owner_id or owner_id)
     existing_size = existing.size if existing is not None else 0
     quota.enforce(db, quota_owner, int(size) - existing_size)
+    return existing
+
+
+def ensure_writable(
+    db: Session, parent: Entry, name: str, owner_id: UUID, size: int
+) -> None:
+    """Vorabprüfung **vor** dem S3-Upload: Name, Zieltyp, Konflikt und Quota.
+
+    Verhindert verwaiste Objekte im Objektspeicher, wenn ein Upload sonst erst
+    nach dem Hochladen an einem absehbaren Fehler (Namenskonflikt, Quota)
+    scheitern würde. Die eigentliche Prüfung erfolgt in ``apply_write`` erneut.
+    """
+    _existing_writable(db, parent, name, owner_id, size)
 
 
 def apply_write(
@@ -186,12 +255,10 @@ def apply_write(
     mime: str | None = None,
 ) -> Entry:
     """Legt eine Datei an oder ersetzt ihren Inhalt durch eine neue Version."""
-    ensure_writable(db, parent, name, owner_id, blob.size)
+    existing = _existing_writable(db, parent, name, owner_id, blob.size)
     if mime is None:
         mime = mimetypes.guess_type(name)[0]
     mime = safe_mime(mime)
-
-    existing = find_child(db, parent.id, name)
 
     if existing is None:
         entry = Entry(
@@ -375,22 +442,27 @@ def soft_delete(db: Session, entry: Entry, actor_id: UUID | None = None) -> None
 
 
 def _trash_subtree(db: Session, entry: Entry, actor_id: UUID | None, ids: list[UUID]) -> None:
-    # Iterativ statt rekursiv, damit auch sehr tiefe Bäume nicht in einen
-    # RecursionError laufen.
-    stack: list[Entry] = [entry]
-    while stack:
-        node = stack.pop()
-        node.trashed_at = utcnow()
-        node.trashed_by = actor_id
-        if node.original_parent_id is None:
-            node.original_parent_id = node.parent_id
-        node.updated_at = utcnow()
-        ids.append(node.id)
-        stack.extend(
-            db.execute(
-                select(Entry).where(Entry.parent_id == node.id, Entry.trashed_at.is_(None))
-            ).scalars().all()
-        )
+    # Iterativ und ebenenweise statt rekursiv, damit auch sehr tiefe Bäume nicht
+    # in einen RecursionError laufen und nur eine Child-Query je Baumebene
+    # anfällt. ``seen`` schützt vor Zyklen in inkonsistenten Daten.
+    seen: set[UUID] = set()
+    frontier: list[Entry] = [entry]
+    while frontier:
+        level: list[Entry] = []
+        for node in frontier:
+            if node.id in seen:
+                continue
+            seen.add(node.id)
+            node.trashed_at = utcnow()
+            node.trashed_by = actor_id
+            if node.original_parent_id is None:
+                node.original_parent_id = node.parent_id
+            node.updated_at = utcnow()
+            ids.append(node.id)
+            level.append(node)
+        if not level:
+            break
+        frontier = _children_of(db, [node.id for node in level], trashed=False)
     db.flush()
 
 
@@ -413,35 +485,81 @@ def can_manage_trash(db: Session, user: User, entry: Entry) -> bool:
     return entry.owner_id == user.id or authz.can(db, user, "delete", entry)
 
 
-def list_trash(db: Session, user: User) -> list[Entry]:
+def _manageable_top_level_trash(db: Session, user: User) -> list[Entry]:
+    """Oberste, für ``user`` verwaltbare Papierkorb-Einträge.
+
+    Ermittelt die ``trashed_at``-Werte der Eltern ohne Lazy-Loads: Eltern, die
+    selbst im Papierkorb liegen, stammen aus dem geladenen Ergebnis; fehlende
+    Parent-IDs werden gebündelt per ``IN``-Query nachgeschlagen.
+    """
     rows = db.execute(select(Entry).where(Entry.trashed_at.isnot(None))).scalars().all()
-    top = [e for e in rows if _is_top_level_trash(e) and can_manage_trash(db, user, e)]
+    trashed_at_by_id = {row.id: row.trashed_at for row in rows}
+    missing_parent_ids = list(
+        dict.fromkeys(
+            row.parent_id
+            for row in rows
+            if row.parent_id is not None and row.parent_id not in trashed_at_by_id
+        )
+    )
+    parent_trashed_at: dict[UUID, datetime | None] = {}
+    for start in range(0, len(missing_parent_ids), _IN_CHUNK_SIZE):
+        chunk = missing_parent_ids[start : start + _IN_CHUNK_SIZE]
+        for entry_id, trashed_at in db.execute(
+            select(Entry.id, Entry.trashed_at).where(Entry.id.in_(chunk))
+        ).all():
+            parent_trashed_at[entry_id] = trashed_at
+
+    top: list[Entry] = []
+    for row in rows:
+        if row.parent_id is not None:
+            parent_state = (
+                trashed_at_by_id[row.parent_id]
+                if row.parent_id in trashed_at_by_id
+                else parent_trashed_at.get(row.parent_id)
+            )
+            # Wie ``_is_top_level_trash``: Nur Einträge, deren Parent aktiv,
+            # fehlend oder nicht vorhanden ist, sind oberste Papierkorb-Einträge.
+            if parent_state is not None:
+                continue
+        if can_manage_trash(db, user, row):
+            top.append(row)
+    return top
+
+
+def list_trash(db: Session, user: User) -> list[Entry]:
+    top = _manageable_top_level_trash(db, user)
     top.sort(key=lambda e: e.trashed_at or e.updated_at, reverse=True)
     return top
 
 
 def trash_count(db: Session, user: User) -> int:
-    return len(list_trash(db, user))
+    # Gleiche Filterlogik wie ``list_trash``, ohne die Sortierung.
+    return len(_manageable_top_level_trash(db, user))
 
 
 def subtree_stats(db: Session, entry: Entry) -> tuple[int, int]:
-    """Liefert (Dateien, Bytes) im Teilbaum unter dem Eintrag."""
+    """Liefert (Dateien, Bytes) im Teilbaum unter dem Eintrag.
+
+    Iterativ und ebenenweise: eine Child-Query je Baumebene statt je Knoten;
+    ``seen`` verhindert Mehrfachzählung bei Zyklen.
+    """
     files = 0
     total = 0
-    stack = [entry]
-    seen: set = set()
-    while stack:
-        node = stack.pop()
-        if node.id in seen:
-            continue
-        seen.add(node.id)
-        if node.type == EntryType.file:
-            files += 1
-            total += node.size
-        children = db.execute(
-            select(Entry).where(Entry.parent_id == node.id)
-        ).scalars().all()
-        stack.extend(children)
+    seen: set[UUID] = set()
+    frontier: list[Entry] = [entry]
+    while frontier:
+        level: list[Entry] = []
+        for node in frontier:
+            if node.id in seen:
+                continue
+            seen.add(node.id)
+            level.append(node)
+            if node.type == EntryType.file:
+                files += 1
+                total += node.size
+        if not level:
+            break
+        frontier = _children_of(db, [node.id for node in level], trashed=None)
     return files, total
 
 
@@ -453,16 +571,21 @@ def _untrash_node(node: Entry) -> None:
 
 
 def _untrash_subtree(db: Session, entry: Entry) -> None:
-    # Iterativ statt rekursiv (siehe _trash_subtree).
-    stack: list[Entry] = [entry]
-    while stack:
-        node = stack.pop()
-        _untrash_node(node)
-        stack.extend(
-            db.execute(
-                select(Entry).where(Entry.parent_id == node.id, Entry.trashed_at.isnot(None))
-            ).scalars().all()
-        )
+    # Iterativ und ebenenweise (siehe _trash_subtree); ``seen`` schützt vor
+    # Zyklen in inkonsistenten Daten.
+    seen: set[UUID] = set()
+    frontier: list[Entry] = [entry]
+    while frontier:
+        level: list[Entry] = []
+        for node in frontier:
+            if node.id in seen:
+                continue
+            seen.add(node.id)
+            _untrash_node(node)
+            level.append(node)
+        if not level:
+            break
+        frontier = _children_of(db, [node.id for node in level], trashed=True)
     db.flush()
 
 
@@ -530,21 +653,21 @@ def purge(db: Session, entry: Entry) -> int:
 def _active_subtree_size(db: Session, entry: Entry) -> int:
     """Summe der aktiven Dateigrößen im Teilbaum (iterativ, Papierkorb ausgenommen)."""
     total = 0
-    stack = [entry]
     seen: set[UUID] = set()
-    while stack:
-        node = stack.pop()
-        if node.id in seen:
-            continue
-        seen.add(node.id)
-        if node.type == EntryType.file:
-            total += int(node.size or 0)
-            continue
-        stack.extend(
-            db.execute(
-                select(Entry).where(Entry.parent_id == node.id, Entry.trashed_at.is_(None))
-            ).scalars().all()
-        )
+    frontier: list[Entry] = [entry]
+    while frontier:
+        level: list[Entry] = []
+        for node in frontier:
+            if node.id in seen:
+                continue
+            seen.add(node.id)
+            if node.type == EntryType.file:
+                total += int(node.size or 0)
+                continue
+            level.append(node)
+        if not level:
+            break
+        frontier = _children_of(db, [node.id for node in level], trashed=False)
     return total
 
 
@@ -587,18 +710,30 @@ def _copy_subtree(
 ) -> Entry:
     """Kopiert einen Eintrag samt aktivem Teilbaum – ohne Quota-Prüfung.
 
-    Iterativ statt rekursiv, damit auch sehr tiefe Bäume nicht in einen
-    RecursionError laufen (analog zu ``_trash_subtree``).
+    Iterativ und ebenenweise (eine Child-Query je Ebene) statt rekursiv, damit
+    auch sehr tiefe Bäume nicht in einen RecursionError laufen (analog zu
+    ``_trash_subtree``). ``seen`` schützt vor Zyklen in inkonsistenten Daten.
     """
     root_clone = _clone_entry(db, entry, new_parent, new_name, owner_id)
-    stack: list[tuple[Entry, Entry]] = [(entry, root_clone)]
-    while stack:
-        source, clone = stack.pop()
-        if source.type != EntryType.folder:
-            continue
-        for child in list_children(db, source):
-            child_clone = _clone_entry(db, child, clone, child.name, owner_id)
-            stack.append((child, child_clone))
+    clone_by_source: dict[UUID, Entry] = {entry.id: root_clone}
+    seen: set[UUID] = {entry.id}
+    frontier: list[Entry] = [entry] if entry.type == EntryType.folder else []
+    while frontier:
+        children = _children_of(db, [node.id for node in frontier], trashed=False)
+        next_frontier: list[Entry] = []
+        for child in children:
+            if child.id in seen:
+                continue
+            seen.add(child.id)
+            parent_clone = clone_by_source.get(child.parent_id)
+            if parent_clone is None:
+                # Inkonsistente Daten: Kind ohne kopierten Elternknoten überspringen.
+                continue
+            child_clone = _clone_entry(db, child, parent_clone, child.name, owner_id)
+            clone_by_source[child.id] = child_clone
+            if child.type == EntryType.folder:
+                next_frontier.append(child)
+        frontier = next_frontier
     return root_clone
 
 

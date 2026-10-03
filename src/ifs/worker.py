@@ -6,7 +6,8 @@ import logging
 import time
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.orm import aliased
 
 from .config import get_settings
 from .core import content
@@ -21,16 +22,19 @@ UPLOAD_SESSION_TTL_HOURS = 24
 
 def process_outbox() -> int:
     processed = 0
+    batch_size = get_settings().worker_outbox_batch_size
     with session_scope() as db:
         rows = db.execute(
             select(Outbox)
             .where(Outbox.published_at.is_(None))
             .order_by(Outbox.created_at)
-            .limit(200)
+            .limit(batch_size)
         ).scalars().all()
+        # Ein Zeitstempel für den gesamten Batch (statt utcnow() je Zeile).
+        now = utcnow()
         for row in rows:
             logger.info("Event verarbeitet: %s %s", row.event_type, row.payload)
-            row.published_at = utcnow()
+            row.published_at = now
             processed += 1
     return processed
 
@@ -38,16 +42,25 @@ def process_outbox() -> int:
 def purge_trash() -> int:
     cutoff = utcnow() - timedelta(days=get_settings().trash_retention_days)
     removed = 0
+    # Parent-Zuordnung per Subquery prüfen statt db.get() je Eintrag (N+1).
+    trashed_parent = aliased(Entry)
     with session_scope() as db:
         entries = db.execute(
-            select(Entry).where(Entry.trashed_at.isnot(None), Entry.trashed_at < cutoff)
+            select(Entry).where(
+                Entry.trashed_at.isnot(None),
+                Entry.trashed_at < cutoff,
+                or_(
+                    Entry.parent_id.is_(None),
+                    Entry.parent_id.notin_(
+                        select(trashed_parent.id).where(
+                            trashed_parent.trashed_at.isnot(None)
+                        )
+                    ),
+                ),
+            )
         ).scalars().all()
         for entry in entries:
             # nur Wurzeln des Papierkorbs löschen; Kinder via Kaskade
-            if entry.parent_id is not None:
-                parent = db.get(Entry, entry.parent_id)
-                if parent is not None and parent.trashed_at is not None:
-                    continue
             db.delete(entry)
             removed += 1
     return removed
@@ -78,21 +91,16 @@ def gc_blobs() -> int:
     # Objekt zu verweisen.
     keys: list[str] = []
     with session_scope() as db:
-        used = set(db.execute(select(Version.blob_id)).scalars().all())
-        candidate_ids = [
-            blob_id
-            for blob_id in db.execute(
-                select(Blob.id).where(Blob.status == BlobStatus.ready)
-            ).scalars().all()
-            if blob_id not in used
-        ]
-        blobs = []
-        if candidate_ids:
-            blobs = db.execute(
-                select(Blob)
-                .where(Blob.id.in_(candidate_ids))
-                .with_for_update(skip_locked=True)
-            ).scalars().all()
+        # Referenzprüfung per NOT EXISTS in der DB statt alle blob_ids in Python
+        # zu laden; spart einen vollständigen Scan über `versions`.
+        blobs = db.execute(
+            select(Blob)
+            .where(
+                Blob.status == BlobStatus.ready,
+                ~select(Version.id).where(Version.blob_id == Blob.id).exists(),
+            )
+            .with_for_update(skip_locked=True)
+        ).scalars().all()
         # Nach dem Sperren erneut prüfen: In der Zwischenzeit referenzierte Blobs
         # bleiben erhalten.
         used_now = set(db.execute(select(Version.blob_id)).scalars().all())
@@ -126,11 +134,14 @@ def run_once() -> None:
         )
 
 
-def run_worker(interval_seconds: int = 10) -> None:
-    logger.info("IFS-Worker gestartet (Intervall %ss)", interval_seconds)
+def run_worker(interval_seconds: int | None = None) -> None:
+    interval = (
+        interval_seconds if interval_seconds is not None else get_settings().worker_interval_seconds
+    )
+    logger.info("IFS-Worker gestartet (Intervall %ss)", interval)
     while True:
         try:
             run_once()
         except Exception:
             logger.exception("Worker-Lauf fehlgeschlagen")
-        time.sleep(interval_seconds)
+        time.sleep(interval)

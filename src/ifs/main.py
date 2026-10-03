@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from starlette.datastructures import MutableHeaders
 
 from . import __version__
 from .api import system
@@ -36,6 +37,45 @@ CONTENT_SECURITY_POLICY = (
     "object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'"
 )
 
+# Statische Security-Header (Reihenfolge wie zuvor gesetzt).
+_STATIC_SECURITY_HEADERS = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "SAMEORIGIN"),
+    ("Referrer-Policy", "no-referrer"),
+    ("Permissions-Policy", "geolocation=(), microphone=(), camera=()"),
+    ("Content-Security-Policy", CONTENT_SECURITY_POLICY),
+)
+
+
+class SecurityHeadersMiddleware:
+    """Reine ASGI-Middleware für Sicherheits-Header.
+
+    Gegenüber ``BaseHTTPMiddleware`` (``@app.middleware("http")``) entfallen die
+    Task-Group-/Stream-Wrapper pro Request; Header, Streaming-Verhalten und
+    Fehlerweitergabe bleiben unverändert.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for key, value in _STATIC_SECURITY_HEADERS:
+                    headers.setdefault(key, value)
+                if is_secure_request(Request(scope)):
+                    headers.setdefault(
+                        "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+                    )
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
+
 
 def seed_initial_data(username: str | None = None, password: str | None = None) -> None:
     """Legt beim ersten Start einen Admin und das Wurzelverzeichnis an.
@@ -48,7 +88,7 @@ def seed_initial_data(username: str | None = None, password: str | None = None) 
     admin_password = password if password is not None else settings.admin_password
 
     with session_scope() as db:
-        existing = db.execute(select(User)).scalars().first()
+        existing = db.execute(select(User.id).limit(1)).first()
         if existing is not None:
             return
         if not admin_password:
@@ -120,21 +160,7 @@ def create_app() -> FastAPI:
             status_code=409, content={"code": "Conflict", "message": "Konflikt (Eindeutigkeit)"}
         )
 
-    @app.middleware("http")
-    async def _security_headers(request: Request, call_next):
-        response = await call_next(request)
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
-        response.headers.setdefault("Referrer-Policy", "no-referrer")
-        response.headers.setdefault(
-            "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
-        )
-        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
-        if is_secure_request(request):
-            response.headers.setdefault(
-                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
-            )
-        return response
+    app.add_middleware(SecurityHeadersMiddleware)
 
     app.include_router(api_router)
     app.include_router(system.router)

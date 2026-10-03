@@ -11,12 +11,20 @@ import time
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from sqlalchemy import select
+
 from ..db import session_scope
 from ..models import Entry
 from . import archive
 
 JOB_TTL_SECONDS = 1800
 MAX_JOBS = 32
+# Fortschritt höchstens so oft unter dem Lock aktualisieren (der Endstand geht
+# immer durch). Polling-Clients sehen dadurch dieselben Endwerte, aber deutlich
+# weniger Lock-/Dict-Schreibvorgänge bei sehr vielen kleinen Dateien.
+PROGRESS_UPDATE_INTERVAL = 0.1
+# Bind-Parameter je IN-Query begrenzen (SQLite alte Builds: max. 999).
+IN_CHUNK_SIZE = 500
 
 
 @dataclass
@@ -89,15 +97,34 @@ def start(
 
 def _run(token: str, entry_ids: list[str]) -> None:
     path: str | None = None
+    latest_bytes = 0
     try:
         with session_scope() as db:
-            entries = []
-            for raw in entry_ids:
-                entry = db.get(Entry, UUID(str(raw)))
-                if entry is not None:
-                    entries.append(entry)
+            ids = [UUID(str(raw)) for raw in entry_ids]
+            found: dict[UUID, Entry] = {}
+            for start in range(0, len(ids), IN_CHUNK_SIZE):
+                chunk = ids[start : start + IN_CHUNK_SIZE]
+                for entry in db.execute(
+                    select(Entry).where(Entry.id.in_(chunk))
+                ).scalars().all():
+                    found[entry.id] = entry
+            # Reihenfolge und Duplikate der Anfrage bleiben erhalten; fehlende
+            # Einträge werden wie zuvor übersprungen.
+            entries = [found[entry_id] for entry_id in ids if entry_id in found]
+
+            with _lock:
+                current = _jobs.get(token)
+                total_files = current.total_files if current is not None else 0
+
+            last_update = 0.0
 
             def progress(files_done: int, bytes_done: int) -> None:
+                nonlocal last_update, latest_bytes
+                latest_bytes = bytes_done
+                now = time.monotonic()
+                if files_done < total_files and now - last_update < PROGRESS_UPDATE_INTERVAL:
+                    return
+                last_update = now
                 with _lock:
                     job = _jobs.get(token)
                     if job is not None:
@@ -115,6 +142,8 @@ def _run(token: str, entry_ids: list[str]) -> None:
                 job.path = path
                 job.state = "ready"
                 job.files_done = job.total_files
+                # Letzter gemeldeter Stand (entspricht dem früheren Endwert).
+                job.bytes_done = latest_bytes
     except Exception as exc:  # Fehler an den Client melden
         if path is not None:
             # Nach dem Build aufgetretener Fehler: keine Leiche hinterlassen.

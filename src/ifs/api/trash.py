@@ -13,7 +13,7 @@ from ..errors import NotFound, PermissionDenied
 from ..models import Entry, User
 from ..utils import as_utc, utcnow
 from .deps import client_ip, get_current_user, get_db
-from .entries import to_entry_out
+from .entries import entries_by_ids, entry_paths, to_entry_out
 from .schemas import (
     BulkIds,
     BulkPurgeResult,
@@ -27,7 +27,7 @@ from .schemas import (
 router = APIRouter(tags=["trash"])
 
 
-def _to_trash_out(db: Session, entry: Entry) -> TrashEntryOut:
+def _to_trash_out(db: Session, entry: Entry, path: str | None = None) -> TrashEntryOut:
     files, size = namespace.subtree_stats(db, entry)
     retention = get_settings().trash_retention_days
     days_left = 0
@@ -38,7 +38,7 @@ def _to_trash_out(db: Session, entry: Entry) -> TrashEntryOut:
     return TrashEntryOut(
         id=entry.id,
         name=entry.name,
-        path=namespace.path_of(db, entry),
+        path=path if path is not None else namespace.path_of(db, entry),
         type=entry.type,
         size=size,
         files=files,
@@ -53,7 +53,14 @@ def list_trash(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[TrashEntryOut]:
-    return [_to_trash_out(db, entry) for entry in namespace.list_trash(db, user)]
+    entries = namespace.list_trash(db, user)
+    # Eltern gebündelt laden und Pfade einmal je Vorfahrenkette statt je
+    # Eintrag bestimmen (``_to_trash_out`` bekommt den Pfad übergeben).
+    parents = entries_by_ids(
+        db, [entry.parent_id for entry in entries if entry.parent_id is not None]
+    )
+    paths = entry_paths(db, entries, parents)
+    return [_to_trash_out(db, entry, path=paths[entry.id]) for entry in entries]
 
 
 @router.get("/trash/count", response_model=TrashCount)

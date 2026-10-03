@@ -283,13 +283,8 @@ def list_user_roles(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> list[RoleAssignmentOut]:
-    assignments = [
-        a
-        for a in roles.list_assignments(db, principal_id=user_id)
-        if a.entry_id is None and a.principal_type == PrincipalType.user and a.role
-        and a.role.scope == RoleScope.system
-    ]
-    return [_assignment_out(a) for a in assignments]
+    # Filterung (Benutzer, systemweit, Systemrolle) erfolgt direkt in der Datenbank.
+    return [_assignment_out(a) for a in roles.list_system_assignments(db, user_id)]
 
 
 @router.post(

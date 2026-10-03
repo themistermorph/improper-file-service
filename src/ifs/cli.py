@@ -22,10 +22,19 @@ class _TokenRedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         args = record.args
         if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
-            new_args = list(args)
-            redacted = self._PATTERN.sub(r"\1<redacted>", new_args[2])
-            new_args[2] = self._PASSWORD.sub(r"\1<redacted>", redacted)
-            record.args = tuple(new_args)
+            message = args[2]
+            # Vorab-Check: Ohne diese Wörter können die Muster nicht greifen;
+            # spart zwei Regex-Scans pro Access-Log-Zeile.
+            if (
+                "shares" in message
+                or "preview" in message
+                or "archive" in message
+                or "password=" in message
+            ):
+                new_args = list(args)
+                redacted = self._PATTERN.sub(r"\1<redacted>", message)
+                new_args[2] = self._PASSWORD.sub(r"\1<redacted>", redacted)
+                record.args = tuple(new_args)
         return True
 
 

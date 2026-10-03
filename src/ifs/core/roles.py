@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session, contains_eager
 
 from ..errors import BadRequest, Conflict, NotFound
 from ..models import PrincipalType, Role, RoleAssignment, RoleScope
@@ -35,18 +35,23 @@ BUILTIN_ROLES: list[tuple[str, RoleScope, int, str]] = [
 
 
 def ensure_builtin_roles(db: Session) -> None:
+    # Eine Sammelabfrage statt einer Einzelabfrage je eingebauter Rolle.
+    names = [name for name, _, _, _ in BUILTIN_ROLES]
+    existing = set(
+        db.execute(select(Role.name).where(Role.name.in_(names))).scalars().all()
+    )
     for name, scope, permissions, description in BUILTIN_ROLES:
-        existing = db.execute(select(Role).where(Role.name == name)).scalars().first()
-        if existing is None:
-            db.add(
-                Role(
-                    name=name,
-                    scope=scope,
-                    permissions=permissions,
-                    description=description,
-                    is_builtin=True,
-                )
+        if name in existing:
+            continue
+        db.add(
+            Role(
+                name=name,
+                scope=scope,
+                permissions=permissions,
+                description=description,
+                is_builtin=True,
             )
+        )
     db.flush()
 
 
@@ -113,8 +118,8 @@ def update_role(
 def delete_role(db: Session, role: Role) -> None:
     if role.is_builtin:
         raise Conflict("Eingebaute Rollen können nicht gelöscht werden")
-    for assignment in list_assignments(db, role_id=role.id):
-        db.delete(assignment)
+    # Sammel-DELETE: eine Abfrage statt Laden + Löschen je Zuweisung.
+    db.execute(delete(RoleAssignment).where(RoleAssignment.role_id == role.id))
     db.delete(role)
     db.flush()
 
@@ -136,6 +141,50 @@ def list_assignments(
     return list(db.execute(stmt.order_by(RoleAssignment.created_at)).scalars().all())
 
 
+def list_system_assignments(db: Session, user_id: UUID) -> list[RoleAssignment]:
+    """Systemweite Rollenzuweisungen eines Benutzers – Filterung in der DB."""
+    stmt = (
+        select(RoleAssignment)
+        .join(Role, Role.id == RoleAssignment.role_id)
+        .options(contains_eager(RoleAssignment.role))
+        .where(
+            RoleAssignment.principal_id == user_id,
+            RoleAssignment.principal_type == PrincipalType.user,
+            RoleAssignment.entry_id.is_(None),
+            Role.scope == RoleScope.system,
+        )
+        .order_by(RoleAssignment.created_at)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def _find_assignment(
+    db: Session,
+    *,
+    role_id: UUID,
+    principal_type: PrincipalType,
+    principal_id: UUID,
+    entry_id: UUID | None,
+) -> RoleAssignment | None:
+    """Sucht exakt eine Zuweisung (inkl. ``entry_id IS NULL``) direkt in der DB."""
+    entry_filter = (
+        RoleAssignment.entry_id.is_(None)
+        if entry_id is None
+        else RoleAssignment.entry_id == entry_id
+    )
+    stmt = (
+        select(RoleAssignment)
+        .where(
+            RoleAssignment.role_id == role_id,
+            RoleAssignment.principal_type == principal_type,
+            RoleAssignment.principal_id == principal_id,
+            entry_filter,
+        )
+        .order_by(RoleAssignment.created_at)
+    )
+    return db.execute(stmt).scalars().first()
+
+
 def assign_role(
     db: Session,
     *,
@@ -153,15 +202,13 @@ def assign_role(
     if not accounts.principal_exists(db, principal_type, principal_id):
         raise BadRequest("Principal (Benutzer/Gruppe) nicht gefunden")
 
-    duplicate = next(
-        (
-            a
-            for a in list_assignments(
-                db, role_id=role.id, principal_id=principal_id
-            )
-            if a.principal_type == principal_type and a.entry_id == entry_id
-        ),
-        None,
+    # Doppelte Zuweisung direkt per Query prüfen statt alle Zuweisungen zu laden.
+    duplicate = _find_assignment(
+        db,
+        role_id=role.id,
+        principal_type=principal_type,
+        principal_id=principal_id,
+        entry_id=entry_id,
     )
     if duplicate is not None:
         return duplicate

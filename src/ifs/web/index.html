@@ -206,7 +206,7 @@
         <button class="btn secondary" onclick="newFolder()">＋ Neuer Ordner</button>
         <button class="btn" onclick="fileInput.click()">⬆ Hochladen</button>
         <input type="file" id="fileInput" multiple class="hidden" />
-        <input class="grow" id="search" type="text" placeholder="Im aktuellen Ordner filtern…" oninput="render()" />
+        <input class="grow" id="search" type="text" placeholder="Im aktuellen Ordner filtern…" oninput="scheduleRender()" />
       </div>
 
       <div id="uploads"></div>
@@ -276,7 +276,7 @@
 
       <div id="users-view" class="hidden">
         <div class="toolbar">
-          <input id="user-q" class="grow" type="text" placeholder="Benutzer suchen (Name, E-Mail)…" oninput="loadUsers()" />
+          <input id="user-q" class="grow" type="text" placeholder="Benutzer suchen (Name, E-Mail)…" oninput="scheduleLoadUsers()" />
           <select id="user-active" onchange="loadUsers()">
             <option value="">Alle Status</option>
             <option value="true">Aktiv</option>
@@ -383,7 +383,7 @@
       <div id="audit-view" class="hidden">
         <div class="toolbar">
           <input id="audit-q" class="grow" type="text"
-                 placeholder="Filtern (Aktion, Benutzer, IP, Ziel)…" oninput="renderAudit()" />
+                 placeholder="Filtern (Aktion, Benutzer, IP, Ziel)…" oninput="scheduleRenderAudit()" />
           <button class="btn secondary" onclick="loadAudit()">Aktualisieren</button>
         </div>
         <div class="card">
@@ -480,6 +480,15 @@
     }
     function fmtDate(iso) { return new Date(iso).toLocaleString(); }
     function esc(text) { return String(text).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+    // Entprellt häufige Eingaben (Suche/Filter), damit nicht jeder
+    // Tastendruck sofort neu rendert bzw. lädt.
+    function debounce(fn, wait) {
+      let timer = null;
+      return function (...args) {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => { timer = null; fn.apply(null, args); }, wait);
+      };
+    }
 
     function copyText(text) {
       if (navigator.clipboard && window.isSecureContext) {
@@ -505,13 +514,30 @@
       });
     }
 
-    async function api(method, path, body) {
+    // Kurzer Cache + In-Flight-Deduplizierung für GET-JSON-Requests:
+    // identische, schnell aufeinanderfolgende Aufrufe (z. B. /api/entries,
+    // /api/trash/count oder Dialog-Daten) lösen nur einen Netzwerkaufruf aus.
+    // Mutationen invalidieren den Cache zentral in api().
+    const JSON_CACHE_TTL = 1500;     // Millisekunden
+    const JSON_CACHE_MAX = 50;       // Obergrenze gegen unbegrenztes Wachstum
+    const jsonCache = new Map();     // path -> { at, value }
+    const jsonInflight = new Map();  // path -> Promise (laufende Anfrage)
+
+    function bustJsonCache() {
+      jsonCache.clear();
+      // Laufende Anfragen dürfen nach dem Bust weder neue Aufrufer bedienen
+      // noch ihr (veraltetes) Ergebnis nachträglich in den Cache schreiben.
+      jsonInflight.clear();
+    }
+
+    async function api(method, path, body, signal) {
       const headers = {};
       if (state.token) headers["Authorization"] = "Bearer " + state.token;
       if (body !== undefined) headers["Content-Type"] = "application/json";
       const res = await fetch(API + path, {
-        method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+        method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal,
       });
+      if (method !== "GET") bustJsonCache(); // Schreibzugriff: alte GET-Daten verwerfen
       if (res.status === 401) { logout(); throw new Error("Sitzung abgelaufen"); }
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -519,8 +545,34 @@
       }
       return res;
     }
-    async function apiJson(method, path, body) {
-      const res = await api(method, path, body); // wirft bereits bei Nicht-OK
+    async function apiJson(method, path, body, opts) {
+      const signal = opts && opts.signal;
+      const noCache = !!(opts && opts.noCache);
+      if (method === "GET" && !signal && !noCache) {
+        const hit = jsonCache.get(path);
+        if (hit && Date.now() - hit.at < JSON_CACHE_TTL) return hit.value;
+        const pending = jsonInflight.get(path);
+        if (pending) return pending; // laufende identische Anfrage mitbenutzen
+        const request = (async () => {
+          const res = await api(method, path, body);
+          const text = await res.text();
+          return text ? JSON.parse(text) : null;
+        })();
+        jsonInflight.set(path, request);
+        try {
+          const value = await request;
+          // Nur cachen, wenn die Anfrage nicht zwischenzeitlich invalidiert wurde
+          // (Mutation/Logout) – sonst bliebe ein veraltetes Ergebnis im Cache.
+          if (jsonInflight.get(path) === request) {
+            if (jsonCache.size >= JSON_CACHE_MAX) jsonCache.clear();
+            jsonCache.set(path, { at: Date.now(), value });
+          }
+          return value;
+        } finally {
+          if (jsonInflight.get(path) === request) jsonInflight.delete(path);
+        }
+      }
+      const res = await api(method, path, body, signal); // wirft bereits bei Nicht-OK
       const text = await res.text();
       return text ? JSON.parse(text) : null;
     }
@@ -563,6 +615,11 @@
       clearSystemTimer();
       closeAccountMenu();
       closeRowMenu();
+      // Laufende Navigation abbrechen und GET-Cache verwerfen, damit nach
+      // einem erneuten Login keine Daten der alten Sitzung auftauchen.
+      if (loadAbort) { loadAbort.abort(); loadAbort = null; }
+      if (sharedAbort) { sharedAbort.abort(); sharedAbort = null; }
+      bustJsonCache();
       // Zustand auslaufen lassen: keine Phantom-Auswahl, kein ZIP-Poll,
       // kein offenes Modal auf dem Login-Bildschirm.
       state.selected.clear();
@@ -575,7 +632,11 @@
 
     async function start() {
       try {
-        const me = await apiJson("GET", "/api/me");
+        // Benutzer- und Root-Information sind unabhängig -> parallel laden.
+        const [me, root] = await Promise.all([
+          apiJson("GET", "/api/me"),
+          apiJson("GET", "/api/root"),
+        ]);
         state.me = me;
         document.getElementById("who").textContent = me.username + (me.is_admin ? " (Admin)" : "");
         document.getElementById("account-btn").classList.remove("hidden");
@@ -585,7 +646,7 @@
           document.getElementById("menu-system").classList.remove("hidden");
           document.getElementById("menu-audit").classList.remove("hidden");
         }
-        state.root = await apiJson("GET", "/api/root");
+        state.root = root;
         state.cwdId = state.root.id;
         state.stack = [];
         document.getElementById("login").classList.add("hidden");
@@ -597,12 +658,21 @@
     }
 
     // ---------- Navigation ----------
+    // Bei schnellem Ordnerwechsel wird die vorherige Anfrage abgebrochen,
+    // damit veraltete Antworten keine neueren überschreiben.
+    let loadAbort = null;
+
     async function load() {
       const query = state.cwdId ? ("?parent_id=" + state.cwdId) : "";
+      if (loadAbort) loadAbort.abort();
+      loadAbort = new AbortController();
+      const signal = loadAbort.signal;
       try {
-        state.entries = await apiJson("GET", "/api/entries" + query);
+        state.entries = await apiJson("GET", "/api/entries" + query, undefined, { signal });
         render();
-      } catch (e) { toast("Laden fehlgeschlagen: " + e.message, "err"); }
+      } catch (e) {
+        if (e.name !== "AbortError") toast("Laden fehlgeschlagen: " + e.message, "err");
+      }
     }
     function openFolder(entry) {
       state.selected.clear();
@@ -635,7 +705,7 @@
       });
 
       const tbody = document.getElementById("entries");
-      tbody.innerHTML = "";
+      const frag = document.createDocumentFragment();
       document.getElementById("empty").classList.toggle("hidden", list.length > 0);
 
       for (const e of list) {
@@ -708,13 +778,16 @@
         tdActions.appendChild(wrap);
         tr.appendChild(tdActions);
 
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       }
+      tbody.replaceChildren(frag); // ein DOM-Zugriff statt Append pro Zeile
 
       document.getElementById("status").textContent =
         list.length + " von " + state.entries.length + " Einträgen";
       updateSelectionUI(list);
     }
+    // Sucheingabe entprellen (Rendering läuft sonst pro Tastendruck).
+    const scheduleRender = debounce(render, 120);
     function action(label, cls, handler) {
       const b = document.createElement("button");
       b.className = "btn small " + cls;
@@ -764,8 +837,7 @@
       try {
         await api("DELETE", "/api/entries/" + entry.id);
         state.selected.delete(entry.id);
-        await load();
-        await refreshTrashBadge();
+        await Promise.all([load(), refreshTrashBadge()]); // unabhängig -> parallel
         toast("In den Papierkorb verschoben.", "ok");
       } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
     }
@@ -792,6 +864,59 @@
       if (archivePoll) { clearInterval(archivePoll); archivePoll = null; }
     }
 
+    let archivePollBusy = false; // verhindert überlappende Status-Abfragen
+
+    // Poll-Timer nur starten, solange ein Auftrag existiert und die Seite
+    // sichtbar ist (kein Leerlauf im Hintergrund).
+    function startArchivePoll() {
+      clearArchivePoll();
+      if (!archiveJob || document.visibilityState === "hidden") return;
+      archivePoll = setInterval(pollArchiveJob, 700);
+    }
+
+    async function pollArchiveJob() {
+      const job = archiveJob;
+      if (!job || archivePollBusy) return;
+      archivePollBusy = true;
+      try {
+        // noCache: der Fortschritt darf nicht aus dem GET-Cache kommen.
+        const st = await apiJson(
+          "GET", "/api/archive/jobs/" + job.token, undefined, { noCache: true },
+        );
+        if (archiveJob !== job) return; // zwischenzeitlich beendet/abgebrochen
+        archiveJob.status = st.status;
+        archiveJob.filesDone = st.files_done || 0;
+        archiveJob.bytesDone = st.bytes_done || 0;
+        archiveJob.totalFiles = st.total_files || archiveJob.totalFiles;
+        archiveJob.totalBytes = st.total_bytes || archiveJob.totalBytes;
+        archiveJob.error = st.error || null;
+        if (archiveJob.status === "ready") {
+          const name = st.name || archiveJob.name;
+          const url = "/api/archive/" + archiveJob.token;
+          // Nur schließen, wenn wirklich noch das ZIP-Fenster offen ist –
+          // ein zwischenzeitlich geöffnetes fremdes Modal bleibt stehen.
+          const zipModalOpen = archiveModalOpen && !!document.getElementById("zip-bar");
+          clearArchivePoll();
+          finishArchive();
+          if (zipModalOpen) closeModal();
+          triggerDownload(url, name);
+          toast("ZIP bereit.", "ok");
+          return;
+        }
+        updateArchiveUI();
+        if (archiveJob.status === "failed") clearArchivePoll();
+      } catch (e) {
+        clearArchivePoll();
+        if (archiveJob === job) {
+          archiveJob.status = "failed";
+          archiveJob.error = e.message;
+          updateArchiveUI();
+        }
+      } finally {
+        archivePollBusy = false;
+      }
+    }
+
     async function startArchiveJob(ids, fallbackName) {
       clearArchivePoll();
       try {
@@ -809,42 +934,8 @@
         archiveModalOpen = true;
         hideArchiveMini();
         renderArchiveModal();
-        const poll = async () => {
-          if (!archiveJob) return;
-          try {
-            const st = await apiJson("GET", "/api/archive/jobs/" + archiveJob.token);
-            archiveJob.status = st.status;
-            archiveJob.filesDone = st.files_done || 0;
-            archiveJob.bytesDone = st.bytes_done || 0;
-            archiveJob.totalFiles = st.total_files || archiveJob.totalFiles;
-            archiveJob.totalBytes = st.total_bytes || archiveJob.totalBytes;
-            archiveJob.error = st.error || null;
-            if (archiveJob.status === "ready") {
-              const name = st.name || archiveJob.name;
-              const url = "/api/archive/" + archiveJob.token;
-              // Nur schließen, wenn wirklich noch das ZIP-Fenster offen ist –
-              // ein zwischenzeitlich geöffnetes fremdes Modal bleibt stehen.
-              const zipModalOpen = archiveModalOpen && !!document.getElementById("zip-bar");
-              clearArchivePoll();
-              finishArchive();
-              if (zipModalOpen) closeModal();
-              triggerDownload(url, name);
-              toast("ZIP bereit.", "ok");
-              return;
-            }
-            updateArchiveUI();
-            if (archiveJob.status === "failed") clearArchivePoll();
-          } catch (e) {
-            clearArchivePoll();
-            if (archiveJob) {
-              archiveJob.status = "failed";
-              archiveJob.error = e.message;
-              updateArchiveUI();
-            }
-          }
-        };
-        archivePoll = setInterval(poll, 700);
-        poll();
+        startArchivePoll();
+        pollArchiveJob();
       } catch (e) { toast("ZIP-Download fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -966,6 +1057,8 @@
 
     async function uploadFiles(files) {
       for (const file of files) await uploadOne(file).catch(err => toast(file.name + ": " + err.message, "err"));
+      // Uploads laufen am JSON-Cache vorbei (XHR) -> Liste frisch laden.
+      bustJsonCache();
       await load();
     }
     function progressEl(name) {
@@ -975,12 +1068,16 @@
       el.innerHTML = `<div class="top"><span>${esc(name)}</span><span class="pct">0 %</span></div>
                       <div class="bar"><i></i></div>`;
       wrap.appendChild(el);
+      // DOM-Referenzen einmal auflösen statt bei jedem Fortschritts-Event.
+      const pctEl = el.querySelector(".pct");
+      const barEl = el.querySelector(".bar");
+      const fillEl = barEl.querySelector("i");
       return {
         set(loaded, total, done, error) {
           const pct = total ? Math.round(loaded / total * 100) : 0;
-          el.querySelector(".pct").textContent = (error ? "Fehler" : done ? "fertig" : pct + " %");
-          el.querySelector(".bar>i").style.width = (error ? 100 : pct) + "%";
-          el.querySelector(".bar").className = "bar " + (error ? "err" : done ? "ok" : "");
+          pctEl.textContent = (error ? "Fehler" : done ? "fertig" : pct + " %");
+          fillEl.style.width = (error ? 100 : pct) + "%";
+          barEl.className = "bar " + (error ? "err" : done ? "ok" : "");
           if (done || error) setTimeout(() => el.remove(), 4000);
         },
       };
@@ -1141,6 +1238,7 @@
     }
 
     function refreshCurrent() {
+      bustJsonCache(); // manueller Refresh: immer frisch laden
       if (state.view === "trash") loadTrash();
       else if (state.view === "users") loadUsers();
       else if (state.view === "roles") loadRoles();
@@ -1229,7 +1327,7 @@
 
     function renderTrash() {
       const tbody = document.getElementById("trash-entries");
-      tbody.innerHTML = "";
+      const frag = document.createDocumentFragment();
       const items = state.trash || [];
       document.getElementById("trash-empty").classList.toggle("hidden", items.length > 0);
       for (const e of items) {
@@ -1273,8 +1371,9 @@
         tdActions.appendChild(wrap);
         tr.appendChild(tdActions);
 
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       }
+      tbody.replaceChildren(frag);
       renderTrashSelectionUI();
     }
 
@@ -1316,9 +1415,7 @@
           `Wiederhergestellt: ${result.ok}` + (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
           failed.length ? "err" : "ok",
         );
-        await loadTrash();
-        await refreshTrashBadge();
-        await load();
+        await Promise.all([loadTrash(), refreshTrashBadge(), load()]); // unabhängig -> parallel
       } catch (e) { toast("Wiederherstellen fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -1334,8 +1431,7 @@
             (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
           failed.length ? "err" : "ok",
         );
-        await loadTrash();
-        await refreshTrashBadge();
+        await Promise.all([loadTrash(), refreshTrashBadge()]);
       } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -1343,8 +1439,7 @@
       try {
         await apiJson("POST", "/api/trash/" + entry.id + "/restore", {});
         toast("Wiederhergestellt.", "ok");
-        await loadTrash();
-        await refreshTrashBadge();
+        await Promise.all([loadTrash(), refreshTrashBadge()]);
       } catch (e) { toast("Wiederherstellen fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -1353,8 +1448,7 @@
       try {
         await api("DELETE", "/api/trash/" + entry.id);
         toast("Endgültig gelöscht.", "ok");
-        await loadTrash();
-        await refreshTrashBadge();
+        await Promise.all([loadTrash(), refreshTrashBadge()]);
       } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -1363,8 +1457,7 @@
       try {
         const result = await apiJson("DELETE", "/api/trash");
         toast(`Papierkorb geleert (${result.entries} Einträge, ${result.files} Dateien).`, "ok");
-        await loadTrash();
-        await refreshTrashBadge();
+        await Promise.all([loadTrash(), refreshTrashBadge()]);
       } catch (e) { toast("Leeren fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -1386,10 +1479,12 @@
         renderUsers();
       } catch (e) { toast("Benutzer laden fehlgeschlagen: " + e.message, "err"); }
     }
+    // Benutzerfilter entprellen (sonst ein Request pro Tastendruck).
+    const scheduleLoadUsers = debounce(loadUsers, 300);
 
     function renderUsers() {
       const tbody = document.getElementById("user-rows");
-      tbody.innerHTML = "";
+      const frag = document.createDocumentFragment();
       const items = state.users || [];
       document.getElementById("user-empty").classList.toggle("hidden", items.length > 0);
       document.getElementById("user-status").textContent =
@@ -1451,8 +1546,9 @@
         tdActions.appendChild(wrap);
         tr.appendChild(tdActions);
 
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       }
+      tbody.replaceChildren(frag);
       renderUserSelectionUI();
     }
 
@@ -1752,7 +1848,7 @@
 
     function renderRoles() {
       const tbody = document.getElementById("role-rows");
-      tbody.innerHTML = "";
+      const frag = document.createDocumentFragment();
       const items = state.roles || [];
       document.getElementById("role-empty").classList.toggle("hidden", items.length > 0);
       for (const role of items) {
@@ -1786,8 +1882,9 @@
         }
         tdActions.appendChild(wrap);
         tr.appendChild(tdActions);
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       }
+      tbody.replaceChildren(frag);
     }
 
     function permsCheckboxes(selected) {
@@ -2150,23 +2247,36 @@
       return location.origin + "/api/shares/" + token + "/content/" + encodeURIComponent(filename);
     }
 
+    // Auch beim Wechsel zwischen geteilten Ordnern die vorherige Anfrage
+    // abbrechen (schnelle Klicks dürfen keine alten Antworten anwenden).
+    let sharedAbort = null;
+
     async function loadShared() {
+      if (sharedAbort) sharedAbort.abort();
+      sharedAbort = new AbortController();
+      const signal = sharedAbort.signal;
       try {
         if (state.sharedPath.length === 0) {
-          state.shared = await apiJson("GET", "/api/shared");
+          state.shared = await apiJson("GET", "/api/shared", undefined, { signal });
         } else {
           const current = state.sharedPath[state.sharedPath.length - 1];
-          state.shared = await apiJson("GET", "/api/entries?parent_id=" + current.id);
+          state.shared = await apiJson(
+            "GET", "/api/entries?parent_id=" + current.id, undefined, { signal },
+          );
         }
         renderShared();
-      } catch (e) { toast("Mit mir geteilt laden fehlgeschlagen: " + e.message, "err"); }
+      } catch (e) {
+        if (e.name !== "AbortError") {
+          toast("Mit mir geteilt laden fehlgeschlagen: " + e.message, "err");
+        }
+      }
     }
 
     function renderShared() {
       const tbody = document.getElementById("shared-rows");
       const inFolder = state.sharedPath.length > 0;
       const items = state.shared || [];
-      tbody.innerHTML = "";
+      const frag = document.createDocumentFragment();
 
       document.getElementById("shared-back").classList.toggle("hidden", !inFolder);
       document.getElementById("shared-crumbs").textContent = inFolder
@@ -2209,8 +2319,9 @@
         tdAct.appendChild(wrap);
         tr.appendChild(tdAct);
 
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       }
+      tbody.replaceChildren(frag);
     }
 
     function openShared(entry) {
@@ -2234,7 +2345,7 @@
 
     function renderShares() {
       const tbody = document.getElementById("share-rows");
-      tbody.innerHTML = "";
+      const frag = document.createDocumentFragment();
       const items = state.shares || [];
       document.getElementById("share-empty").classList.toggle("hidden", items.length > 0);
       for (const s of items) {
@@ -2284,8 +2395,9 @@
         tdAct.appendChild(wrap);
         tr.appendChild(tdAct);
 
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       }
+      tbody.replaceChildren(frag);
       renderShareSelectionUI();
     }
 
@@ -2426,7 +2538,6 @@
     function renderAudit() {
       const filter = document.getElementById("audit-q").value.toLowerCase();
       const tbody = document.getElementById("audit-rows");
-      tbody.innerHTML = "";
       const items = (state.audit || []).filter(row => {
         if (!filter) return true;
         const hay = [row.action, row.actor_username, row.ip, row.target_entry, row.protocol, row.result]
@@ -2434,8 +2545,9 @@
         return hay.includes(filter);
       });
       document.getElementById("audit-empty").classList.toggle("hidden", items.length > 0);
-      for (const row of items) {
-        const tr = document.createElement("tr");
+      // Ein einziger innerHTML-Aufbau statt Zelle-für-Zelle-Erzeugung
+      // (bis zu 300 Zeilen pro Filterlauf).
+      tbody.innerHTML = items.map(row => {
         const cells = [
           fmtDate(row.ts),
           row.actor_username || "–",
@@ -2444,14 +2556,11 @@
           row.ip || "–",
           row.result || "–",
         ];
-        for (const value of cells) {
-          const td = document.createElement("td");
-          td.textContent = value;
-          tr.appendChild(td);
-        }
-        tbody.appendChild(tr);
-      }
+        return "<tr>" + cells.map(value => `<td>${esc(value)}</td>`).join("") + "</tr>";
+      }).join("");
     }
+    // Audit-Filter entprellen (300 Zeilen müssen nicht pro Tastendruck neu entstehen).
+    const scheduleRenderAudit = debounce(renderAudit, 120);
 
     // ---------- Mehrfachauswahl / Bulk ----------
     function updateSelectionUI(visibleList) {
@@ -2491,8 +2600,7 @@
         const extra = result.failed.length ? `, ${result.failed.length} fehlgeschlagen` : "";
         toast(`${result.ok} gelöscht${extra}.`, "ok");
         state.selected.clear();
-        await load();
-        await refreshTrashBadge();
+        await Promise.all([load(), refreshTrashBadge()]); // unabhängig -> parallel
       } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -2629,6 +2737,18 @@
       }
     }
 
+    // Timer nur laufen lassen, solange die System-Ansicht aktiv und die
+    // Seite sichtbar ist; sonst sofort stoppen (kein Leerlauf im Hintergrund).
+    function syncSystemTimer() {
+      if (state.view !== "system" || !state.me || document.visibilityState === "hidden") {
+        clearSystemTimer();
+        return;
+      }
+      if (!state.systemTimer) {
+        state.systemTimer = setInterval(loadSystem, monitor.interval);
+      }
+    }
+
     function setMonitorInterval() {
       monitor.interval = parseInt(document.getElementById("monitor-interval").value, 10) || 5000;
       clearSystemTimer();
@@ -2647,11 +2767,7 @@
         if (net.rx_bytes_per_sec != null) pushSeries("rx", net.rx_bytes_per_sec);
         if (net.tx_bytes_per_sec != null) pushSeries("tx", net.tx_bytes_per_sec);
         renderSystem();
-        clearSystemTimer();
-        state.systemTimer = setInterval(() => {
-          if (state.view === "system") loadSystem();
-          else clearSystemTimer();
-        }, monitor.interval);
+        syncSystemTimer();
       } catch (e) { toast("Systemdaten fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -2745,6 +2861,19 @@
     }
     function closeModal() { document.getElementById("modal-root").innerHTML = ""; }
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+    // ---------- Sichtbarkeit ----------
+    // Hintergrund-Timer stoppen; beim Zurückkehren die aktive Ansicht frisch
+    // aktualisieren und angehaltene Polls wieder anlaufen lassen.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        clearSystemTimer();
+        clearArchivePoll();
+        return;
+      }
+      if (state.view === "system") loadSystem();
+      if (archiveJob) { startArchivePoll(); pollArchiveJob(); }
+    });
 
     // ---------- Start ----------
     document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });

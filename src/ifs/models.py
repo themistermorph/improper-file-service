@@ -152,12 +152,12 @@ class Entry(Base):
 
     id: Mapped[UUID] = _uuid_pk()
     parent_id: Mapped[UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE"), nullable=True, index=True
+        Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(1024), nullable=False)
     type: Mapped[EntryType] = mapped_column(_enum(EntryType), nullable=False)
     owner_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     # weiche Referenz auf die aktuelle Version (kein FK, siehe Modul-Docstring)
     current_version_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
@@ -179,6 +179,18 @@ class Entry(Base):
 
     __table_args__ = (
         Index("ix_entries_parent_name", "parent_id", "name"),
+        # Auflistung/Traversierung filtern immer auf aktive Einträge
+        # (``parent_id = ? AND trashed_at IS NULL``).
+        Index("ix_entries_parent_trashed", "parent_id", "trashed_at"),
+        # Quota-Summen und Besitzer-Abfragen (``owner_id = ?``, meist ohne Papierkorb).
+        Index("ix_entries_owner_trashed", "owner_id", "trashed_at"),
+        # Papierkorb-Liste und Worker-Aufräumen (``trashed_at IS NOT NULL``).
+        Index(
+            "ix_entries_trashed_at",
+            "trashed_at",
+            postgresql_where=text("trashed_at IS NOT NULL"),
+            sqlite_where=text("trashed_at IS NOT NULL"),
+        ),
         # Eindeutiger Name je Parent (case-insensitive, nur aktive Einträge).
         Index(
             "uq_entries_parent_lower_name",
@@ -215,7 +227,7 @@ class Version(Base):
 
     id: Mapped[UUID] = _uuid_pk()
     entry_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE"), index=True
+        Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE")
     )
     blob_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("blobs.id"), index=True)
     seq: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -225,19 +237,29 @@ class Version(Base):
     created_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = _created_at()
 
+    __table_args__ = (
+        # Versionshistorie: ``max(seq)`` je Eintrag bzw. Sortierung nach seq.
+        Index("ix_versions_entry_seq", "entry_id", "seq"),
+    )
+
 
 class ACL(Base):
     __tablename__ = "acl"
 
     id: Mapped[UUID] = _uuid_pk()
     entry_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE"), index=True
+        Uuid(as_uuid=True), ForeignKey("entries.id", ondelete="CASCADE")
     )
     principal_type: Mapped[PrincipalType] = mapped_column(_enum(PrincipalType), nullable=False)
     principal_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
     perms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     inherited: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        # Rechteprüfung je Eintrag (``ACL.entry_id = ?``), Principal als Filter.
+        Index("ix_acl_entry_principal", "entry_id", "principal_type", "principal_id"),
+    )
 
 
 class Role(Base):
@@ -270,6 +292,17 @@ class RoleAssignment(Base):
 
     role: Mapped[Role] = relationship(lazy="joined")
 
+    __table_args__ = (
+        # Rollenprüfung je Principal (``principal_type/principal_id``) inkl. globaler
+        # Rollen (``entry_id IS NULL``) und „shared“-Auflistung.
+        Index(
+            "ix_role_assignments_principal_entry",
+            "principal_type",
+            "principal_id",
+            "entry_id",
+        ),
+    )
+
 
 class Share(Base):
     __tablename__ = "shares"
@@ -288,6 +321,11 @@ class Share(Base):
     overwrite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = _created_at()
 
+    __table_args__ = (
+        # Eigene Freigaben auflisten/entfernen (``created_by = ?``, Sortierung).
+        Index("ix_shares_created_by_created", "created_by", "created_at"),
+    )
+
 
 class UploadSession(Base):
     __tablename__ = "upload_sessions"
@@ -305,6 +343,11 @@ class UploadSession(Base):
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
+    __table_args__ = (
+        # Worker bricht veraltete Sessions ab (``status = pending AND updated_at < ?``).
+        Index("ix_upload_sessions_status_updated", "status", "updated_at"),
+    )
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
@@ -319,6 +362,11 @@ class AuditLog(Base):
     result: Mapped[str] = mapped_column(String(16), default="ok")
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    __table_args__ = (
+        # Audit-Ansicht: ``ORDER BY ts DESC`` (optional mit action-Filter).
+        Index("ix_audit_log_ts", "ts"),
+    )
+
 
 class Outbox(Base):
     __tablename__ = "outbox"
@@ -327,4 +375,10 @@ class Outbox(Base):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = _created_at()
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        # Worker liest unveröffentlichte Events in Reihenfolge:
+        # ``WHERE published_at IS NULL ORDER BY created_at``.
+        Index("ix_outbox_published_created", "published_at", "created_at"),
+    )

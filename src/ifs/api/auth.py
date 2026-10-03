@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload
 
 from ..config import get_settings
 from ..core import audit, ratelimit
@@ -42,7 +42,17 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             headers={"Retry-After": str(retry)},
         )
 
-    user = db.execute(select(User).where(User.username == payload.username)).scalars().first()
+    # Gruppen werden hier nicht gebraucht: gezielt ohne Selectin-Load laden
+    # (Login-Antwort und Audit nutzen nur Skalarwerte des Benutzers).
+    user = (
+        db.execute(
+            select(User)
+            .where(User.username == payload.username)
+            .options(lazyload(User.groups))
+        )
+        .scalars()
+        .first()
+    )
     # Immer einen Hash prüfen (auch bei unbekanntem Nutzer) -> kein Timing-Leak.
     valid = verify_password_safe(user.password_hash if user is not None else None, payload.password)
     if user is None or not user.is_active or not valid:

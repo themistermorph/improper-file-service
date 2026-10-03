@@ -134,6 +134,13 @@ IFS_S3_USE_SSL=true
 |---|---|---|---|
 | `IFS_TRASH_RETENTION_DAYS` | int | `30` | Aufbewahrungsfrist in Tagen; danach entfernt der Worker gelöschte Einträge endgültig. |
 
+## Worker
+
+| Variable | Typ | Standard | Beschreibung |
+|---|---|---|---|
+| `IFS_WORKER_INTERVAL_SECONDS` | int | `10` | Poll-Intervall des Workers (Outbox, Papierkorb, Blob-GC) in Sekunden. |
+| `IFS_WORKER_OUTBOX_BATCH_SIZE` | int | `200` | Maximale Anzahl Outbox-Events, die der Worker pro Durchlauf verarbeitet. |
+
 ## FTPS
 
 | Variable | Typ | Standard | Beschreibung |

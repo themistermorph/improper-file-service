@@ -10,7 +10,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload
 
 from ..core import authz, namespace
 from ..models import User
@@ -69,7 +69,9 @@ def preview(token: str, request: Request, db: Session = Depends(get_db)) -> Resp
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ungültiger Vorschau-Token")
 
     entry = namespace.get_entry(db, entry_id)
-    user = db.get(User, user_id)
+    # Gruppen erst bei Bedarf laden (Eigentümer-Fall kommt ohne aus) –
+    # ``authorize`` fordert sie nur für fremde Freigaben an.
+    user = db.get(User, user_id, options=[lazyload(User.groups)])
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Benutzer unbekannt oder inaktiv")
     if int(payload.get("tv", -1)) != user.token_version:

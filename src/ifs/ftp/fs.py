@@ -11,6 +11,7 @@ import os
 import posixpath
 import time
 from datetime import UTC
+from typing import ClassVar
 
 from pyftpdlib.exceptions import FilesystemError
 from pyftpdlib.filesystems import AbstractedFS
@@ -180,6 +181,12 @@ class _UploadWriter:
 
 
 class IFSFilesystem(AbstractedFS):
+    # stat-Ergebnisse der gerade formatierten Auflistung (LIST/MLSD/MLST).
+    # Wird ausschließlich innerhalb von ``format_list``/``format_mlsx`` gesetzt
+    # und danach wieder zurückgesetzt; als Klassenattribut bleibt das Attribut
+    # auch für per ``__new__`` erzeugte Instanzen (Tests) definiert.
+    _stat_cache: ClassVar[dict[str, os.stat_result]] = {}
+
     def __init__(self, root, cmd_channel):
         super().__init__(root, cmd_channel)
         self._pending: dict[str, tuple[str, str, str]] = {}  # pfad -> (parent, name, spool)
@@ -265,6 +272,77 @@ class IFSFilesystem(AbstractedFS):
 
     listdirinfo = listdir
 
+    def _listing_stats(self, basedir: str, listing) -> dict[str, os.stat_result]:
+        """Lädt die stat-Daten einer Auflistung gebündelt in einer DB-Session.
+
+        pyftpdlib ruft beim Formatieren von LIST/MLSD/MLST ``stat``/``lstat`` je
+        Eintrag auf; ohne Bündelung entstünde pro Eintrag eine eigene Session
+        samt Pfadauflösung und Rechteprüfung (N+1). ACLs und Ressourcenrollen
+        vererben sich vom Ordner auf die Kinder, daher genügt für sie die
+        Prüfung des Basisverzeichnisses. Besitz wird dagegen **nicht** vererbt:
+        Kinder, die der Nutzer weder besitzt noch einzeln lesen/schreiben darf,
+        bleiben (wie bei der Einzelauflösung) ungecacht und damit unsichtbar.
+        Namen ohne exakten Treffer bleiben ebenfalls ungecacht und laufen
+        anschließend durch die reguläre (autoritätsgeprüfte) Auflösung.
+        """
+        base = _norm(basedir)
+        names = [str(name) for name in listing]
+        if not names:
+            return {}
+        with session_scope() as db:
+            try:
+                user = self._user(db)
+                parent = self._resolve(db, base)
+            except FilesystemError:
+                return {}
+            if parent is None or parent.type != EntryType.folder:
+                return {}
+            if not (authz.can(db, user, "read", parent) or authz.can(db, user, "write", parent)):
+                return {}
+            visible = []
+            for child in namespace.list_children(db, parent):
+                # Besitz gilt nur je Eintrag; nur wer das Kind selbst lesen oder
+                # schreiben darf, bekommt es aus dem Cache (sonst Fallback).
+                if child.owner_id == user.id or authz.can(
+                    db, user, "read", child
+                ) or authz.can(db, user, "write", child):
+                    visible.append(child)
+        by_name = {child.name: child for child in visible}
+        stats: dict[str, os.stat_result] = {}
+        for name in names:
+            child = by_name.get(name)
+            if child is not None:
+                stats[_norm(posixpath.join(base, name))] = self._stat_for(child)
+        return stats
+
+    def _with_listing_stats(self, basedir: str, listing):
+        """Installiert den stat-Cache für die Dauer einer Auflistung.
+
+        Die Namen werden einmal materialisiert, damit Cache und Formatierung
+        exakt dieselbe Liste sehen (auch falls ein Aufrufer ein Iterable übergibt).
+        """
+        names = list(listing)
+        cache = self._listing_stats(basedir, names)
+        previous = self._stat_cache
+        self._stat_cache = cache
+        return previous, names
+
+    def format_list(self, basedir, listing, ignore_err=True):
+        """LIST: stat-Daten aller Einträge gebündelt statt je Eintrag."""
+        previous, names = self._with_listing_stats(basedir, listing)
+        try:
+            yield from super().format_list(basedir, names, ignore_err)
+        finally:
+            self._stat_cache = previous
+
+    def format_mlsx(self, basedir, listing, perms, facts, ignore_err=True):
+        """MLSD/MLST: stat-Daten aller Einträge gebündelt statt je Eintrag."""
+        previous, names = self._with_listing_stats(basedir, listing)
+        try:
+            yield from super().format_mlsx(basedir, names, perms, facts, ignore_err)
+        finally:
+            self._stat_cache = previous
+
     # --- Metadaten -------------------------------------------------------
 
     def _stat_for(self, entry: Entry) -> os.stat_result:
@@ -273,6 +351,11 @@ class IFSFilesystem(AbstractedFS):
         return os.stat_result((mode, 0, 0, 1, 0, 0, entry.size, mtime, mtime, mtime))
 
     def stat(self, path):
+        # Innerhalb einer Auflistung sind die Werte bereits gebündelt geladen
+        # (siehe ``_listing_stats``); außerhalb ist der Cache leer.
+        cached = self._stat_cache.get(_norm(path))
+        if cached is not None:
+            return cached
         entry = self._resolve_authorized(_norm(path))
         if entry is None:
             raise FilesystemError("Datei oder Verzeichnis nicht gefunden")
@@ -461,35 +544,33 @@ class IFSFilesystem(AbstractedFS):
             content.new_spool_path(), path, limit=get_settings().max_upload_size
         )
 
-        # APPE / REST: bestehenden Inhalt vorladen
+        # APPE / REST: bestehenden Inhalt vorladen (eine Session statt zwei)
         if mode.startswith(("a", "r+")):
             try:
-                existing = self._lookup(path)
-                if existing is not None and existing.type == EntryType.file:
-                    with session_scope() as db:
-                        user = self._user(db)
-                        entry = self._resolve(db, path)
-                        if entry is not None:
-                            # Auch das Vorladen ist ein Lesezugriff: Ein
-                            # write-only-Nutzer darf fremden Inhalt nicht in den
-                            # Spool kopieren (Defense-in-Depth zu F2).
-                            authz.authorize(db, user, "read", entry)
-                        from ..models import Blob, Version
+                from ..models import Blob, Version
 
+                with session_scope() as db:
+                    user = self._user(db)
+                    entry = self._resolve(db, path)
+                    if entry is not None and entry.type == EntryType.file:
+                        # Auch das Vorladen ist ein Lesezugriff: Ein
+                        # write-only-Nutzer darf fremden Inhalt nicht in den
+                        # Spool kopieren (Defense-in-Depth zu F2).
+                        authz.authorize(db, user, "read", entry)
                         version = (
                             db.get(Version, entry.current_version_id)
-                            if entry is not None and entry.current_version_id
+                            if entry.current_version_id
                             else None
                         )
                         blob = db.get(Blob, version.blob_id) if version else None
                         if blob is not None:
                             self._preload(blob.storage_key, writer._path)
-                    if mode.startswith("a"):
-                        writer._handle.close()
-                        writer._handle = open(writer._path, "ab")
-                elif mode.startswith("r+"):
-                    writer.close()
-                    raise FilesystemError("REST auf nicht vorhandene Datei")
+                        if mode.startswith("a"):
+                            writer._handle.close()
+                            writer._handle = open(writer._path, "ab")
+                    elif mode.startswith("r+"):
+                        writer.close()
+                        raise FilesystemError("REST auf nicht vorhandene Datei")
             except Exception:
                 # Kein verwaister Spool, wenn das Vorladen abgelehnt oder
                 # abgebrochen wird.

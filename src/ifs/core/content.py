@@ -12,7 +12,7 @@ import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import BinaryIO
+from typing import BinaryIO, Self
 
 import boto3
 from botocore.client import Config
@@ -33,6 +33,25 @@ class BlobInfo:
     storage_key: str
     sha256: str
     size: int
+
+
+class SpoolRef(str):
+    """Spool-Pfad mit bereits berechnetem SHA-256 und bekannter Größe.
+
+    Der Upload-Stream wird ohnehin einmal vollständig gelesen; der dabei
+    ermittelte Digest wird hier zusammen mit dem Pfad transportiert, damit
+    :func:`store_blob` die Datei nicht erneut vollständig hashen muss. Als
+    ``str``-Subklasse bleibt der Aufruf für bestehende (auch dreiparametrige)
+    Implementierungen unverändert gültig.
+    """
+
+    __slots__ = ("sha256", "size")
+
+    def __new__(cls, path: str, sha256: str, size: int) -> Self:
+        ref = super().__new__(cls, path)
+        ref.sha256 = sha256
+        ref.size = size
+        return ref
 
 
 @lru_cache
@@ -63,10 +82,17 @@ def ensure_bucket() -> None:
 
 
 def sha256_file(path: str) -> str:
+    # readinto vermeidet eine Bytes-Neuanlage pro Block (Speicher-Allokationen
+    # im Hot-Path großer Dateien).
     digest = hashlib.sha256()
+    buffer = bytearray(CHUNK_SIZE)
+    view = memoryview(buffer)
     with open(path, "rb") as handle:
-        for block in iter(lambda: handle.read(CHUNK_SIZE), b""):
-            digest.update(block)
+        while True:
+            n = handle.readinto(buffer)
+            if not n:
+                break
+            digest.update(view[:n])
     return digest.hexdigest()
 
 
@@ -99,11 +125,42 @@ def upload_file(local_path: str, sha256: str, mime: str | None = None) -> BlobIn
     return BlobInfo(storage_key=storage_key, sha256=sha256, size=size)
 
 
-def store_blob(db: Session, local_path: str, mime: str | None = None) -> Blob:
-    """Legt einen Blob an – mit Dedup über den SHA-256 (CAS)."""
+def _precomputed_sha256(local_path: str) -> str | None:
+    """Liefert einen an einem :class:`SpoolRef` mitgeführten Digest.
+
+    Der Digest wird nur verwendet, wenn die Dateigröße unverändert passt –
+    sonst würde ein veralteter Hash den CAS-Schlüssel verfälschen. In diesem
+    Fall (und ohne SpoolRef) wird die Datei wie bisher vollständig gehasht.
+    """
+    carried = getattr(local_path, "sha256", None)
+    if carried is None:
+        return None
+    size = getattr(local_path, "size", None)
+    if size is not None:
+        try:
+            if os.path.getsize(local_path) != size:
+                return None
+        except OSError:
+            return None
+    return carried
+
+
+def store_blob(
+    db: Session, local_path: str, mime: str | None = None, sha256: str | None = None
+) -> Blob:
+    """Legt einen Blob an – mit Dedup über den SHA-256 (CAS).
+
+    ``sha256`` kann ein bereits berechneter Digest der Datei sein (z. B. aus
+    dem Upload-Stream). Fehlt er, wird die Datei wie bisher über
+    :func:`sha256_file` gelesen; ein über :class:`SpoolRef` mitgeführter
+    Digest wird ebenfalls genutzt, sofern er noch zur Dateigröße passt.
+    """
     settings = get_settings()
     mime = safe_mime(mime) if mime else None
-    sha256 = sha256_file(local_path)
+    if sha256 is None:
+        sha256 = _precomputed_sha256(local_path)
+    if sha256 is None:
+        sha256 = sha256_file(local_path)
     storage_key = f"cas/{sha256[:2]}/{sha256}"
 
     # Die CAS-Zeile ist über storage_key eindeutig. Deshalb gezielt danach
@@ -216,13 +273,18 @@ def new_spool_path() -> str:
     return path
 
 
-def remove_spool(path: str) -> None:
+def remove_spool(path: str | None) -> None:
+    if not path:
+        return
+    # Ein einzelner Syscall statt exists()-Prüfung + remove().
     try:
-        if path and os.path.exists(path):
-            os.remove(path)
+        os.remove(path)
     except OSError:
         pass
 
 
 def stream_out(body: BinaryIO, chunk_size: int = CHUNK_SIZE) -> Iterator[bytes]:
-    yield from iter(lambda: body.read(chunk_size), b"")
+    # `read` einmal binden (spart einen Attribut-Lookup pro Block); die
+    # Default-Blockgröße bleibt 1 MiB (RAM-schonend pro Stream).
+    read = body.read
+    yield from iter(lambda: read(chunk_size), b"")

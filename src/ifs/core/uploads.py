@@ -73,6 +73,19 @@ def get_session(db: Session, session_id: UUID, *, for_update: bool = False) -> U
     return session
 
 
+def _spool_size(path: str) -> int:
+    """Größe des Spools oder -1, wenn er fehlt/verschwunden ist.
+
+    Ein einzelner `os.stat` ersetzt die bisherige exists()+getsize()-Kombination
+    (zwei Syscalls) und behält deren Verhalten bei: fehlt die Datei, gilt sie
+    als nicht vorhanden.
+    """
+    try:
+        return os.stat(path).st_size
+    except OSError:
+        return -1
+
+
 def begin_append(db: Session, session: UploadSession, offset: int) -> str:
     """Validiert einen Append-Vorgang und liefert den Spool-Pfad."""
     if session.status != UploadStatus.pending:
@@ -83,9 +96,9 @@ def begin_append(db: Session, session: UploadSession, offset: int) -> str:
     # nach externem Aufräumen) oder ein zu kleiner Spool würde sonst still zu
     # kurze Dateien erzeugen; überzählige Bytes aus abgebrochenen Versuchen
     # werden verworfen, damit ein Retry keine doppelten Bytes anhängt.
-    if not os.path.exists(session.spool_path):
+    spool_size = _spool_size(session.spool_path)
+    if spool_size < 0:
         raise Conflict("Upload-Spool fehlt")
-    spool_size = os.path.getsize(session.spool_path)
     if spool_size < offset:
         raise Conflict("Spool kleiner als der bekannte Offset")
     if spool_size > offset:
@@ -139,9 +152,7 @@ def complete(db: Session, user: User, session: UploadSession, mime: str | None =
     # Der Offset ist die verlässliche Quelle für die tatsächlich akzeptierte
     # Größe: ein manipulierter oder teilweise geschriebener Spool (z. B. nach
     # Client-Abbruch) darf nicht als vollständige Datei durchgehen.
-    spool_size = (
-        os.path.getsize(session.spool_path) if os.path.exists(session.spool_path) else -1
-    )
+    spool_size = _spool_size(session.spool_path)
     if spool_size != session.offset:
         raise BadRequest(
             f"Spool-Größe {spool_size} stimmt nicht mit dem Upload-Offset "
@@ -150,13 +161,19 @@ def complete(db: Session, user: User, session: UploadSession, mime: str | None =
 
     # SHA- und Vorabprüfungen **vor** dem S3-Upload, damit bei erwartbaren
     # Fehlern kein verwaistes Objekt im Objektspeicher zurückbleibt.
+    actual: str | None = None
     if session.sha256_expected:
         actual = content.sha256_file(session.spool_path)
         if actual.lower() != session.sha256_expected.lower():
             raise BadRequest("SHA-256-Prüfsumme stimmt nicht mit der erwarteten überein")
     namespace.ensure_writable(db, parent, session.name, user.id, spool_size)
 
-    blob = content.store_blob(db, session.spool_path, mime)
+    if actual is None:
+        blob = content.store_blob(db, session.spool_path, mime)
+    else:
+        # Der Digest wurde oben bereits über die ganze Datei berechnet und
+        # gegen den Client-Wert geprüft – store_blob muss nicht erneut hashen.
+        blob = content.store_blob(db, session.spool_path, mime, sha256=actual)
     entry = namespace.apply_write(db, parent, session.name, user.id, blob, mime)
     session.status = UploadStatus.completed
     _cleanup(session)
@@ -176,8 +193,10 @@ def abort(db: Session, session: UploadSession) -> None:
 
 
 def _cleanup(session: UploadSession) -> None:
+    if not session.spool_path:
+        return
+    # Ein einzelner Syscall statt exists()-Prüfung + remove().
     try:
-        if session.spool_path and os.path.exists(session.spool_path):
-            os.remove(session.spool_path)
+        os.remove(session.spool_path)
     except OSError:
         pass

@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     default_quota_bytes: int = 0  # 0 = unbegrenzt (Gesamt-Quota pro Besitzer)
     trash_retention_days: int = 30
 
+    # Worker: Intervall zwischen den Läufen (Sekunden) und Batch-Größe der Outbox.
+    worker_interval_seconds: int = 10
+    worker_outbox_batch_size: int = 200
+
     # Monitoring: Pfad für die Festplattenanzeige im Admin-Panel
     monitor_disk_path: str = "/"
     # Optionaler SeaweedFS-Status-Endpunkt (z. B. http://s3:9333/vol/status)

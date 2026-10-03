@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -187,6 +188,7 @@ async def simple_upload(
 
     spool = content.new_spool_path()
     size = 0
+    digest = hashlib.sha256()
     try:
         with open(spool, "wb") as handle:
             async for chunk in request.stream():
@@ -197,9 +199,14 @@ async def simple_upload(
                         status.HTTP_413_CONTENT_TOO_LARGE, "Datei zu groß"
                     )
                 handle.write(chunk)
+                digest.update(chunk)
                 size += len(chunk)
         namespace.ensure_writable(db, parent, name, user.id, size)
-        blob = content.store_blob(db, spool, mime)
+        # Der SHA-256 entsteht beim Schreiben des Streams; store_blob muss die
+        # Datei dadurch nicht erneut vollständig lesen (SpoolRef trägt ihn mit).
+        blob = content.store_blob(
+            db, content.SpoolRef(spool, digest.hexdigest(), size), mime
+        )
     finally:
         content.remove_spool(spool)
 

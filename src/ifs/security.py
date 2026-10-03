@@ -63,16 +63,21 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> dict[str, Any] | None:
+def _decode_token(token: str, purpose: str) -> dict[str, Any] | None:
+    """Dekodiert ein JWT und akzeptiert es nur für den erwarteten Zweck."""
     settings = get_settings()
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except jwt.PyJWTError:
         return None
-    # Nur echte Access-Tokens akzeptieren – keine Vorschau-/Archiv-Token.
-    if payload.get("purpose") != "access":
+    if payload.get("purpose") != purpose:
         return None
     return payload
+
+
+def decode_access_token(token: str) -> dict[str, Any] | None:
+    # Nur echte Access-Tokens akzeptieren – keine Vorschau-/Archiv-Token.
+    return _decode_token(token, "access")
 
 
 def create_preview_token(
@@ -104,14 +109,7 @@ def create_archive_token(
 
 
 def decode_archive_token(token: str) -> dict[str, Any] | None:
-    settings = get_settings()
-    try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    except jwt.PyJWTError:
-        return None
-    if payload.get("purpose") != "archive":
-        return None
-    return payload
+    return _decode_token(token, "archive")
 
 
 def _create_scoped_token(
@@ -131,11 +129,4 @@ def _create_scoped_token(
 
 
 def _decode_scoped_token(token: str, purpose: str) -> dict[str, Any] | None:
-    settings = get_settings()
-    try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    except jwt.PyJWTError:
-        return None
-    if payload.get("purpose") != purpose:
-        return None
-    return payload
+    return _decode_token(token, purpose)

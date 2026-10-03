@@ -24,9 +24,15 @@ def get_engine() -> Engine:
     global _engine
     if _engine is None:
         settings = get_settings()
+        # `pool_pre_ping` schützt vor toten Verbindungen (Firewall/NAT, DB-Neustart).
         kwargs: dict = {"pool_pre_ping": True, "future": True}
         if settings.database_url.startswith("sqlite"):
             kwargs["connect_args"] = {"check_same_thread": False}
+        else:
+            # PostgreSQL: LIFO hält den Pool klein, `pool_recycle` schließt zu alte
+            # Verbindungen. Für Aufrufer verhält sich die Session unverändert.
+            kwargs["pool_use_lifo"] = True
+            kwargs["pool_recycle"] = 1800
         _engine = create_engine(settings.database_url, **kwargs)
     return _engine
 

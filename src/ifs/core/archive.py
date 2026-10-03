@@ -11,6 +11,7 @@ import tempfile
 import zipfile
 from collections.abc import Callable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -41,11 +42,16 @@ def _add_entry(
     if entry.current_version_id is None:
         on_file(0)
         return
-    version = db.get(Version, entry.current_version_id)
-    blob = db.get(Blob, version.blob_id) if version else None
-    if blob is None:
+    # Version und Blob in einer Abfrage (statt zwei Einzel-Lookups je Datei).
+    row = db.execute(
+        select(Version, Blob)
+        .join(Blob, Blob.id == Version.blob_id)
+        .where(Version.id == entry.current_version_id)
+    ).first()
+    if row is None:
         on_file(0)
         return
+    _version, blob = row
 
     info = zipfile.ZipInfo(prefix)
     info.date_time = _date_time(entry)

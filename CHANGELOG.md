@@ -6,6 +6,33 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Performance
+- **Parallel-Optimierung über API, Kern, FTPS, Web-UI und Worker** – ohne Änderung des
+  nach außen sichtbaren Verhaltens. Gemessene Beispiele (Testsystem/SQLite):
+  - **Authz (PDP):** Rechteprüfung in Baumtiefe 20: 62 → 4 Queries (Folgeaufrufe je
+    Session 0); Login/`/me` je 1 SELECT statt 2.
+  - **Namespace:** Teilbaum-Operationen ebenenweise statt pro Knoten
+    (`subtree_stats` 63 → 3; `path_of` Tiefe 25: 26 → 1; `soft_delete` Breite 60: 65 → 5).
+  - **FTPS:** `LIST`/`MLSD` ohne Stat-Query je Eintrag (~14 → 0 Zusatz-Statements/Eintrag;
+    60 Einträge: ~1,2 s → ~0,05 s).
+  - **Uploads:** kein doppelter Voll-Hash mehr (Simple-Upload 3 → 2 Datei-Pässe,
+    Resumable-Complete 2 → 1 Hashlauf); `sha256_file` allokationsfrei per `readinto`.
+  - **Listen/Admin:** `GET /entries` ohne Pfad-N+1, Benutzer-/Rollen-Listen ohne
+    Gruppen-N+1, Systemmetriken 3 → 1 Abfrage (mit kurzem TTL-Cache beim Polling).
+  - **Web-UI:** Polling nur bei sichtbarem Panel, `AbortController` und
+    In-Flight-Deduplizierung, entprellte Eingaben, Aufräumen von Objekt-URLs/Timern.
+  - **Plattform:** `normalize_path` ~2× schneller; Security-Header als reine
+    ASGI-Middleware (~90 % weniger Overhead); Worker-Intervall/-Batch über
+    `IFS_WORKER_INTERVAL_SECONDS`/`IFS_WORKER_OUTBOX_BATCH_SIZE` justierbar
+    (Defaults unverändert 10 s/200).
+- **Datenbank:** Neue Migration `migrations/sql/0007_performance_indexes.sql` ergänzt zehn
+  zusammengesetzte Indizes (u. a. `entries(parent_id, trashed_at)`,
+  `versions(entry_id, seq)`, `role_assignments(principal_type, principal_id, entry_id)`)
+  und ersetzt fünf dadurch abgedeckte Einzelindizes. Bei Bestandsinstallationen die
+  Migration anwenden.
+- **Tests:** 116 neue Tests, u. a. Query-Zähler-Nachweise für die optimierten Pfade –
+  Gesamtsuite jetzt 290 Tests.
+
 ### Changed
 - **Deploy/Build beschleunigt:** Das `Dockerfile` installiert die Laufzeit-Abhängigkeiten
   zuerst in einer eigenen, cache-fähigen Schicht (`requirements.txt`, BuildKit-Pip-Cache)

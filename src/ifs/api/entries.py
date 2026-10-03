@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from email.utils import format_datetime
 from uuid import UUID
 
@@ -33,14 +34,94 @@ from .schemas import (
 
 router = APIRouter(tags=["entries"])
 
+# Bind-Parameter je IN-Query begrenzen (schützt z. B. alte SQLite-Builds mit
+# max. 999 Variablen vor zu großen Parameterlisten).
+_ID_CHUNK = 500
 
-def to_entry_out(db: Session, entry: Entry) -> EntryOut:
+
+def entries_by_ids(db: Session, entry_ids: Iterable[UUID]) -> dict[UUID, Entry]:
+    """Lädt mehrere Einträge gebündelt und liefert sie als Map ``id -> Entry``."""
+    ids = list(entry_ids)
+    found: dict[UUID, Entry] = {}
+    for start in range(0, len(ids), _ID_CHUNK):
+        chunk = ids[start : start + _ID_CHUNK]
+        for entry in db.execute(select(Entry).where(Entry.id.in_(chunk))).scalars():
+            found[entry.id] = entry
+    return found
+
+
+def _child_path(parent_path: str, name: str) -> str:
+    """Kindpfad aus einem bereits bekannten Elternpfad (ohne neuen Aufstieg)."""
+    return parent_path.rstrip("/") + "/" + name
+
+
+def entry_paths(
+    db: Session, entries: list[Entry], extra: dict[UUID, Entry] | None = None
+) -> dict[UUID, str]:
+    """Pfade mehrerer Einträge in einem Durchgang (gemeinsamer Cache).
+
+    Wiederholte Aufstiege über ``namespace.path_of`` entfallen: gemeinsame
+    Vorfahren werden nur einmal ausgewertet, Kindpfade aus dem bereits
+    bekannten Elternpfad abgeleitet. ``extra`` kann zusätzlich bekannte
+    Einträge (z. B. Eltern) beisteuern.
+    """
+    by_id: dict[UUID, Entry] = dict(extra or {})
+    for entry in entries:
+        by_id.setdefault(entry.id, entry)
+
+    paths: dict[UUID, str] = {}
+    # Knoten, die Teil eines Zyklus sind (Defense-in-Depth): Für sie ist der
+    # Cache-Weg nicht anwendbar, da die abgeleiteten Pfade sonst nicht der
+    # Rotationslogik von ``namespace.path_of`` entsprechen.
+    cycle_nodes: set[UUID] = set()
+    for entry in entries:
+        chain: list[Entry] = []
+        node: Entry | None = entry
+        seen: set[UUID] = set()
+        cycle = False
+        while node is not None and node.id not in paths:
+            if node.id in seen:
+                cycle = True
+                break
+            seen.add(node.id)
+            if node.parent_id is None:
+                paths[node.id] = "/"
+                break
+            chain.append(node)
+            node = by_id.get(node.parent_id)
+        if cycle:
+            cycle_nodes.update(seen)
+        if cycle or entry.id in cycle_nodes:
+            # Zyklus (durch ``move`` ausgeschlossen): wie ``path_of`` abbrechen.
+            paths[entry.id] = namespace.path_of(db, entry)
+            continue
+        if node is None and chain:
+            # Oberster Vorfahre außerhalb der bekannten Menge: einmalig über
+            # ``namespace.path_of`` bestimmen, danach aus dem Cache bedienen.
+            paths[chain[-1].id] = namespace.path_of(db, chain[-1])
+        while chain:
+            child = chain.pop()
+            if child.id in paths:
+                continue
+            if child.id in cycle_nodes:
+                paths[child.id] = namespace.path_of(db, child)
+                continue
+            base = paths.get(child.parent_id)
+            paths[child.id] = (
+                _child_path(base, child.name)
+                if base is not None
+                else namespace.path_of(db, child)
+            )
+    return paths
+
+
+def to_entry_out(db: Session, entry: Entry, path: str | None = None) -> EntryOut:
     return EntryOut(
         id=entry.id,
         parent_id=entry.parent_id,
         name=entry.name,
         type=entry.type,
-        path=namespace.path_of(db, entry),
+        path=path if path is not None else namespace.path_of(db, entry),
         size=entry.size,
         mime=entry.mime,
         sha256=entry.sha256,
@@ -62,7 +143,13 @@ def list_entries(
 ) -> list[EntryOut]:
     parent = namespace.get_entry(db, parent_id) if parent_id else _root_for(db, user)
     authz.authorize(db, user, "read", parent)
-    return [to_entry_out(db, child) for child in namespace.list_children(db, parent)]
+    # Der Elternpfad ist bekannt: Kindpfade daraus ableiten statt je Kind
+    # erneut über die Ahnenkette aufzusteigen. Die Wurzel ist ohne Query "/".
+    base = "/" if parent.parent_id is None else namespace.path_of(db, parent)
+    return [
+        to_entry_out(db, child, path=_child_path(base, child.name))
+        for child in namespace.list_children(db, parent)
+    ]
 
 
 @router.get("/folders", response_model=list[EntryOut])
@@ -75,8 +162,11 @@ def list_folders(
         select(Entry).where(Entry.type == EntryType.folder, Entry.trashed_at.is_(None))
     ).scalars().all()
     visible = [folder for folder in folders if authz.can(db, user, "read", folder)]
-    visible.sort(key=lambda folder: namespace.path_of(db, folder))
-    return [to_entry_out(db, folder) for folder in visible]
+    # Pfade einmal über die geladene Ordner-Menge memoisieren statt zweimal je
+    # Ordner (Sortierung + Ausgabe) erneut über ``path_of`` aufzusteigen.
+    paths = entry_paths(db, visible, {folder.id: folder for folder in folders})
+    visible.sort(key=lambda folder: paths[folder.id])
+    return [to_entry_out(db, folder, path=paths[folder.id]) for folder in visible]
 
 
 @router.get("/shared", response_model=list[EntryOut])
@@ -112,22 +202,33 @@ def list_shared(
             )
         ).scalars().all()
     )
+    if not candidate_ids:
+        return []
 
+    # Kandidaten und Eltern gebündelt laden statt ``db.get``/Lazy-Load je Zeile.
+    candidates = entries_by_ids(db, candidate_ids)
+    readable = [
+        entry
+        for entry in candidates.values()
+        if entry.trashed_at is None
+        and entry.owner_id != user.id
+        and authz.can(db, user, "read", entry)
+    ]
+
+    parents = entries_by_ids(
+        db, [entry.parent_id for entry in readable if entry.parent_id is not None]
+    )
     entries: list[Entry] = []
-    for entry_id in candidate_ids:
-        entry = db.get(Entry, entry_id)
-        if entry is None or entry.trashed_at is not None:
-            continue
-        if entry.owner_id == user.id:
-            continue
-        if not authz.can(db, user, "read", entry):
-            continue
-        parent = entry.parent
+    for entry in readable:
+        parent = parents.get(entry.parent_id) if entry.parent_id is not None else None
         if parent is not None and authz.can(db, user, "read", parent):
             continue  # kein oberster Einstiegspunkt
         entries.append(entry)
-    entries.sort(key=lambda e: namespace.path_of(db, e).lower())
-    return [to_entry_out(db, entry) for entry in entries]
+
+    # Sortierung und Ausgabe aus derselben Pfad-Map (kein doppelter Aufstieg).
+    paths = entry_paths(db, entries, parents)
+    entries.sort(key=lambda entry: paths[entry.id].lower())
+    return [to_entry_out(db, entry, path=paths[entry.id]) for entry in entries]
 
 
 @router.get("/root", response_model=EntryOut)
@@ -288,8 +389,12 @@ def _parse_range(header: str | None, size: int) -> tuple[int, int] | None:
 def resolve_blob(db: Session, entry: Entry) -> Blob:
     if entry.type != EntryType.file or entry.current_version_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Eintrag hat keinen Dateiinhalt")
-    version = db.get(Version, entry.current_version_id)
-    blob = db.get(Blob, version.blob_id) if version else None
+    # Version und Blob in einer Abfrage statt zwei Einzelabfragen (``db.get``).
+    blob = db.execute(
+        select(Blob)
+        .join(Version, Version.blob_id == Blob.id)
+        .where(Version.id == entry.current_version_id)
+    ).scalar_one_or_none()
     if blob is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Blob fehlt")
     return blob

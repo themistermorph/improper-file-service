@@ -152,6 +152,11 @@ def build_handler() -> type[IFSFTPHandler]:
     IFSFTPHandler.banner = settings.ftp_banner
     IFSFTPHandler.passive_ports = settings.passive_port_range
     IFSFTPHandler.masquerade_address = settings.ftp_masquerade_address
+    # pyftpdlib baut den TLS-Kontext genau einmal je Handler-Klasse und teilt ihn
+    # über alle Verbindungen (``TLS_FTPHandler.get_ssl_context``). Nach einer
+    # Neukonfiguration muss der zwischengespeicherte Kontext verworfen werden,
+    # damit wieder die konfigurierten Zertifikate gelten.
+    IFSFTPHandler.ssl_context = None
     return IFSFTPHandler
 
 

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core import accounts, audit, authz, namespace
-from ..models import ACL, AuditLog, Group, User
+from ..models import ACL, Group, User
 from .deps import client_ip, get_current_user, get_db, require_admin
 from .schemas import AclCreate, AclOut, GroupCreate, GroupOut, MemberAdd
 
@@ -95,33 +95,13 @@ def list_audit(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> list[dict]:
-    stmt = select(AuditLog)
-    if action:
-        stmt = stmt.where(AuditLog.action == action)
-    rows = (
-        db.execute(
-            stmt.order_by(AuditLog.ts.desc())
-            .limit(min(max(limit, 1), 500))
-            .offset(max(offset, 0))
-        )
-        .scalars()
-        .all()
-    )
-
-    actor_ids = {row.actor_id for row in rows if row.actor_id}
-    usernames: dict = {}
-    if actor_ids:
-        usernames = {
-            user.id: user.username
-            for user in db.execute(select(User).where(User.id.in_(actor_ids))).scalars().all()
-        }
-
+    rows = audit.list_recent(db, limit=limit, offset=offset, action=action)
     return [
         {
             "id": str(row.id),
             "ts": row.ts.isoformat(),
             "actor_id": str(row.actor_id) if row.actor_id else None,
-            "actor_username": usernames.get(row.actor_id),
+            "actor_username": username,
             "action": row.action,
             "target_entry": str(row.target_entry) if row.target_entry else None,
             "protocol": row.protocol,
@@ -129,5 +109,5 @@ def list_audit(
             "result": row.result,
             "details": row.details,
         }
-        for row in rows
+        for row, username in rows
     ]

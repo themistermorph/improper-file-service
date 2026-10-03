@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload
 
 from ..config import get_settings
 from ..core import authz
@@ -39,7 +39,7 @@ def _authenticate(db: Session, authorization: str | None) -> User | None:
         user_id = UUID(str(payload["sub"]))
     except (ValueError, TypeError):
         return None
-    user = db.get(User, user_id)
+    user = db.get(User, user_id, options=[lazyload(User.groups)])
     if user is None or not user.is_active:
         return None
     if "tv" not in payload or int(payload["tv"]) != user.token_version:

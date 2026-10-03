@@ -33,6 +33,57 @@ class _Sample:
 _sample = _Sample()
 _lock = threading.Lock()
 
+# Kurzer TTL-Cache für die DB-Kennzahlen (Benutzer/Einträge/Speicher): schnelles
+# Polling mehrerer Admin-Clients erzeugt so höchstens eine Abfrage pro Fenster.
+_DB_METRICS_TTL = 1.0  # Sekunden
+_db_metrics_lock = threading.Lock()
+# (Bind, Zeitstempel, Werte). Der Bind wird absichtlich stark referenziert, damit
+# die Identitätsprüfung nach einem Engine-Wechsel (z. B. in Tests) eindeutig bleibt.
+_db_metrics_cache: tuple[object, float, dict] | None = None
+
+
+def reset_db_metrics_cache() -> None:
+    """Leert den TTL-Cache der DB-Kennzahlen (Tests, Engine-Wechsel)."""
+    global _db_metrics_cache
+    with _db_metrics_lock:
+        _db_metrics_cache = None
+
+
+def ifs_metrics(db: Session, *, use_cache: bool = True) -> dict:
+    """Zählt Benutzer/Einträge und summiert Dateigrößen in *einer* Abfrage.
+
+    Die drei Kennzahlen werden als skalare Subqueries in einem Statement
+    ermittelt (statt drei Einzelabfragen). Optional liefert ein kurzer TTL-Cache
+    das zuletzt ermittelte Ergebnis, ohne die Datenbank erneut zu belasten.
+    """
+    global _db_metrics_cache
+    now = time.monotonic()
+    bind = db.get_bind()
+    if use_cache:
+        with _db_metrics_lock:
+            cached = _db_metrics_cache
+            if cached is not None and cached[0] is bind and now - cached[1] < _DB_METRICS_TTL:
+                return dict(cached[2])
+
+    users, entries, stored_bytes = db.execute(
+        select(
+            select(func.count()).select_from(User).scalar_subquery(),
+            select(func.count()).select_from(Entry).scalar_subquery(),
+            select(func.coalesce(func.sum(Entry.size), 0))
+            .where(Entry.type == EntryType.file)
+            .scalar_subquery(),
+        )
+    ).one()
+    values = {
+        "users": int(users),
+        "entries": int(entries),
+        "stored_bytes": int(stored_bytes or 0),
+    }
+    if use_cache:
+        with _db_metrics_lock:
+            _db_metrics_cache = (bind, now, values)
+    return dict(values)
+
 
 def _read_cpu_times() -> tuple[int, int] | None:
     try:
@@ -183,11 +234,7 @@ def collect(db: Session, disk_path: str = "/", seaweedfs_status_url: str | None 
         if net:
             _sample.net_rx, _sample.net_tx = net
 
-    users = db.execute(select(func.count()).select_from(User)).scalar_one()
-    entries = db.execute(select(func.count()).select_from(Entry)).scalar_one()
-    stored_bytes = db.execute(
-        select(func.coalesce(func.sum(Entry.size), 0)).where(Entry.type == EntryType.file)
-    ).scalar_one()
+    ifs = ifs_metrics(db)
 
     return {
         "cpu": {
@@ -206,6 +253,6 @@ def collect(db: Session, disk_path: str = "/", seaweedfs_status_url: str | None 
             "tx_total": net[1] if net else None,
         },
         "uptime_seconds": uptime,
-        "ifs": {"users": users, "entries": entries, "stored_bytes": int(stored_bytes or 0)},
+        "ifs": ifs,
         "seaweedfs": _seaweedfs(seaweedfs_status_url),
     }
