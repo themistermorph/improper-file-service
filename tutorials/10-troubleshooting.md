@@ -95,6 +95,7 @@ aws s3 ls "s3://$IFS_S3_BUCKET"
 | Symptom | Ursache | Lösung |
 |---|---|---|
 | Verbindung sofort geschlossen | Client ohne TLS | explizites FTPS aktivieren |
+| „550 SSL/TLS required on the control channel“ | Client verbindet im Klartext (es fehlt `AUTH TLS`) | explizites FTPS aktivieren, z. B. FTP-WinMount mit `--secure` (siehe [FTPS-Handbuch](../docs/ftps.md#ftp-winmount-windows-laufwerk)) |
 | „AUTH TLS“ fehlgeschlagen | Zertifikat fehlt/ungültig | `IFS_FTP_CERTFILE`/`KEYFILE` prüfen |
 | Login schlägt fehl | Benutzer/Passwort falsch oder inaktiv | Benutzer in API prüfen |
 | Datenkanal hängt nach `LIST` | Passive-Ports blockiert | Firewall/NAT öffnen, `IFS_FTP_PASSIVE_PORTS` prüfen |

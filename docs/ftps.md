@@ -70,6 +70,21 @@ Klartext-Verbindungen werden abgelehnt.
 3. Hostname, Port 21, Benutzer, Passwort
 4. Unter **Erweitert → Verbindung** ggf. Passive-Ports/Proxy prüfen.
 
+### FTP-WinMount (Windows-Laufwerk)
+
+[FTP-WinMount](https://github.com/dansasser/ftp-winmount) bindet den FTPS-Dienst als
+Laufwerksbuchstaben ein. FTPS muss **explizit** aktiviert werden; ohne `--secure`
+verbindet das Tool im Klartext und IFS lehnt den Login mit
+„550 SSL/TLS required on the control channel“ ab.
+
+```powershell
+ftp-winmount mount --host files.example.org --port 21 `
+  --user alice --password geheim --drive Z --secure
+```
+
+Alternativ in der Konfigurationsdatei im Abschnitt `[ftp]` `secure = true` setzen
+(und `passive_mode = true`).
+
 ### lftp (CLI)
 
 ```bash
