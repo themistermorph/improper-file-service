@@ -91,6 +91,14 @@ def test_main_page_links_to_gallery():
         assert 'href="/published"' in page.text
 
 
+def test_gallery_page_defines_hidden_helper():
+    """Regression: Ohne .hidden bleibt die Lade-/Statuszeile sichtbar."""
+    with TestClient(main.app) as client:
+        page = client.get("/published")
+        assert page.status_code == 200
+        assert ".hidden { display: none !important; }" in page.text
+
+
 def test_unpublish_removes_from_gallery(monkeypatch):
     monkeypatch.setattr(content, "store_blob", _fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
