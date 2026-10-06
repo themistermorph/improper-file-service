@@ -166,7 +166,13 @@ auf.
 - Erfasst u. a.: `auth.login`, `auth.login.failed`, `folder.create`, `entry.rename`,
   `entry.move`, `entry.copy`, `entry.delete`, `transfer.download`, `upload.*`,
   `share.*`.
-- Felder: Akteur, Aktion, Ziel, Protokoll (`http`/`ftp`), IP, Ergebnis, Details.
+- FTPS-Aktionen laufen in dasselbe Log (Protokoll `ftps`): `auth.login`/
+  `auth.login.failed`/`auth.logout`, `folder.cwd`, `folder.create`, `entry.delete`,
+  `entry.rename`/`entry.move`, `upload.ftp`/`upload.aborted`, `transfer.download`,
+  `entry.update`; `entry.chmod` mit `result=ignored`.
+- Felder: Akteur, Aktion, Ziel, Protokoll (`http`/`ftps`), IP, Ergebnis, Details.
+  Abgelehnte Operationen erscheinen mit `result=denied`, abgebrochene Uploads mit
+  `result=aborted`.
 - Abruf: `GET /api/audit` (Admin).
 
 ---

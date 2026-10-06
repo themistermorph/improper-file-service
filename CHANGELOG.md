@@ -6,6 +6,15 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+- **FTPS-Aktionen im Audit-Log:** FTPES-Operationen werden jetzt mit `protocol="ftps"`
+  protokolliert – Login/Logout (`auth.login`, `auth.login.failed`, `auth.logout`),
+  Verzeichniswechsel (`folder.cwd`), Anlegen/Löschen (`folder.create`, `entry.delete`),
+  Umbenennen/Verschieben (`entry.rename`, `entry.move`), Upload/Download
+  (`upload.ftp`, `transfer.download`), Metadaten (`entry.update`, `entry.chmod`) sowie
+  abgebrochene Uploads (`upload.aborted`). Abgelehnte Operationen erhalten
+  `result="denied"`. Audit-Einträge des FTP-Logins setzen zusätzlich `last_login_at`.
+
 ## [0.1.6] – 2026-10-04
 
 ### Tests

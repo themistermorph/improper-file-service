@@ -663,6 +663,13 @@ Dateien, verlangt das Löschen `transfer_to` (`409` sonst).
 | `POST /api/groups/{group_id}/members` | Mitglied hinzufügen (`user_id`) → `204` |
 | `POST /api/entries/{entry_id}/acl` | ACL-Eintrag setzen (`principal_type`, `principal_id`, `perms[]`) → `201` |
 | `GET /api/audit?limit=&offset=&action=` | Audit-Log (neueste zuerst, max. 500); enthält `actor_username` und `actor_display_name` |
+
+Jeder Eintrag hat `protocol` (`http` oder `ftps`) und `result` (`ok`, `denied`,
+`locked`, `aborted`, `ignored`). FTPS-Aktionen (Protokoll `ftps`) sind u. a.
+`auth.login`, `auth.login.failed`, `auth.logout`, `folder.cwd`, `folder.create`,
+`entry.delete`, `entry.rename`, `entry.move`, `upload.ftp`, `upload.aborted`,
+`transfer.download`, `entry.update`; abgelehnte Mutationen erscheinen mit
+`result="denied"`.
 | `GET /api/system/stats` | Admin-Monitoring: CPU, RAM, Speicherplatz, Netzwerk-Raten (↑/↓), Laufzeit, IFS-Zähler und SeaweedFS-Volumes |
 
 `GET /api/system/stats` liefert nur für Admins Werte. CPU- und Netzwerk-Raten werden

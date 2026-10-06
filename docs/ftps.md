@@ -183,7 +183,12 @@ die er mindestens `read` besitzt. Details: [Sicherheit](sicherheit.md).
   `docker compose up -d ftp`.
 - **Sitzungslimits:** pro Benutzer mehrere Sessions möglich; Verbindungs- und
   Datenverbindungs-Timeouts setzt pyftpdlib mit Standardwerten.
-- **Audit:** Logins, CWDs und Transfers werden protokolliert (Audit-Log).
+- **Audit:** FTPS-Aktionen werden mit `protocol="ftps"` im Audit-Log erfasst:
+  `auth.login`/`auth.login.failed`/`auth.logout`, Verzeichniswechsel (`folder.cwd`),
+  Anlegen/Löschen (`folder.create`, `entry.delete`), Umbenennen/Verschieben
+  (`entry.rename`/`entry.move`), Upload/Download (`upload.ftp`/`transfer.download`),
+  Metadaten (`entry.update`, `entry.chmod` mit `result=ignored`) sowie abgebrochene
+  Uploads (`upload.aborted`). Abgelehnte Operationen erscheinen mit `result=denied`.
 
 ---
 

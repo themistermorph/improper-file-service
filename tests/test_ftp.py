@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import datetime
+import ftplib
 import io
 import ssl
 import threading
 
 import pytest
+from sqlalchemy import select
 
 pytest.importorskip("cryptography")
 
@@ -19,7 +21,7 @@ from cryptography.x509.oid import NameOID
 from ifs.config import get_settings
 from ifs.core import content, namespace
 from ifs.db import session_scope
-from ifs.models import Blob, BlobStatus, User
+from ifs.models import AuditLog, Blob, BlobStatus, User
 from ifs.security import hash_password
 
 from .helpers import fake_store_blob, range_get_object
@@ -53,6 +55,27 @@ def _write_self_signed(cert_path, key_path) -> None:
 
 
 _fake_get_object = range_get_object(b"ftp content")
+
+
+def _serve_ftps(monkeypatch, tmp_path, passive="43000-43010"):
+    """Startet einen FTPS-Server auf einem freien Port; liefert (server, thread, port)."""
+    from pyftpdlib.servers import ThreadedFTPServer
+
+    from ifs.ftp.server import build_handler
+
+    cert = tmp_path / "audit.crt"
+    key = tmp_path / "audit.key"
+    _write_self_signed(cert, key)
+    monkeypatch.setenv("IFS_FTP_CERTFILE", str(cert))
+    monkeypatch.setenv("IFS_FTP_KEYFILE", str(key))
+    monkeypatch.setenv("IFS_FTP_PASSIVE_PORTS", passive)
+    get_settings.cache_clear()
+    handler = build_handler()
+    server = ThreadedFTPServer(("127.0.0.1", 0), handler)
+    port = server.socket.getsockname()[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, port
 
 
 def test_ftps_end_to_end(monkeypatch, tmp_path):
@@ -209,3 +232,117 @@ def test_ftp_has_perm_denies_deactivated_user():
 
     assert authorizer.has_perm("ftp_deactivated", "r", "/") is False
     assert authorizer.has_perm("ftp_deactivated", "w", "/") is False
+
+
+def test_ftps_actions_are_audited(monkeypatch, tmp_path):
+    """Relevante FTPS-Aktionen landen mit ``protocol=ftps`` im Audit-Log.
+
+    Inklusive einer abgelehnten Aktion (``result=denied``).
+    """
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with session_scope() as db:
+        user = User(username="ftp_audit", password_hash=hash_password("secret"))
+        db.add(user)
+        db.flush()
+        uid = user.id
+        root = namespace.ensure_root(db, uid)
+        docs = namespace.create_folder(db, root, "docs", uid)
+        blob = Blob(
+            storage_key="cas/ab/" + "ab" * 32,
+            sha256="ab" * 32,
+            size=len(b"ftp content"),
+            status=BlobStatus.ready,
+        )
+        db.add(blob)
+        db.flush()
+        namespace.apply_write(db, docs, "file.txt", uid, blob, "text/plain")
+
+    server, thread, port = _serve_ftps(monkeypatch, tmp_path)
+    ftp = ftplib.FTP_TLS(context=ssl._create_unverified_context())
+    try:
+        ftp.connect("127.0.0.1", port, timeout=10)
+        ftp.login("ftp_audit", "secret")
+        ftp.prot_p()
+
+        received = bytearray()
+        ftp.retrbinary("RETR docs/file.txt", received.extend)
+        assert bytes(received) == b"ftp content"
+
+        ftp.storbinary("STOR upload.bin", io.BytesIO(b"uploaded"))
+        ftp.mkd("newdir")
+        ftp.rename("upload.bin", "newdir/moved.bin")
+        ftp.delete("newdir/moved.bin")
+        ftp.rmd("newdir")
+
+        # Doppelter Ordnername -> abgelehnt und als result=denied protokolliert.
+        with pytest.raises(ftplib.error_perm):
+            ftp.mkd("docs")
+    finally:
+        try:
+            ftp.quit()
+        except Exception:
+            ftp.close()
+        server.close_all()
+        thread.join(timeout=5)
+        get_settings.cache_clear()
+
+    with session_scope() as db:
+        rows = db.execute(
+            select(AuditLog).where(AuditLog.protocol == "ftps")
+        ).scalars().all()
+
+    actions = {row.action for row in rows}
+    expected = {
+        "auth.login",
+        "auth.logout",
+        "transfer.download",
+        "upload.ftp",
+        "folder.create",
+        "entry.rename",
+        "entry.move",
+        "entry.delete",
+    }
+    assert expected <= actions, f"fehlende Aktionen: {expected - actions}"
+    assert all(row.actor_id == uid for row in rows)
+    assert all(row.ip == "127.0.0.1" for row in rows)
+    assert any(row.result == "denied" for row in rows)
+    download = next(row for row in rows if row.action == "transfer.download")
+    assert download.target_entry is not None
+
+
+def test_ftps_failed_login_is_audited(monkeypatch, tmp_path):
+    """Ein fehlgeschlagener FTPS-Login wird als ``auth.login.failed`` protokolliert."""
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with session_scope() as db:
+        user = User(username="ftp_fail", password_hash=hash_password("secret"))
+        db.add(user)
+        db.flush()
+
+    server, thread, port = _serve_ftps(monkeypatch, tmp_path, passive="43100-43110")
+    ftp = ftplib.FTP_TLS(context=ssl._create_unverified_context())
+    try:
+        ftp.connect("127.0.0.1", port, timeout=10)
+        with pytest.raises(ftplib.error_perm):
+            ftp.login("ftp_fail", "wrong")
+    finally:
+        try:
+            ftp.close()
+        except Exception:
+            pass
+        server.close_all()
+        thread.join(timeout=5)
+        get_settings.cache_clear()
+
+    with session_scope() as db:
+        rows = db.execute(
+            select(AuditLog).where(AuditLog.action == "auth.login.failed")
+        ).scalars().all()
+
+    assert rows
+    assert rows[0].protocol == "ftps"
+    assert rows[0].result == "denied"
+    assert rows[0].ip == "127.0.0.1"

@@ -17,10 +17,11 @@ except ImportError:  # pragma: no cover - pyftpdlib 1.x
     from pyftpdlib.handlers import FileProducer
 
 from ..config import get_settings
-from ..core import authz, namespace, ratelimit
+from ..core import audit, authz, namespace, ratelimit
 from ..db import session_scope
 from ..models import User
 from ..security import verify_password_safe
+from ..utils import utcnow
 from .fs import IFSFilesystem, _norm
 
 logger = logging.getLogger("ifs.ftp")
@@ -61,11 +62,27 @@ def _nearest_entry(db, user, path: str):
 class IFSAuthorizer(DummyAuthorizer):
     """Bindet FTP-Logins und Berechtigungen an den IFS-Kern."""
 
+    @staticmethod
+    def _audit_login(action, result, ip, *, actor_id=None, details=None) -> None:
+        with session_scope() as db:
+            audit.record(
+                db,
+                action,
+                actor_id=actor_id,
+                protocol="ftps",
+                ip=ip,
+                result=result,
+                details=details,
+            )
+
     def validate_authentication(self, username, password, handler):
         ip = getattr(handler, "remote_ip", None)
         account_key, ip_key = ratelimit.keys(ip, username)
         retry = ratelimit.retry_after(account_key, ip_key)
         if retry:
+            self._audit_login(
+                "auth.login.failed", "locked", ip, details={"username": username}
+            )
             raise AuthenticationFailed(
                 f"Zu viele Fehlversuche – bitte in {retry}s erneut versuchen."
             )
@@ -76,14 +93,29 @@ class IFSAuthorizer(DummyAuthorizer):
             ).scalars().first()
             password_hash = user.password_hash if user is not None else None
             active = bool(user and user.is_active)
+            user_id = user.id if user is not None else None
 
         # Auch bei unbekanntem Nutzer wird ein Hash geprüft (kein Timing-Leak).
         valid = verify_password_safe(password_hash, password)
         if not active or not valid:
             ratelimit.record_failure(account_key, ip_key)
+            self._audit_login(
+                "auth.login.failed",
+                "denied",
+                ip,
+                actor_id=user_id,
+                details={"username": username},
+            )
             raise AuthenticationFailed("Benutzername oder Passwort falsch")
 
         ratelimit.record_success(account_key, ip_key)
+        with session_scope() as db:
+            db_user = db.get(User, user_id) if user_id is not None else None
+            if db_user is not None:
+                db_user.last_login_at = utcnow()
+            audit.record(db, "auth.login", actor_id=user_id, protocol="ftps", ip=ip)
+        # Marker für den Logout-Eintrag beim Verbindungsende.
+        handler._ifs_logged_in = True
 
     def has_user(self, username):
         # Immer True: verhindert Benutzer-Enumeration; die Autorisierung erfolgt
@@ -151,9 +183,24 @@ class IFSFTPHandler(TLS_FTPHandler):
 
     def close(self):
         fs = getattr(self, "fs", None)
+        logged_in = getattr(self, "_ifs_logged_in", False)
+        username = getattr(self, "username", "") or ""
+        ip = getattr(self, "remote_ip", None)
         try:
             super().close()
         finally:
+            if logged_in and username:
+                with session_scope() as db:
+                    user = db.execute(
+                        select(User).where(User.username == username)
+                    ).scalars().first()
+                    audit.record(
+                        db,
+                        "auth.logout",
+                        actor_id=user.id if user is not None else None,
+                        protocol="ftps",
+                        ip=ip,
+                    )
             if fs is not None:
                 try:
                     fs.cleanup()

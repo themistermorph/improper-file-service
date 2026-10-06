@@ -7,6 +7,7 @@ und streamt Dateiinhalte aus bzw. nach S3.
 
 from __future__ import annotations
 
+import functools
 import os
 import posixpath
 import time
@@ -15,9 +16,10 @@ from typing import ClassVar
 
 from pyftpdlib.exceptions import FilesystemError
 from pyftpdlib.filesystems import AbstractedFS
+from sqlalchemy import select
 
 from ..config import get_settings
-from ..core import authz, content, namespace
+from ..core import audit, authz, content, namespace
 from ..db import session_scope
 from ..errors import IFSError
 from ..models import Entry, EntryType, User
@@ -46,6 +48,36 @@ def _norm(path: str) -> str:
             continue
         parts.append(segment)
     return "/" + "/".join(parts)
+
+
+def _audited(action: str, *, convert: bool = True):
+    """Protokolliert fehlgeschlagene FS-Operationen als Audit-Eintrag (``result=denied``).
+
+    Erfolgreiche Operationen schreiben den Audit-Eintrag selbst (innerhalb ihrer
+    Session, damit er atomar mit der Änderung committet wird). Dieser Dekorator
+    fängt die Domänen-/FS-Fehler ab und reicht sie weiter. Mit ``convert=True``
+    werden Domänenfehler in den pyftpdlib-``FilesystemError`` übersetzt (Antwort
+    „550“); die Lese-/Schreibpfade lassen den Fehlertyp bewusst unverändert, weil
+    dort z. B. ``PermissionDenied`` erwartet wird.
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return fn(self, *args, **kwargs)
+            except IFSError as exc:
+                self._audit_failure(action, args, str(exc))
+                if convert:
+                    raise _as_fs_error(exc) from exc
+                raise
+            except FilesystemError as exc:
+                self._audit_failure(action, args, str(exc))
+                raise
+
+        return wrapper
+
+    return decorator
 
 
 class _BlobRef:
@@ -255,9 +287,45 @@ class IFSFilesystem(AbstractedFS):
     def _username(self) -> str:
         return getattr(self.cmd_channel, "username", "") or ""
 
-    def _user(self, db) -> User:
-        from sqlalchemy import select
+    @property
+    def _ip(self) -> str | None:
+        return getattr(self.cmd_channel, "remote_ip", None)
 
+    def _audit(self, db, action, user, entry_id=None, *, result="ok", **details) -> None:
+        """Schreibt einen Audit-Eintrag in die laufende Session (atomar zur Änderung)."""
+        audit.record(
+            db,
+            action,
+            actor_id=user.id if user is not None else None,
+            target_entry=entry_id,
+            protocol="ftps",
+            ip=self._ip,
+            result=result,
+            details=details or None,
+        )
+
+    def _audit_failure(self, action: str, args: tuple, reason: str) -> None:
+        """Protokolliert eine abgelehnte/fehlgeschlagene Operation (eigene Session)."""
+        details: dict = {"reason": reason}
+        if args:
+            details["path"] = args[0]
+        if len(args) > 1 and isinstance(args[1], str):
+            details["to"] = args[1]
+        with session_scope() as db:
+            user = db.execute(
+                select(User).where(User.username == self._username)
+            ).scalars().first()
+            audit.record(
+                db,
+                action,
+                actor_id=user.id if user is not None else None,
+                protocol="ftps",
+                ip=self._ip,
+                result="denied",
+                details=details,
+            )
+
+    def _user(self, db) -> User:
         user = db.execute(select(User).where(User.username == self._username)).scalars().first()
         if user is None or not user.is_active:
             raise FilesystemError("Unbekannter oder deaktivierter Benutzer")
@@ -308,12 +376,20 @@ class IFSFilesystem(AbstractedFS):
     def realpath(self, path):
         return _norm(path)
 
+    @_audited("folder.cwd")
     def chdir(self, path):
         path = _norm(path)
-        entry = self._resolve_authorized(path)
-        if entry is None or entry.type != EntryType.folder:
-            raise FilesystemError("Verzeichnis nicht gefunden")
-        self.cwd = path
+        with session_scope() as db:
+            user = self._user(db)
+            entry = self._resolve(db, path)
+            if entry is None or entry.type != EntryType.folder:
+                raise FilesystemError("Verzeichnis nicht gefunden")
+            if not (
+                authz.can(db, user, "read", entry) or authz.can(db, user, "write", entry)
+            ):
+                raise FilesystemError("Kein Zugriff")
+            self.cwd = path
+            self._audit(db, "folder.cwd", user, entry.id, path=path)
 
     # --- Verzeichnisinhalte ---------------------------------------------
 
@@ -448,103 +524,105 @@ class IFSFilesystem(AbstractedFS):
 
     # --- Mutationen ------------------------------------------------------
 
+    @_audited("folder.create")
     def mkdir(self, path):
         path = _norm(path)
         parent_path = posixpath.dirname(path) or "/"
         name = posixpath.basename(path)
-        try:
-            with session_scope() as db:
-                user = self._user(db)
-                parent = self._resolve(db, parent_path)
-                if parent is None:
-                    raise FilesystemError("Zielverzeichnis nicht gefunden")
-                authz.authorize(db, user, "write", parent)
-                namespace.create_folder(db, parent, name, user.id)
-        except IFSError as exc:
-            raise _as_fs_error(exc) from exc
+        with session_scope() as db:
+            user = self._user(db)
+            parent = self._resolve(db, parent_path)
+            if parent is None:
+                raise FilesystemError("Zielverzeichnis nicht gefunden")
+            authz.authorize(db, user, "write", parent)
+            folder = namespace.create_folder(db, parent, name, user.id)
+            self._audit(db, "folder.create", user, folder.id, path=path)
 
+    @_audited("entry.delete")
     def rmdir(self, path):
         path = _norm(path)
-        try:
-            with session_scope() as db:
-                user = self._user(db)
-                entry = self._resolve(db, path)
-                if entry is None or entry.type != EntryType.folder:
-                    raise FilesystemError("Verzeichnis nicht gefunden")
-                authz.authorize(db, user, "delete", entry)
-                # Rekursives Soft-Delete wie beim HTTP-Endpunkt
-                # (``DELETE /api/entries/{id}``): Der gesamte Teilbaum wandert in
-                # den Papierkorb. Clients, die Ordner vorher rekursiv leeren,
-                # funktionieren unverändert; Clients mit einem einzelnen ``RMD``
-                # erhalten nicht mehr fälschlich „550 Verzeichnis nicht leer“.
-                namespace.soft_delete(db, entry, user.id)
-        except IFSError as exc:
-            raise _as_fs_error(exc) from exc
+        with session_scope() as db:
+            user = self._user(db)
+            entry = self._resolve(db, path)
+            if entry is None or entry.type != EntryType.folder:
+                raise FilesystemError("Verzeichnis nicht gefunden")
+            authz.authorize(db, user, "delete", entry)
+            # Rekursives Soft-Delete wie beim HTTP-Endpunkt
+            # (``DELETE /api/entries/{id}``): Der gesamte Teilbaum wandert in
+            # den Papierkorb. Clients, die Ordner vorher rekursiv leeren,
+            # funktionieren unverändert; Clients mit einem einzelnen ``RMD``
+            # erhalten nicht mehr fälschlich „550 Verzeichnis nicht leer“.
+            namespace.soft_delete(db, entry, user.id)
+            self._audit(db, "entry.delete", user, entry.id, path=path, folder=True)
 
+    @_audited("entry.delete")
     def remove(self, path):
         path = _norm(path)
-        try:
-            with session_scope() as db:
-                user = self._user(db)
-                entry = self._resolve(db, path)
-                if entry is None or entry.type != EntryType.file:
-                    raise FilesystemError("Datei nicht gefunden")
-                authz.authorize(db, user, "delete", entry)
-                namespace.soft_delete(db, entry, user.id)
-        except IFSError as exc:
-            raise _as_fs_error(exc) from exc
+        with session_scope() as db:
+            user = self._user(db)
+            entry = self._resolve(db, path)
+            if entry is None or entry.type != EntryType.file:
+                raise FilesystemError("Datei nicht gefunden")
+            authz.authorize(db, user, "delete", entry)
+            namespace.soft_delete(db, entry, user.id)
+            self._audit(db, "entry.delete", user, entry.id, path=path)
 
+    @_audited("entry.rename")
     def rename(self, src, dst):
         src = _norm(src)
         dst = _norm(dst)
         dst_parent_path = posixpath.dirname(dst) or "/"
         dst_name = posixpath.basename(dst)
-        try:
-            with session_scope() as db:
-                user = self._user(db)
-                entry = self._resolve(db, src)
-                if entry is None:
-                    raise FilesystemError("Quelle nicht gefunden")
-                target = self._resolve(db, dst_parent_path)
-                if target is None:
-                    raise FilesystemError("Zielverzeichnis nicht gefunden")
-                authz.authorize(db, user, "read", entry)
-                authz.authorize(db, user, "write", entry)
-                authz.authorize(db, user, "write", target)
-                if entry.parent_id != target.id:
-                    namespace.move(db, entry, target)
-                if entry.name != dst_name:
-                    namespace.rename(db, entry, dst_name)
-        except IFSError as exc:
-            raise _as_fs_error(exc) from exc
+        with session_scope() as db:
+            user = self._user(db)
+            entry = self._resolve(db, src)
+            if entry is None:
+                raise FilesystemError("Quelle nicht gefunden")
+            target = self._resolve(db, dst_parent_path)
+            if target is None:
+                raise FilesystemError("Zielverzeichnis nicht gefunden")
+            authz.authorize(db, user, "read", entry)
+            authz.authorize(db, user, "write", entry)
+            authz.authorize(db, user, "write", target)
+            moved = entry.parent_id != target.id
+            renamed = entry.name != dst_name
+            if moved:
+                namespace.move(db, entry, target)
+            if renamed:
+                namespace.rename(db, entry, dst_name)
+            if renamed:
+                self._audit(db, "entry.rename", user, entry.id, source=src, target=dst)
+            if moved:
+                self._audit(db, "entry.move", user, entry.id, source=src, target=dst)
 
+    @_audited("entry.update")
     def utime(self, path, timeval):
         from datetime import datetime
 
         path = _norm(path)
-        try:
-            with session_scope() as db:
-                user = self._user(db)
-                entry = self._resolve(db, path)
-                if entry is None:
-                    raise FilesystemError("Datei nicht gefunden")
-                authz.authorize(db, user, "write", entry)
-                entry.updated_at = datetime.fromtimestamp(timeval, tz=UTC)
-        except IFSError as exc:
-            raise _as_fs_error(exc) from exc
+        with session_scope() as db:
+            user = self._user(db)
+            entry = self._resolve(db, path)
+            if entry is None:
+                raise FilesystemError("Datei nicht gefunden")
+            authz.authorize(db, user, "write", entry)
+            entry.updated_at = datetime.fromtimestamp(timeval, tz=UTC)
+            self._audit(db, "entry.update", user, entry.id, path=path, mtime=timeval)
 
+    @_audited("entry.chmod")
     def chmod(self, path, mode):
-        # Rechte werden ausschließlich über den IFS-Kern verwaltet.
+        # Rechte werden ausschließlich über den IFS-Kern verwaltet; der Aufruf
+        # wird dennoch protokolliert (result=ignored).
         path = _norm(path)
-        try:
-            with session_scope() as db:
-                user = self._user(db)
-                entry = self._resolve(db, path)
-                if entry is None:
-                    raise FilesystemError("Datei nicht gefunden")
-                authz.authorize(db, user, "write", entry)
-        except IFSError as exc:
-            raise _as_fs_error(exc) from exc
+        with session_scope() as db:
+            user = self._user(db)
+            entry = self._resolve(db, path)
+            if entry is None:
+                raise FilesystemError("Datei nicht gefunden")
+            authz.authorize(db, user, "write", entry)
+            self._audit(
+                db, "entry.chmod", user, entry.id, result="ignored", path=path, mode=str(mode)
+            )
 
     def mkstemp(self, suffix="", prefix="", dir=None, mode="wb"):
         raise FilesystemError("STOU wird nicht unterstützt")
@@ -558,6 +636,7 @@ class IFSFilesystem(AbstractedFS):
             return self._open_writer(path, mode)
         return self._open_reader(path)
 
+    @_audited("transfer.download", convert=False)
     def _open_reader(self, path: str):
         with session_scope() as db:
             entry = self._resolve(db, path)
@@ -577,10 +656,12 @@ class IFSFilesystem(AbstractedFS):
                 mime=entry.mime,
                 mtime=as_utc(entry.updated_at).timestamp() if entry.updated_at else time.time(),
             )
+            self._audit(db, "transfer.download", user, entry.id, path=path, size=blob.size)
         return _S3Reader(
             ref, path, readahead=get_settings().ftp_s3_readahead_bytes
         )
 
+    @_audited("upload.ftp", convert=False)
     def _open_writer(self, path: str, mode: str):
         parent_path = posixpath.dirname(path) or "/"
         name = posixpath.basename(path)
@@ -644,11 +725,9 @@ class IFSFilesystem(AbstractedFS):
                 content.remove_spool(writer._path)
                 raise
 
-        old = self._pending.pop(path, None)
-        if old is not None:
-            # Ein alter, nicht finalisierter Upload auf denselben Pfad darf keinen
-            # verwaisten Spool hinterlassen.
-            content.remove_spool(old[2])
+        # Ein alter, nicht finalisierter Upload auf denselben Pfad wird als
+        # abgebrochen protokolliert (und der Spool verworfen).
+        self.discard_pending(path)
         self._pending[path] = (parent_path, name, writer._path)
         return writer
 
@@ -660,6 +739,7 @@ class IFSFilesystem(AbstractedFS):
 
     # --- Finalisierung / Aufräumen --------------------------------------
 
+    @_audited("upload.ftp")
     def finalize_received(self, filename: str) -> None:
         path = _norm(filename)
         info = self._pending.pop(path, None)
@@ -679,21 +759,35 @@ class IFSFilesystem(AbstractedFS):
                 limit = get_settings().max_upload_size
                 if limit and size > limit:
                     raise FilesystemError("Maximale Dateigröße überschritten")
+                existing = namespace.find_child(db, parent.id, name)
                 namespace.ensure_writable(db, parent, name, user.id, size)
                 blob = content.store_blob(db, spool, None)
-                namespace.apply_write(db, parent, name, user.id, blob, None)
-        except IFSError as exc:
-            raise _as_fs_error(exc) from exc
+                entry = namespace.apply_write(db, parent, name, user.id, blob, None)
+                self._audit(
+                    db,
+                    "upload.ftp",
+                    user,
+                    entry.id,
+                    path=path,
+                    size=size,
+                    replace=existing is not None,
+                )
         finally:
             content.remove_spool(spool)
 
     def discard_pending(self, path: str) -> None:
-        """Verwirft einen unvollständigen Upload und löscht dessen Spool."""
-        info = self._pending.pop(_norm(path), None)
-        if info is not None:
-            content.remove_spool(info[2])
+        """Verwirft einen unvollständigen Upload, löscht den Spool und protokolliert das."""
+        norm = _norm(path)
+        info = self._pending.pop(norm, None)
+        if info is None:
+            return
+        content.remove_spool(info[2])
+        with session_scope() as db:
+            user = db.execute(
+                select(User).where(User.username == self._username)
+            ).scalars().first()
+            self._audit(db, "upload.aborted", user, result="aborted", path=norm)
 
     def cleanup(self) -> None:
-        for _, _, spool in list(self._pending.values()):
-            content.remove_spool(spool)
-        self._pending.clear()
+        for path in list(self._pending.keys()):
+            self.discard_pending(path)
