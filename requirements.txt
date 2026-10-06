@@ -1,6 +1,6 @@
 # Laufzeit-Abhängigkeiten – MUSS mit [project].dependencies in pyproject.toml übereinstimmen.
 # (Der Test tests/test_packaging.py erzwingt die Synchronität.)
-fastapi>=0.115
+fastapi>=0.142.2
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0.30
 psycopg[binary]>=3.2
