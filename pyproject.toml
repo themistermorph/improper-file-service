@@ -22,7 +22,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.142.2",
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0.30",
     "psycopg[binary]>=3.2",
