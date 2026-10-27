@@ -501,7 +501,14 @@
       if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1) + " MB";
       return (bytes / 1024 ** 3).toFixed(2) + " GB";
     }
-    function fmtDate(iso) { return new Date(iso).toLocaleString(); }
+    function fmtDate(iso) {
+      if (!iso) return "–";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "–";
+      const p = (n) => String(n).padStart(2, "0");
+      return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}, `
+        + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
     function esc(text) { return String(text).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
     // Bevorzugt den (Benutzer-)Anzeigenamen, fällt auf den Benutzernamen zurück.
     function personName(displayName, username) { return displayName || username || "–"; }
@@ -2647,7 +2654,7 @@
 
         const tdSize = document.createElement("td");
         tdSize.className = "right nowrap";
-        tdSize.textContent = item.type === "folder" ? "ZIP" : fmtSize(item.size);
+        tdSize.textContent = fmtSize(item.size);
         tr.appendChild(tdSize);
 
         const tdAct = document.createElement("td");

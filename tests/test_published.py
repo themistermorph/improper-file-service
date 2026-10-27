@@ -174,6 +174,54 @@ def test_public_name_set_change_and_clear(monkeypatch):
         ).status_code == 403
 
 
+def test_published_folder_size_is_recursive(monkeypatch):
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
+        root = client.post(
+            "/api/folders", headers=admin, json={"name": "size-root"}
+        ).json()["id"]
+        client.put(
+            f"/api/uploads/simple?parent_id={root}&name=a.bin",
+            headers=admin,
+            content=b"12345",
+        )
+        sub = client.post(
+            "/api/folders", headers=admin, json={"name": "sub", "parent_id": root}
+        ).json()["id"]
+        client.put(
+            f"/api/uploads/simple?parent_id={sub}&name=b.bin",
+            headers=admin,
+            content=b"1234567890",
+        )
+
+        created = client.post(f"/api/published/{root}", headers=admin)
+        assert created.status_code == 201, created.text
+        assert created.json()["size"] == 15
+
+        mine = client.get("/api/published/mine", headers=admin).json()
+        item = next(row for row in mine if row["entry_id"] == root)
+        assert item["size"] == 15
+
+
+def test_published_ui_shows_folder_size_and_eu_dates():
+    with TestClient(main.app) as client:
+        page = client.get("/").text
+        gallery = client.get("/published").text
+
+    # Kein pauschales "ZIP", sondern die von der API gelieferte Größe.
+    assert 'item.type === "folder" ? "ZIP"' not in page
+    assert "tdSize.textContent = fmtSize(item.size);" in page
+
+    # Explizites europäisches Datumsformat in beiden Seiten, kein Locale-Format.
+    for html in (page, gallery):
+        assert "toLocaleString()" not in html
+        assert "getDate()" in html
+        assert "getMonth()" in html
+        assert "getFullYear()" in html
+
+
 def test_publish_folder_serves_zip(monkeypatch):
     import zipfile
 

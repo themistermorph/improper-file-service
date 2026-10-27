@@ -147,6 +147,11 @@ def _to_out(
     *,
     include_path: bool = True,
 ) -> PublishedOut:
+    size = entry.size
+    if entry.type == EntryType.folder:
+        # In der Verwaltungsansicht soll die echte Ordnergröße stehen (Summe
+        # der aktiven Dateien im Teilbaum), nicht 0/„ZIP“.
+        _files, size = namespace.subtree_stats(db, entry)
     return PublishedOut(
         entry_id=entry.id,
         name=entry.name,
@@ -154,7 +159,7 @@ def _to_out(
         public_path=published.public_path,
         public_suffix=_suffix_of(published.public_path),
         type=entry.type,
-        size=entry.size,
+        size=size,
         mime=entry.mime,
         path=namespace.path_of(db, entry) if include_path else None,
         published_by=published.published_by,

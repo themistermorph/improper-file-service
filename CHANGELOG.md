@@ -48,6 +48,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   API sie sieht – die Web-UI überträgt in 8-MiB-Chunks. Beispielkonfiguration
   (`deploy/nginx-ifs.conf.example`) sowie Hinweise in Konfigurations- und
   Troubleshooting-Doku ergänzt.
+- **Meine Veröffentlichungen:** Bei Ordnern wird jetzt die **rekursive Größe** der
+  aktiven Dateien angezeigt (statt „ZIP“). Zeitstempel werden in beiden Web-Seiten
+  explizit als **`DD.MM.YYYY, HH:MM:SS`** statt im US-Format (`MM/DD/YYYY`)
+  dargestellt.
 
 ## [0.1.6] – 2026-10-04
 

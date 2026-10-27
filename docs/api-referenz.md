@@ -608,6 +608,10 @@ Benutzernamen des Veröffentlichenden voran: `public_path = "<username>/<suffix>
 Suffix ist ein reiner Vanity-Redirect auf die kanonische API; er ist **kein Geheimnis**
 (die Galerie ist öffentlich). Ohne Suffix bleibt der bisherige API-Link gültig.
 
+In der Verwaltungsansicht (`GET /api/published/mine`, Publish-/Update-Antworten) ist
+`size` bei Ordnern die **rekursive Summe der aktiven Dateien** im Teilbaum; die
+öffentliche Galerie kennzeichnet Ordner weiterhin als „Ordner“.
+
 Anonyme Downloads sind begrenzt über `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` (Standard 120)
 je `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS` (Standard 300 s); bei Überschreitung `429`.
 
