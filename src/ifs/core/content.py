@@ -15,6 +15,7 @@ from functools import lru_cache
 from typing import BinaryIO, Self
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from sqlalchemy import select
@@ -124,8 +125,18 @@ def upload_file(local_path: str, sha256: str, mime: str | None = None) -> BlobIn
     settings = get_settings()
     storage_key = f"cas/{sha256[:2]}/{sha256}"
     size = os.path.getsize(local_path)
+    mib = 1024 * 1024
+    transfer_config = TransferConfig(
+        multipart_threshold=max(1, settings.s3_multipart_threshold_mb) * mib,
+        multipart_chunksize=max(1, settings.s3_multipart_chunksize_mb) * mib,
+        max_concurrency=max(1, settings.s3_transfer_concurrency),
+    )
     get_s3_client().upload_file(
-        local_path, settings.s3_bucket, storage_key, ExtraArgs=_extra_args(mime)
+        local_path,
+        settings.s3_bucket,
+        storage_key,
+        ExtraArgs=_extra_args(mime),
+        Config=transfer_config,
     )
     return BlobInfo(storage_key=storage_key, sha256=sha256, size=size)
 

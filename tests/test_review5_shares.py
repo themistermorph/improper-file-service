@@ -49,13 +49,13 @@ def test_upload_toctou_renames_instead_of_overwrite(monkeypatch):
         admin_id = UUID(detail["created_by"])
         competing = b"konkurrenz"
 
-        def racing_store_blob(db, local_path, mime=None):
+        def racing_store_blob(db, local_path, mime=None, sha256=None):
             """Legt kurz vor dem Blob-Anlegen eine gleichnamige Datei parallel an."""
             with session_scope() as other:
                 parent = namespace.get_entry(other, folder_id)
                 blob = _make_blob(other, competing)
                 namespace.apply_write(other, parent, "x.txt", admin_id, blob, "text/plain")
-            return fake_store_blob(db, local_path, mime)
+            return fake_store_blob(db, local_path, mime, sha256=sha256)
 
         monkeypatch.setattr(content, "store_blob", racing_store_blob)
 

@@ -6,6 +6,15 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Performance
+- **FTP-Upload:** Der SHA-256 wird beim sequenziellen `STOR` **inkrementell
+  während des Schreibens** berechnet und an `store_blob` übergeben; der bisherige
+  zweite Lesevorgang des Spools entfällt. Bei `APPE`/`REST`/Seek bleibt der
+  vollständige Scan als Fallback.
+- **S3-Upload:** Multipart-Tuning über `IFS_S3_MULTIPART_THRESHOLD_MB` (8),
+  `IFS_S3_MULTIPART_CHUNKSIZE_MB` (16) und `IFS_S3_TRANSFER_CONCURRENCY` (8) –
+  größere Parts und Parallelität beschleunigen die Finalisierung großer Uploads.
+
 ### Added
 - **FTPS-Aktionen im Audit-Log:** FTPES-Operationen werden jetzt mit `protocol="ftps"`
   protokolliert – Login/Logout (`auth.login`, `auth.login.failed`, `auth.logout`),

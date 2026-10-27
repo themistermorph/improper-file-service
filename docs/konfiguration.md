@@ -74,6 +74,9 @@ IFS_DATABASE_URL=postgresql+psycopg://ifs:geheim@db:5432/ifs
 | `IFS_S3_PRESIGN_TTL_SECONDS` | int | `300` | Gültigkeit präsignierter URLs (aktuell nur als Option vorgesehen). |
 | `IFS_CAS_DEDUP` | bool | `true` | Content-addressed Dedup: identische Inhalte werden nur einmal gespeichert. |
 | `IFS_S3_MAX_POOL_CONNECTIONS` | int | `32` | Maximale Zahl gleichzeitiger Verbindungen im S3-Connection-Pool (botocore-Standard: `10`). Ein größerer Pool verhindert, dass parallele FTPS-/HTTP-Transfers sich serialisieren. |
+| `IFS_S3_MULTIPART_THRESHOLD_MB` | int | `8` | Ab dieser Größe wird ein Upload als S3-Multipart-Transfer durchgeführt. |
+| `IFS_S3_MULTIPART_CHUNKSIZE_MB` | int | `16` | Part-Größe bei Multipart-Uploads. Größere Parts erhöhen den Durchsatz, belegen aber mehr RAM (Faustregel: `chunksize × concurrency`). |
+| `IFS_S3_TRANSFER_CONCURRENCY` | int | `8` | Parallele Parts je Multipart-Upload. Mehr Parallelität = mehr Durchsatz, aber mehr Speicher/CPU. |
 
 **Provider-Beispiele**
 

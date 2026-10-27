@@ -39,14 +39,20 @@ def auth(
     return {"Authorization": f"Bearer {login(client, username, password)}"}
 
 
-def fake_store_blob(db: Any, local_path: str, mime: str | None = None) -> Blob:
+def fake_store_blob(
+    db: Any,
+    local_path: str,
+    mime: str | None = None,
+    sha256: str | None = None,
+) -> Blob:
     """Ersetzt ``content.store_blob``: legt einen ``Blob`` an und merkt den Inhalt."""
     with open(local_path, "rb") as handle:
         data = handle.read()
-    sha = hashlib.sha256(data).hexdigest()
-    key = f"cas/{sha[:2]}/{sha}"
+    if sha256 is None:
+        sha256 = hashlib.sha256(data).hexdigest()
+    key = f"cas/{sha256[:2]}/{sha256}"
     CONTENT[key] = data
-    blob = Blob(storage_key=key, sha256=sha, size=len(data), status=BlobStatus.ready)
+    blob = Blob(storage_key=key, sha256=sha256, size=len(data), status=BlobStatus.ready)
     db.add(blob)
     db.flush()
     return blob

@@ -8,6 +8,7 @@ und streamt Dateiinhalte aus bzw. nach S3.
 from __future__ import annotations
 
 import functools
+import hashlib
 import os
 import posixpath
 import time
@@ -220,7 +221,9 @@ class _UploadWriter:
     pyftpdlib schreibt im 64-KiB-Takt, bei großen Dateien also tausende Male.
     """
 
-    def __init__(self, path: str, name: str, limit: int | None = None) -> None:
+    def __init__(
+        self, path: str, name: str, limit: int | None = None, track_digest: bool = True
+    ) -> None:
         self.name = name
         self._path = path
         self._handle = open(path, "wb")
@@ -230,6 +233,12 @@ class _UploadWriter:
         self._limit = limit if limit and limit > 0 else None
         self._pos = 0
         self._size = 0  # High-Water-Mark des Schreiboffsets
+        # Inkrementeller SHA-256: nur bei rein sequenziellem Schreiben ab 0
+        # (STOR) gültig. Bei APPE/REST/Seek wird die Hash-Berechnung deaktiviert;
+        # die Finalisierung fällt dann auf den vollständigen Scan zurück.
+        self._hashable = track_digest
+        self._digest = hashlib.sha256()
+        self._hashed = 0
 
     def _check_limit(self) -> None:
         if self._limit is not None and self._size > self._limit:
@@ -241,6 +250,9 @@ class _UploadWriter:
         written = self._handle.write(data)
         self._pos += written
         self._size = max(self._size, self._pos)
+        if self._hashable:
+            self._digest.update(data[:written])
+            self._hashed += written
         self._check_limit()
         return written
 
@@ -249,15 +261,31 @@ class _UploadWriter:
 
     def sync_size(self) -> None:
         """Übernimmt die bereits vorhandene Dateigröße (APPE/REST-Vorladen)."""
+        self._hashable = False
         self._pos = self._size = os.fstat(self._handle.fileno()).st_size
 
     def tell(self) -> int:
         return self._pos
 
     def seek(self, offset: int, whence: int = 0) -> int:
+        # Seek (z. B. REST) bricht die sequenzielle Hash-Berechnung ab.
+        self._hashable = False
         self._pos = self._handle.seek(offset, whence)
         self._size = max(self._size, self._pos)
         return self._pos
+
+    def digest(self) -> str | None:
+        """SHA-256 des Spools, sofern sequenziell ab 0 geschrieben; sonst ``None``."""
+        if not self._hashable:
+            return None
+        try:
+            if not self._closed:
+                self._handle.flush()
+            if self._hashed != os.path.getsize(self._path):
+                return None
+        except (OSError, ValueError):
+            return None
+        return self._digest.hexdigest()
 
     def close(self) -> None:
         if not self._closed:
@@ -279,7 +307,7 @@ class IFSFilesystem(AbstractedFS):
 
     def __init__(self, root, cmd_channel):
         super().__init__(root, cmd_channel)
-        self._pending: dict[str, tuple[str, str, str]] = {}  # pfad -> (parent, name, spool)
+        self._pending: dict[str, tuple[str, str, _UploadWriter]] = {}  # pfad -> (parent, name, writer)
 
     # --- Hilfsfunktionen -------------------------------------------------
 
@@ -685,7 +713,10 @@ class IFSFilesystem(AbstractedFS):
                 raise _as_fs_error(exc) from exc
 
         writer = _UploadWriter(
-            content.new_spool_path(), path, limit=get_settings().max_upload_size
+            content.new_spool_path(),
+            path,
+            limit=get_settings().max_upload_size,
+            track_digest=not mode.startswith(("a", "r+")),
         )
 
         # APPE / REST: bestehenden Inhalt vorladen (eine Session statt zwei)
@@ -728,7 +759,7 @@ class IFSFilesystem(AbstractedFS):
         # Ein alter, nicht finalisierter Upload auf denselben Pfad wird als
         # abgebrochen protokolliert (und der Spool verworfen).
         self.discard_pending(path)
-        self._pending[path] = (parent_path, name, writer._path)
+        self._pending[path] = (parent_path, name, writer)
         return writer
 
     @staticmethod
@@ -745,7 +776,11 @@ class IFSFilesystem(AbstractedFS):
         info = self._pending.pop(path, None)
         if info is None:
             return
-        parent_path, name, spool = info
+        parent_path, name, writer = info
+        spool = writer._path
+        # Inkrementeller Digest (nur bei sequenziellem STOR verfügbar); sonst
+        # fällt store_blob auf den vollständigen Scan zurück.
+        sha256 = writer.digest()
         try:
             with session_scope() as db:
                 user = self._user(db)
@@ -761,7 +796,7 @@ class IFSFilesystem(AbstractedFS):
                     raise FilesystemError("Maximale Dateigröße überschritten")
                 existing = namespace.find_child(db, parent.id, name)
                 namespace.ensure_writable(db, parent, name, user.id, size)
-                blob = content.store_blob(db, spool, None)
+                blob = content.store_blob(db, spool, None, sha256=sha256)
                 entry = namespace.apply_write(db, parent, name, user.id, blob, None)
                 self._audit(
                     db,
@@ -781,7 +816,9 @@ class IFSFilesystem(AbstractedFS):
         info = self._pending.pop(norm, None)
         if info is None:
             return
-        content.remove_spool(info[2])
+        writer = info[2]
+        content.remove_spool(writer._path)
+        writer.close()
         with session_scope() as db:
             user = db.execute(
                 select(User).where(User.username == self._username)

@@ -226,9 +226,9 @@ def _zip_helpers():
     """Fake-Objektspeicher: speichert Inhalte je storage_key für get_object."""
     by_key: dict[str, bytes] = {}
 
-    def fake_store_blob(db, local_path, mime=None):
+    def fake_store_blob(db, local_path, mime=None, sha256=None):
         data = open(local_path, "rb").read()
-        sha = hashlib.sha256(data).hexdigest()
+        sha = sha256 or hashlib.sha256(data).hexdigest()
         key = f"cas/{sha[:2]}/{sha}"
         by_key[key] = data
         blob = Blob(storage_key=key, sha256=sha, size=len(data), status=BlobStatus.ready)

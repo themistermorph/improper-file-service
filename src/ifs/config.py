@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     # S3-Endpunkt. Der botocore-Standard von 10 serialisiert parallele Transfers
     # (FTPS/HTTP); ein größerer Pool erhöht den aggregierten Durchsatz.
     s3_max_pool_connections: int = 32
+    # S3-Upload (Multipart): größere Chunks + Parallelität erhöhen den Durchsatz
+    # bei der Finalisierung großer Uploads. Speicherbedarf ≈
+    # chunksize × concurrency (Default 16 MiB × 8 = 128 MiB Peak).
+    s3_multipart_threshold_mb: int = 8
+    s3_multipart_chunksize_mb: int = 16
+    s3_transfer_concurrency: int = 8
 
     # Uploads
     upload_spool_dir: str = "/var/lib/ifs/spool"

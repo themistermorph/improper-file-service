@@ -231,9 +231,21 @@ Durchsatz bei vielen Nutzern.
 
 ### 7.4 Uploads
 
-Uploads werden lokal gespoolt und erst nach dem Transfer nach S3 geschrieben. Das
-Größenlimit wird über einen Byte-Zähler geprüft, nicht per `fstat` je Block. Für den
-Upload-Durchsatz gelten dieselben Empfehlungen wie in 7.2.
+Uploads werden lokal gespoolt und erst nach dem Transfer nach S3 geschrieben. Der
+SHA-256 wird **während des Schreibens inkrementell** berechnet (nur bei
+sequenziellem `STOR`; bei `APPE`/`REST`/Seek fällt die Finalisierung auf einen
+vollständigen Scan zurück) – das spart einen zweiten Lesevorgang des Spools.
+
+Für die S3-Finalisierung großer Dateien sind Multipart-Chunks und Parallelität
+entscheidend:
+
+- `IFS_S3_MULTIPART_THRESHOLD_MB` (Standard 8)
+- `IFS_S3_MULTIPART_CHUNKSIZE_MB` (Standard 16)
+- `IFS_S3_TRANSFER_CONCURRENCY` (Standard 8)
+
+Faustregel für den Speicherbedarf: `chunksize × concurrency` (Standard:
+16 MiB × 8 = 128 MiB Peak). Auf speicherknappen Hosts `chunksize`/`concurrency`
+reduzieren; auf leistungsfähigen Hosts z. B. 32 MiB × 8.
 
 ### 7.5 Richtwerte
 

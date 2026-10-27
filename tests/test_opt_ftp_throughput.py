@@ -8,7 +8,9 @@ Datenkanals (Puffergröße) abgesichert.
 
 from __future__ import annotations
 
+import hashlib
 import io
+import os
 
 import pytest
 from pyftpdlib.exceptions import FilesystemError
@@ -180,6 +182,47 @@ def test_upload_append_accounts_existing_size(tmp_path):
         assert writer.write(b"BB") == 2  # genau am Limit
         with pytest.raises(FilesystemError):
             writer.write(b"C")  # 11 > 10
+    finally:
+        writer.close()
+
+
+def test_upload_writer_digest_incremental(tmp_path):
+    data = b"0123456789" * 100
+    writer = _UploadWriter(str(tmp_path / "digest.bin"), "digest.bin")
+    try:
+        writer.write(data[:400])
+        writer.write(data[400:])
+        assert writer.digest() == hashlib.sha256(data).hexdigest()
+    finally:
+        writer.close()
+
+
+def test_upload_writer_digest_disabled_on_seek(tmp_path):
+    writer = _UploadWriter(str(tmp_path / "seek.bin"), "seek.bin")
+    try:
+        writer.write(b"abc")
+        writer.seek(1)
+        assert writer.digest() is None
+    finally:
+        writer.close()
+
+
+def test_upload_writer_digest_disabled_for_append(tmp_path):
+    writer = _UploadWriter(str(tmp_path / "appe.bin"), "appe.bin", track_digest=False)
+    try:
+        writer.write(b"abc")
+        assert writer.digest() is None
+    finally:
+        writer.close()
+
+
+def test_upload_writer_digest_none_on_size_mismatch(tmp_path):
+    writer = _UploadWriter(str(tmp_path / "mismatch.bin"), "mismatch.bin")
+    try:
+        writer.write(b"abc")
+        writer.close()
+        os.truncate(writer._path, 2)
+        assert writer.digest() is None
     finally:
         writer.close()
 
