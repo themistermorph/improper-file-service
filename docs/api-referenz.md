@@ -28,6 +28,8 @@ Der Token wird über `POST /api/auth/login` bezogen und läuft nach
 
 - IDs sind **UUIDs** (als String).
 - Zeitstempel sind **ISO-8601 mit Zeitzone** (UTC), z. B. `2026-09-28T10:15:30Z`.
+  Die Web-UI stellt sie für Menschen als **`TT.MM.JJJJ, HH:MM:SS`** dar;
+  Datumseingaben (z. B. Ablaufdatum) erfolgen ebenfalls als `TT.MM.JJJJ`.
 - Größen sind **Bytes** (Integer).
 
 ### Fehlerformat

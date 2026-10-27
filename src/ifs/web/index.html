@@ -509,6 +509,29 @@
       return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}, `
         + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
     }
+    // Nur das Datum als TT.MM.JJJJ (z. B. für Eingabefelder).
+    function fmtDay(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      const p = (n) => String(n).padStart(2, "0");
+      return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
+    }
+    // Strikte Eingabe TT.MM.JJJJ. Liefert null bei ungültigem oder nicht
+    // existierendem Datum (z. B. 31.02.2026).
+    function parseDayInput(text) {
+      const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(text).trim());
+      if (!match) return null;
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = Number(match[3]);
+      const date = new Date(year, month - 1, day, 23, 59, 59);
+      if (date.getFullYear() !== year || date.getMonth() !== month - 1
+        || date.getDate() !== day) {
+        return null;
+      }
+      return date;
+    }
     function esc(text) { return String(text).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
     // Bevorzugt den (Benutzer-)Anzeigenamen, fällt auf den Benutzernamen zurück.
     function personName(displayName, username) { return displayName || username || "–"; }
@@ -2522,15 +2545,15 @@
     function shareEditDialog(share, after = null) {
       shareEditAfter = after;
       shareEditShare = share;
-      const expiry = share.expires_at ? share.expires_at.slice(0, 10) : "";
       openModal(`
         <h2>Freigabe bearbeiten</h2>
         <p class="muted" style="font-size:13px">${esc(share.entry_path || share.entry_name || "")}</p>
         <div class="field"><label>Passwort (leer = kein Passwort)</label>
           <input id="se-pass" type="text" placeholder="${share.has_password ? "gesetzt – leer lassen zum Behalten" : "kein Passwort"}" /></div>
         <label class="checkline"><input type="checkbox" id="se-remove-pass" /> Passwort entfernen</label>
-        <div class="field"><label>Ablaufdatum (leer = unbegrenzt)</label>
-          <input id="se-expires" type="date" value="${expiry}" /></div>
+        <div class="field"><label>Ablaufdatum TT.MM.JJJJ (leer = unbegrenzt)</label>
+          <input id="se-expires" type="text" inputmode="numeric" maxlength="10"
+            placeholder="TT.MM.JJJJ" value="${fmtDay(share.expires_at)}" /></div>
         <div class="field"><label>Max. Downloads (leer = unbegrenzt)</label>
           <input id="se-max" type="number" min="1" value="${share.max_downloads ?? ""}" /></div>
         ${share.entry_type === "folder"
@@ -2559,8 +2582,17 @@
       const removePass = document.getElementById("se-remove-pass").checked;
       if (removePass) body.password = "";
       else if (pass) body.password = pass;
-      const expires = document.getElementById("se-expires").value;
-      body.expires_at = expires ? new Date(expires + "T23:59:59").toISOString() : null;
+      const expires = document.getElementById("se-expires").value.trim();
+      if (expires) {
+        const parsed = parseDayInput(expires);
+        if (!parsed) {
+          toast("Bitte das Ablaufdatum als TT.MM.JJJJ eingeben.", "err");
+          return;
+        }
+        body.expires_at = parsed.toISOString();
+      } else {
+        body.expires_at = null;
+      }
       const max = document.getElementById("se-max").value;
       body.max_downloads = max ? parseInt(max, 10) : null;
       const uploadEl = document.getElementById("se-upload");

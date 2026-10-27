@@ -6,7 +6,24 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-## [0.1.7] – 2026-10-27
+## [0.1.7.1] – 27.10.2026
+
+### Fixed
+- **Datumsformat:** Das Ablaufdatum in „Freigabe bearbeiten“ war ein
+  Browser-Datumsfeld (`<input type="date">`) und wurde je nach Locale des
+  Clients (z. B. `MM/DD/YYYY`) angezeigt. Es ist jetzt ein Textfeld mit
+  strikter Eingabe **`TT.MM.JJJJ`**; ungültige oder nicht existierende Daten
+  (z. B. `31.02.2026`) werden abgelehnt.
+- **Einheitliche Anzeige:** Alle benutzerseitigen Datumsanzeigen verwenden
+  weiterhin **`TT.MM.JJJJ, HH:MM:SS`**. API-Zeitstempel bleiben transportseitig
+  ISO-8601 (UTC), damit Clients und Skripte maschinenlesbar bleiben.
+
+### Tests
+- Statische UI-Tests prüfen, dass keine Locale-Formatierung
+  (`toLocaleString`/`toLocaleDateString`) und kein `type="date"` mehr
+  verwendet wird und der Ablaufdatum-Parser ungültige Werte ablehnt.
+
+## [0.1.7] – 27.10.2026
 
 Schwerpunkt: Vanity-Links für Veröffentlichungen, schnellere FTPS-/S3-Uploads
 (inkl. Kleindateien), Sicherheits-Regressionsnachweise (SQL-Injection/RCE) und
@@ -84,7 +101,7 @@ UI-Korrekturen.
   Datenmodell, Installation/Betrieb (Migration `0010`), Sicherheit (V7/§20),
   Tutorial 11 sowie README/RELEASING auf `0.1.7` aktualisiert.
 
-## [0.1.6] – 2026-10-04
+## [0.1.6] – 04.10.2026
 
 ### Tests
 - **Schnellere Test-Suite:** Parallele Ausführung ist jetzt Standard
@@ -93,7 +110,7 @@ UI-Korrekturen.
   zentral in `tests/helpers.py`; der langsame Argon2-Hash wird in Tests durch
   einen schnellen Hash ersetzt.
 
-## [0.1.5] – 2026-10-03
+## [0.1.5] – 03.10.2026
 
 ### Fixed
 - **Benutzer-Anzeigename:** Ist ein Anzeigename (`display_name`) gesetzt, wird er
@@ -103,7 +120,7 @@ UI-Korrekturen.
   Benutzer-Auswahllisten und -Dialoge. Ohne Anzeigename bleibt der Benutzername
   (Fallback). Die API liefert die Anzeigenamen als zusätzliche Felder.
 
-## [0.1.4] – 2026-10-03
+## [0.1.4] – 03.10.2026
 
 ### Performance
 - **FTPS-Durchsatz deutlich erhöht** – ohne Änderung des nach außen sichtbaren
@@ -143,7 +160,7 @@ UI-Korrekturen.
   ohne rekursives Löschen (z. B. manche Windows-/Mount-Clients) gar keine Ordner
   löschen konnten.
 
-## [0.1.3] – 2026-10-03
+## [0.1.3] – 03.10.2026
 
 ### Security
 - **Veröffentlichungen:** Anonyme Downloads der öffentlichen Galerie sind pro IP+Eintrag
@@ -175,7 +192,7 @@ UI-Korrekturen.
   (`python -m pytest -n auto`). Laufzeit der Suite: ~228 s → ~26 s seriell,
   ~22 s parallel (auf 4 Kernen).
 
-## [0.1.2] – 2026-10-03
+## [0.1.2] – 03.10.2026
 
 ### Performance
 - **Parallel-Optimierung über API, Kern, FTPS, Web-UI und Worker** – ohne Änderung des
@@ -219,7 +236,7 @@ UI-Korrekturen.
   vorhanden). Die Zielauswahl schließt den Eintrag selbst und seinen Teilbaum aus;
   mehrfaches Verschieben über die Bulk-Leiste bleibt erhalten.
 
-## [0.1.1] – 2026-09-29
+## [0.1.1] – 29.09.2026
 
 ### Fixed
 - **FTP:** Downloads > 64 KiB wurden still abgeschnitten (`RETR`/`REST`); der
@@ -249,7 +266,7 @@ UI-Korrekturen.
   und Modals auf; mehrere Anzeigefehler behoben.
 - **Tests:** 52 neue Regressionstests (`tests/test_review5_*.py`); Gesamtsuite 173 Tests.
 
-## [0.1.0] – 2026-09-29
+## [0.1.0] – 29.09.2026
 
 Erster öffentlicher **Pre-Release**. Funktionsumfang des MVP einschließlich
 mehrerer abgeschlossener Sicherheits-Reviews.
@@ -301,7 +318,8 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Login-Rate-Limit ist pro Prozess (In-Memory); für den vorgesehenen Maßstab
   (eine API-Instanz) ausgelegt.
 
-[Unreleased]: https://github.com/themistermorph/inproper-file-service/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/themistermorph/inproper-file-service/compare/v0.1.7.1...HEAD
+[0.1.7.1]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.7.1
 [0.1.7]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.7
 [0.1.6]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.6
 [0.1.5]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.5
