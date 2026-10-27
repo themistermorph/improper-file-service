@@ -467,6 +467,12 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 - **V6 – Akzeptiertes Restrisiko:** Die öffentliche Galerie zeigt den Benutzernamen des
   Veröffentlichenden (Attribution). Das ist eine bewusste Design-Entscheidung; wer
   veröffentlicht, gibt seinen Loginnamen öffentlich preis.
+- **V7 – Vanity-Links sind öffentlich:** `/published/<username>/<suffix>` ist ein
+  reiner `307`-Redirect auf die kanonische API `/api/published/<uuid>/content`. Der
+  Suffix ist **kein Geheimnis** (die Galerie listet die Veröffentlichung), wird
+  case-insensitiv aufgelöst, ist auf ein Segment ohne `/` beschränkt und
+  case-insensitiv eindeutig. Die Rechteprüfung bleibt am Eintrag (read/share) und am
+  Content-Endpunkt (Rate-Limit); der Redirect selbst erhöht keine Rechte.
 
 **Software-Release-Prozess (GitHub Actions):**
 

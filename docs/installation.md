@@ -185,8 +185,10 @@ python -m ifs.cli run-worker   # Hintergrundjobs
 > **Pflicht für bestehende Installationen (Per-User-Wurzel):** Die SQL-Migrationen
 > unter `migrations/sql/` nacheinander anwenden – insbesondere
 > `0004_unique_entry_names.sql`, `0005_share_overwrite.sql`,
-> `0006_per_user_roots.sql`, `0007_performance_indexes.sql` und
-> `0008_published_entries.sql` (öffentliche Galerie). **Vor** dem Unique-Index aus 0006
+> `0006_per_user_roots.sql`, `0007_performance_indexes.sql`,
+> `0008_published_entries.sql` (öffentliche Galerie),
+> `0009_published_public_name.sql` und `0010_published_public_path.sql` (Vanity-Links).
+> **Vor** dem Unique-Index aus 0006
 > muss für jeden Benutzer eine Wurzel existieren. Beispiel:
 > ```bash
 > for f in migrations/sql/000*.sql; do

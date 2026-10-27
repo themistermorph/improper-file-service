@@ -59,6 +59,9 @@ Antwort (`201 Created`):
 {
   "entry_id": "…",
   "name": "freigabe.txt",
+  "public_name": null,
+  "public_path": null,
+  "public_suffix": null,
   "type": "file",
   "size": 20,
   "mime": "text/plain",
@@ -82,6 +85,31 @@ Teilbaum als **ZIP**.
 - Erneutes Veröffentlichen ist **idempotent**. Es wird kein zweiter Eintrag angelegt und
   die Antwort meldet weiterhin den **ursprünglichen** `published_by_username` – auch
   wenn ein Systemadmin den Aufruf wiederholt.
+
+### Eigener Link (optional)
+
+Beim Veröffentlichen kann ein Link-Suffix mitgegeben werden – genau **ein** Segment
+ohne `/`:
+
+```bash
+curl -s -X POST "$HOST/api/published/$ENTRY" -H "$AUTH" \
+  -H 'Content-Type: application/json' \
+  -d '{"public_suffix":"freigabe"}' | python -m json.tool
+```
+
+Die Antwort enthält dann `"public_path": "admin/freigabe"`. Der Link
+
+```
+http://localhost:8000/published/admin/freigabe
+```
+
+antwortet mit **`307 Temporary Redirect`** und leitet auf die kanonische API
+`/api/published/<entry_id>/content` weiter. Der vollständige Pfad ist
+**case-insensitiv eindeutig**; ein zweiter Eintrag mit demselben Pfad wird mit `409`
+abgelehnt. Der Suffix ist ein reiner Vanity-Link und **kein Geheimnis** – die
+Veröffentlichung steht ohnehin in der öffentlichen Galerie. Ohne Suffix bleibt der
+bisherige API-Link gültig. Zum Entfernen: `PATCH` mit `{"public_suffix": null}`; ein
+nicht mitgesendetes Feld bleibt unverändert.
 
 ---
 

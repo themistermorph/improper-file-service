@@ -141,11 +141,14 @@ Details: [Sicherheit](sicherheit.md).
 ### `published_entries`
 
 `entry_id` (PK, FK auf `entries` `ON DELETE CASCADE`), `published_by`, `public_name`,
-`created_at`. Ein Eintrag kann höchstens einmal veröffentlicht sein; Ordner werden beim
-Download als ZIP geliefert. `public_name` ist der optionale öffentliche Anzeigename
-(leer = interner Name). Die öffentliche Galerie (`/published`) listet nur aktive
-Einträge; Papierkorb und deaktivierte Konten ziehen die Veröffentlichung automatisch
-zurück.
+`public_path`, `created_at`. Ein Eintrag kann höchstens einmal veröffentlicht sein;
+Ordner werden beim Download als ZIP geliefert. `public_name` ist der optionale öffentliche
+Anzeigename (leer = interner Name). `public_path` ist der optionale Vanity-Link
+`<username>/<suffix>` (Suffix ohne `/`); der vollständige Pfad ist über einen
+Unique-Index auf `lower(public_path)` case-insensitiv eindeutig. Leer = kein eigener
+Link. Die öffentliche Galerie (`/published`) listet nur aktive Einträge; Papierkorb und
+deaktivierte Konten ziehen die Veröffentlichung automatisch zurück (der Suffix wird
+damit frei).
 
 ### `upload_sessions`
 

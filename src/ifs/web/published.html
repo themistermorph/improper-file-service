@@ -172,7 +172,9 @@
         actions.className = "actions";
         const link = document.createElement("a");
         link.className = "btn";
-        link.href = "/api/published/" + encodeURIComponent(item.entry_id) + "/content";
+        link.href = item.public_path
+          ? "/published/" + encodeURI(item.public_path)
+          : "/api/published/" + encodeURIComponent(item.entry_id) + "/content";
         link.textContent = isFolder ? "⬇ als ZIP" : "⬇ Download";
         link.setAttribute("download", isFolder ? item.name + ".zip" : item.name);
         actions.appendChild(link);

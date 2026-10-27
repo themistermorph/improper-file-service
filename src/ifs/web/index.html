@@ -392,7 +392,7 @@
         <div class="card">
           <table>
             <thead>
-              <tr><th>Name</th><th>Pfad</th><th>Veröffentlicht von</th><th>Datum</th>
+              <tr><th>Name</th><th>Pfad</th><th>Link</th><th>Veröffentlicht von</th><th>Datum</th>
                   <th class="right">Größe</th><th></th></tr>
             </thead>
             <tbody id="published-rows"></tbody>
@@ -2579,6 +2579,9 @@
 
     // ---------- Veröffentlichungen (öffentliche Galerie) ----------
     function publishedLink(entry) {
+      if (entry.public_path) {
+        return location.origin + "/published/" + encodeURI(entry.public_path);
+      }
       return location.origin + "/api/published/" + entry.entry_id + "/content";
     }
 
@@ -2618,6 +2621,21 @@
         tdPath.textContent = item.path || "–";
         tr.appendChild(tdPath);
 
+        const tdLink = document.createElement("td");
+        tdLink.className = "muted";
+        if (item.public_path) {
+          const link = document.createElement("a");
+          link.href = "/published/" + encodeURI(item.public_path);
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = "/published/" + item.public_path;
+          link.title = publishedLink(item);
+          tdLink.appendChild(link);
+        } else {
+          tdLink.textContent = "–";
+        }
+        tr.appendChild(tdLink);
+
         const tdBy = document.createElement("td");
         tdBy.textContent = personName(item.published_by_display_name, item.published_by_username);
         tr.appendChild(tdBy);
@@ -2640,8 +2658,8 @@
             .then(() => toast("Link kopiert.", "ok"))
             .catch(() => toast("Kopieren nicht möglich – Link bitte manuell markieren.", "err"));
         }));
-        wrap.appendChild(action("Umbenennen", "secondary", () => publishRenameDialog(item)));
-        wrap.appendChild(action("Öffnen", "secondary", () => window.open("/published", "_blank")));
+        wrap.appendChild(action("Bearbeiten", "secondary", () => publishRenameDialog(item)));
+        wrap.appendChild(action("Öffnen", "secondary", () => window.open(publishedLink(item), "_blank")));
         wrap.appendChild(action("Zurückziehen", "danger", () => unpublishEntry(item)));
         tdAct.appendChild(wrap);
         tr.appendChild(tdAct);
@@ -2651,8 +2669,8 @@
       tbody.replaceChildren(frag);
     }
 
-    // Dialog für den öffentlichen Anzeigenamen (beim Veröffentlichen und später).
-    function openPublishNameModal({ title, submitLabel, internalName, value, onSubmit }) {
+    // Dialog für Anzeigename + optionalen Vanity-Link (Veröffentlichen und später).
+    function openPublishNameModal({ title, submitLabel, internalName, value, suffixValue = "", onSubmit }) {
       openModal(`
         <h2>${esc(title)}</h2>
         <p class="muted" style="font-size:13px">Intern: ${esc(internalName)}</p>
@@ -2660,16 +2678,21 @@
           <input id="pub-name" type="text" maxlength="255" value="${esc(value || "")}"
                  placeholder="${esc(internalName)}" /></div>
         <p class="muted" style="font-size:12px">Leer lassen = der interne Name wird angezeigt.</p>
+        <div class="field"><label>Eigener Link-Suffix (ohne /)</label>
+          <input id="pub-suffix" type="text" maxlength="200" value="${esc(suffixValue || "")}"
+                 placeholder="z. B. file.txt" /></div>
+        <p class="muted" style="font-size:12px">Pfad: /published/&lt;Benutzername&gt;/&lt;Suffix&gt;. Leer = kein eigener Link.</p>
         <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
         <button class="btn" id="pub-submit">${esc(submitLabel)}</button></div>`);
-      const input = document.getElementById("pub-name");
+      const nameInput = document.getElementById("pub-name");
+      const suffixInput = document.getElementById("pub-suffix");
       const button = document.getElementById("pub-submit");
-      input.focus();
-      input.select();
+      nameInput.focus();
+      nameInput.select();
       const submit = async () => {
         button.disabled = true;
         try {
-          await onSubmit(input.value.trim());
+          await onSubmit(nameInput.value.trim(), suffixInput.value.trim());
           closeModal();
           toast("Gespeichert.", "ok");
           await refreshPublishedIds();
@@ -2681,7 +2704,10 @@
         }
       };
       button.onclick = submit;
-      input.onkeydown = (ev) => {
+      nameInput.onkeydown = (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); submit(); }
+      };
+      suffixInput.onkeydown = (ev) => {
         if (ev.key === "Enter") { ev.preventDefault(); submit(); }
       };
     }
@@ -2692,8 +2718,10 @@
         submitLabel: "Veröffentlichen",
         internalName: entry.name,
         value: entry.name,
-        onSubmit: (publicName) => {
-          const body = publicName && publicName !== entry.name ? { public_name: publicName } : {};
+        onSubmit: (publicName, suffix) => {
+          const body = {};
+          if (publicName && publicName !== entry.name) body.public_name = publicName;
+          if (suffix) body.public_suffix = suffix;
           return apiJson("POST", "/api/published/" + entry.id, body);
         },
       });
@@ -2701,13 +2729,19 @@
 
     function publishRenameDialog(item) {
       openPublishNameModal({
-        title: "Anzeigenamen ändern",
+        title: "Veröffentlichung bearbeiten",
         submitLabel: "Speichern",
         internalName: item.name,
         value: item.public_name || item.name,
-        onSubmit: (publicName) => {
-          const value = publicName && publicName !== item.name ? publicName : null;
-          return apiJson("PATCH", "/api/published/" + item.entry_id, { public_name: value });
+        suffixValue: item.public_suffix || "",
+        onSubmit: (publicName, suffix) => {
+          const body = {
+            public_name: publicName && publicName !== item.name ? publicName : null,
+          };
+          if ((suffix || "") !== (item.public_suffix || "")) {
+            body.public_suffix = suffix || null;
+          }
+          return apiJson("PATCH", "/api/published/" + item.entry_id, body);
         },
       });
     }

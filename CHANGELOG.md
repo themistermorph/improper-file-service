@@ -34,6 +34,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   (`upload.ftp`, `transfer.download`), Metadaten (`entry.update`, `entry.chmod`) sowie
   abgebrochene Uploads (`upload.aborted`). Abgelehnte Operationen erhalten
   `result="denied"`. Audit-Einträge des FTP-Logins setzen zusätzlich `last_login_at`.
+- **Vanity-Links für Veröffentlichungen:** Optionaler Link-Suffix
+  (`public_suffix`, ein Segment ohne `/`) erzeugt
+  `/published/<username>/<suffix>` und leitet per `307` auf die kanonische API
+  `/api/published/<uuid>/content` weiter. Der komplette Pfad ist
+  case-insensitiv eindeutig; ohne Suffix bleibt der bisherige API-Link.
+  Neues UI-Feld, Link-Spalte, Galerie-Link und `public_path` in den
+  API-Ausgaben; Migration `0010_published_public_path.sql`.
 
 ### Fixed
 - **nginx-Reverse-Proxy / Uploads:** nginx begrenzt Request-Bodies standardmäßig auf

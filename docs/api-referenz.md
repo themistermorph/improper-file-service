@@ -12,7 +12,8 @@ Interaktive Dokumentation: `GET /docs` (Swagger UI), `GET /redoc`, Schema unter
 ### Authentifizierung
 
 Alle Endpunkte außer Login, Health, Version, öffentlicher Galerie (`/api/published`),
-Freigabe-Download (`/api/shares/{token}/content`) sowie der tokenbasierten Vorschau- und
+Vanity-Links (`/published/...`), Freigabe-Download (`/api/shares/{token}/content`)
+sowie der tokenbasierten Vorschau- und
 Archiv-Endpunkte (`/api/preview/{token}`, `/api/archive/{token}`,
 `/api/archive/jobs/{token}`) benötigen einen Bearer-Token:
 
@@ -586,17 +587,26 @@ die eigene **Wurzel** (`parent_id IS NULL`) kann nicht veröffentlicht werden (`
 
 | Methode & Pfad | Auth | Beschreibung |
 |---|---|---|
-| `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, type, size, mime, published_by_username, published_by_display_name, published_at }]`. `q` filtert den Namen; `%`, `_` und `\` werden literal behandelt. |
+| `GET /api/published?q=&limit=&offset=` | – | Öffentliche Galerie: `[{ entry_id, name, public_path, type, size, mime, published_by_username, published_by_display_name, published_at }]`. `q` filtert den Namen; `%`, `_` und `\` werden literal behandelt. |
 | `GET /api/published/{entry_id}/content` | – | Öffentlicher Download: Datei (Range-Support) bzw. Ordner (ZIP). Rate-limitiert pro Eintrag+IP (`429` mit `Retry-After`). |
-| `GET /api/published/mine` | Bearer | Eigene Veröffentlichungen inkl. `path`; Systemadmins sehen zusätzlich fremde, bei diesen wird `path` ausgelassen. |
-| `POST /api/published/{entry_id}` | Bearer | Datei oder Ordner veröffentlichen (`201`; idempotent – erneutes Veröffentlichen meldet weiterhin den ursprünglichen `published_by_username`). Optionaler Body `{ "public_name": "..." }`. |
-| `PATCH /api/published/{entry_id}` | Bearer | Öffentlichen Anzeigenamen nachträglich ändern: `{ "public_name": "..." }`; `null`/leer = interner Name. |
-| `DELETE /api/published/{entry_id}` | Bearer | Veröffentlichung zurückziehen (`204`). |
+| `GET /api/published/mine` | Bearer | Eigene Veröffentlichungen inkl. `path`, `public_path` und `public_suffix`; Systemadmins sehen zusätzlich fremde, bei diesen wird `path` ausgelassen. |
+| `POST /api/published/{entry_id}` | Bearer | Datei oder Ordner veröffentlichen (`201`; idempotent – erneutes Veröffentlichen meldet weiterhin den ursprünglichen `published_by_username`). Optionaler Body `{ "public_name": "...", "public_suffix": "..." }`. |
+| `PATCH /api/published/{entry_id}` | Bearer | Anzeigename und/oder Link-Suffix ändern: `{ "public_name": "...", "public_suffix": "..." }`; `null`/leer entfernt das jeweilige Feld, ein nicht mitgesendetes Feld bleibt unverändert. |
+| `DELETE /api/published/{entry_id}` | Bearer | Veröffentlichung zurückziehen (`204`); der Link-Suffix wird wieder frei. |
+| `GET /published/{username}/{suffix}` | – | Vanity-Link: `307` auf `/api/published/{entry_id}/content`, bei unbekanntem/inaktivem Eintrag `404`. Case-insensitiv; `Cache-Control: no-store`. |
 
 Der **öffentliche Anzeigename** (`public_name`, max. 255 Zeichen) ersetzt in der Galerie
 und im Download-Dateinamen (`Content-Disposition`, bei Ordnern `<name>.zip`) den internen
 Namen. Ist er leer, wird der interne Name verwendet. Verwalten (PATCH/DELETE) darf der
 Ersteller, wer `share` am Eintrag hat, oder ein Systemadmin.
+
+Der **Link-Suffix** (`public_suffix`) ist optional und genau **ein** URL-sicheres Segment
+ohne `/` (erlaubt: `A-Z a-z 0-9 . _ ~ -`, max. 200 Zeichen). Der Server stellt den
+Benutzernamen des Veröffentlichenden voran: `public_path = "<username>/<suffix>"`; der
+öffentliche Link ist `/published/<username>/<suffix>`. Der vollständige Pfad ist
+**case-insensitiv eindeutig** (ein zweiter Eintrag mit gleichem Pfad → `409`). Der
+Suffix ist ein reiner Vanity-Redirect auf die kanonische API; er ist **kein Geheimnis**
+(die Galerie ist öffentlich). Ohne Suffix bleibt der bisherige API-Link gültig.
 
 Anonyme Downloads sind begrenzt über `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` (Standard 120)
 je `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS` (Standard 300 s); bei Überschreitung `429`.

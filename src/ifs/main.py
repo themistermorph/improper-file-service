@@ -6,22 +6,22 @@ import logging
 import pathlib
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from starlette.datastructures import MutableHeaders
 
 from . import __version__
 from .api import system
-from .api.deps import is_secure_request
+from .api.deps import get_db, is_secure_request
 from .api.router import api_router
 from .config import get_settings
 from .core import content, namespace, roles
 from .db import create_all, session_scope
 from .errors import IFSError
-from .models import User
+from .models import Entry, PublishedEntry, User
 from .security import hash_password
 
 logger = logging.getLogger("ifs")
@@ -174,6 +174,34 @@ def create_app() -> FastAPI:
         @app.get("/published/", include_in_schema=False)
         async def published_gallery() -> FileResponse:
             return FileResponse(web_dir / "published.html")
+
+        @app.get("/published/{public_path:path}", include_in_schema=False)
+        def published_redirect(
+            public_path: str, db=Depends(get_db)
+        ) -> RedirectResponse:
+            """Vanity-Link ``/published/<username>/<suffix>`` → kanonische API-URL."""
+            path = public_path.strip("/")
+            if not path:
+                raise HTTPException(status_code=404)
+            published = db.execute(
+                select(PublishedEntry).where(
+                    func.lower(PublishedEntry.public_path) == path.lower()
+                )
+            ).scalars().first()
+            if published is None:
+                raise HTTPException(
+                    status_code=404, detail="Eintrag ist nicht veröffentlicht"
+                )
+            entry = db.get(Entry, published.entry_id)
+            if entry is None or entry.trashed_at is not None:
+                raise HTTPException(
+                    status_code=404, detail="Eintrag ist nicht verfügbar"
+                )
+            return RedirectResponse(
+                url=f"/api/published/{published.entry_id}/content",
+                status_code=307,
+                headers={"Cache-Control": "no-store"},
+            )
 
         app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
 

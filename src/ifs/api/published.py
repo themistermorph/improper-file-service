@@ -11,11 +11,12 @@ Freigabelinks: ``read`` **und** ``share`` am Eintrag.
 from __future__ import annotations
 
 import os
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core import archive, audit, authz, namespace, ratelimit
@@ -30,6 +31,11 @@ router = APIRouter(tags=["published"])
 
 # Bind-Parameter je IN-Query begrenzen (SQLite alte Builds: max. 999).
 _IN_CHUNK_SIZE = 500
+
+# Vanity-Link: ein URL-sicheres Segment, das der Server um `<username>/` ergänzt.
+_PUBLIC_SUFFIX_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
+_MAX_PUBLIC_SUFFIX = 200
+_MAX_PUBLIC_PATH = 512
 
 
 def _load_publishers(db: Session, user_ids: set[UUID]) -> dict[UUID, User]:
@@ -54,6 +60,65 @@ def _clean_public_name(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _clean_public_suffix(value: str | None) -> str | None:
+    """Validiert den frei wählbaren Link-Suffix (genau ein Segment, ohne '/')."""
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return None
+    if len(cleaned) > _MAX_PUBLIC_SUFFIX or "/" in cleaned:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ungültiger Link-Suffix")
+    if cleaned in (".", "..") or not _PUBLIC_SUFFIX_RE.fullmatch(cleaned):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Link-Suffix: nur A-Z, a-z, 0-9, '.', '_', '~' und '-' (ein Segment)",
+        )
+    return cleaned
+
+
+def _suffix_of(public_path: str | None) -> str | None:
+    if not public_path:
+        return None
+    return public_path.rsplit("/", 1)[-1]
+
+
+def _publisher_user(db: Session, published: PublishedEntry, fallback: User) -> User:
+    """Der tatsächliche Ersteller (auch wenn ein Admin nachträglich bearbeitet)."""
+    if published.published_by:
+        publisher = db.get(User, published.published_by)
+        if publisher is not None:
+            return publisher
+    return fallback
+
+
+def _build_public_path(username: str, suffix: str) -> str:
+    public_path = f"{username}/{suffix}"
+    if len(public_path) > _MAX_PUBLIC_PATH:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Link-Pfad zu lang")
+    return public_path
+
+
+def _ensure_public_path_free(db: Session, public_path: str, entry_id: UUID) -> None:
+    existing = db.execute(
+        select(PublishedEntry.entry_id).where(
+            func.lower(PublishedEntry.public_path) == public_path.lower(),
+            PublishedEntry.entry_id != entry_id,
+        )
+    ).scalars().first()
+    if existing is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Link-Suffix ist bereits vergeben")
+
+
+def _set_public_suffix(
+    db: Session, published: PublishedEntry, publisher: User, suffix: str | None
+) -> None:
+    if suffix is None:
+        published.public_path = None
+        return
+    public_path = _build_public_path(publisher.username, suffix)
+    _ensure_public_path_free(db, public_path, published.entry_id)
+    published.public_path = public_path
+
+
 def _to_public(
     published: PublishedEntry,
     entry: Entry,
@@ -63,6 +128,7 @@ def _to_public(
     return PublishedPublicOut(
         entry_id=entry.id,
         name=_effective_name(published, entry),
+        public_path=published.public_path,
         type=entry.type,
         size=entry.size,
         mime=entry.mime,
@@ -85,6 +151,8 @@ def _to_out(
         entry_id=entry.id,
         name=entry.name,
         public_name=published.public_name,
+        public_path=published.public_path,
+        public_suffix=_suffix_of(published.public_path),
         type=entry.type,
         size=entry.size,
         mime=entry.mime,
@@ -246,25 +314,41 @@ def publish_entry(
     authz.authorize(db, user, "share", entry)
 
     public_name = _clean_public_name(payload.public_name) if payload else None
+    suffix = (
+        _clean_public_suffix(payload.public_suffix)
+        if payload is not None and "public_suffix" in payload.model_fields_set
+        else None
+    )
     published = db.get(PublishedEntry, entry.id)
     if published is None:
         published = PublishedEntry(
             entry_id=entry.id, published_by=user.id, public_name=public_name
         )
+        if suffix is not None:
+            _set_public_suffix(db, published, user, suffix)
         db.add(published)
         db.flush()
         audit.record(
             db, "publish.create", actor_id=user.id, target_entry=entry.id,
-            protocol="http", ip=client_ip(request), details={"entry_id": str(entry.id)},
+            protocol="http", ip=client_ip(request),
+            details={"entry_id": str(entry.id), "public_path": published.public_path},
         )
-    elif payload is not None and payload.public_name is not None:
-        # Idempotentes Re-Publish darf den Anzeigenamen aktualisieren.
-        published.public_name = public_name
-        db.flush()
-        audit.record(
-            db, "publish.update", actor_id=user.id, target_entry=entry.id,
-            protocol="http", ip=client_ip(request), details={"entry_id": str(entry.id)},
-        )
+    else:
+        changed = False
+        if payload is not None and payload.public_name is not None:
+            # Idempotentes Re-Publish darf den Anzeigenamen aktualisieren.
+            published.public_name = public_name
+            changed = True
+        if payload is not None and "public_suffix" in payload.model_fields_set:
+            _set_public_suffix(db, published, _publisher_user(db, published, user), suffix)
+            changed = True
+        if changed:
+            db.flush()
+            audit.record(
+                db, "publish.update", actor_id=user.id, target_entry=entry.id,
+                protocol="http", ip=client_ip(request),
+                details={"entry_id": str(entry.id), "public_path": published.public_path},
+            )
     # Bei idempotentem Re-Publish den tatsaechlichen Ersteller nennen, nicht den
     # aktuell anfragenden Benutzer (z. B. Admin).
     publisher = db.get(User, published.published_by)
@@ -305,12 +389,21 @@ def update_published(
     entry = namespace.get_entry(db, entry_id)
     if not _can_manage(db, user, published, entry):
         raise PermissionDenied("Kein Recht, diese Veröffentlichung zu verwalten")
-    published.public_name = _clean_public_name(payload.public_name)
-    db.flush()
-    audit.record(
-        db, "publish.update", actor_id=user.id, target_entry=entry_id,
-        protocol="http", ip=client_ip(request), details={"entry_id": str(entry_id)},
-    )
+    changed = False
+    if "public_name" in payload.model_fields_set:
+        published.public_name = _clean_public_name(payload.public_name)
+        changed = True
+    if "public_suffix" in payload.model_fields_set:
+        suffix = _clean_public_suffix(payload.public_suffix)
+        _set_public_suffix(db, published, _publisher_user(db, published, user), suffix)
+        changed = True
+    if changed:
+        db.flush()
+        audit.record(
+            db, "publish.update", actor_id=user.id, target_entry=entry_id,
+            protocol="http", ip=client_ip(request),
+            details={"entry_id": str(entry_id), "public_path": published.public_path},
+        )
     publisher = db.get(User, published.published_by) if published.published_by else None
     return _to_out(
         db,

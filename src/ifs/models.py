@@ -344,11 +344,16 @@ class PublishedEntry(Base):
     published_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     # Öffentlicher Anzeigename; leer = interner Datei-/Ordnername.
     public_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Optionaler Vanity-Pfad unter /published/<username>/<suffix>. Der Suffix
+    # enthält kein '/'; der komplette Pfad ist case-insensitiv eindeutig.
+    public_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (
         # Galerie-Auflistung: neueste Veröffentlichung zuerst.
         Index("ix_published_entries_created", "created_at"),
+        # Vanity-Link: ein Pfad darf nur einmal vergeben sein (case-insensitiv).
+        Index("uq_published_entries_public_path", func.lower(public_path), unique=True),
     )
 
 

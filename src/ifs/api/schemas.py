@@ -185,6 +185,9 @@ class PublishedOut(BaseModel):
     name: str
     # Öffentlicher Anzeigename; leer = `name`.
     public_name: str | None = None
+    # Vanity-Pfad `<username>/<suffix>` unter /published; leer = kein eigener Link.
+    public_path: str | None = None
+    public_suffix: str | None = None
     type: EntryType
     size: int
     mime: str | None = None
@@ -202,6 +205,8 @@ class PublishedPublicOut(BaseModel):
     entry_id: UUID
     # Effektiver Anzeigename (`public_name` oder interner Name).
     name: str
+    # Vanity-Pfad `<username>/<suffix>` unter /published; leer = kein eigener Link.
+    public_path: str | None = None
     type: EntryType
     size: int
     mime: str | None = None
@@ -212,9 +217,11 @@ class PublishedPublicOut(BaseModel):
 
 
 class PublishedInput(BaseModel):
-    """Beim Veröffentlichen oder nachträglichen Ändern des Anzeigenamens."""
+    """Beim Veröffentlichen oder nachträglichen Ändern von Name/Link-Suffix."""
 
     public_name: str | None = Field(default=None, max_length=255)
+    # Ein Segment (ohne '/'); der Server stellt `<username>/` voran.
+    public_suffix: str | None = Field(default=None, max_length=200)
 
 
 class AclCreate(BaseModel):
