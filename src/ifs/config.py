@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     # liest der Client aus einem einzigen S3-Stream statt einen Request pro
     # 64-KiB-Block zu öffnen. Standard 4 MiB.
     ftp_s3_readahead_bytes: int = 4 * 1024 * 1024
+    # Kleindatei-Uploads: Finalisierung (S3/DB) nach dem 226 in einem kleinen
+    # Thread-Pool, damit der nächste Transfer nicht blockiert. 0 = synchron.
+    # Vor Nicht-STOR-Kommandos wird auf offene Finalisierungen gewartet.
+    ftp_finalize_workers: int = 2
 
     # Admin-Seed (nur wenn ein Passwort gesetzt ist)
     admin_username: str = "admin"

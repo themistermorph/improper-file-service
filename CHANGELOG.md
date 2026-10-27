@@ -14,6 +14,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 - **S3-Upload:** Multipart-Tuning über `IFS_S3_MULTIPART_THRESHOLD_MB` (8),
   `IFS_S3_MULTIPART_CHUNKSIZE_MB` (16) und `IFS_S3_TRANSFER_CONCURRENCY` (8) –
   größere Parts und Parallelität beschleunigen die Finalisierung großer Uploads.
+- **FTP-Kleindateien:** Objekte unterhalb der Multipart-Schwelle gehen per
+  direktem `put_object` (statt TransferManager) an S3; Read-Only-Sessions und
+  weniger Doppelabfragen im Upload-Pfad senken die Latenz pro Datei.
+- **Parallele FTP-Finalisierung:** `IFS_FTP_FINALIZE_WORKERS` (Standard 2)
+  finalisiert S3/DB nach dem `226` im Hintergrund, sodass der nächste Transfer
+  parallel laufen kann. Vor lesenden Namespace-Kommandos wird gedrained
+  (Read-after-Write); `0` schaltet auf das synchrone Verhalten zurück.
 
 ### Added
 - **FTPS-Aktionen im Audit-Log:** FTPES-Operationen werden jetzt mit `protocol="ftps"`

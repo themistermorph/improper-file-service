@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import posixpath
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.exceptions import AuthenticationFailed
@@ -18,7 +20,7 @@ except ImportError:  # pragma: no cover - pyftpdlib 1.x
 
 from ..config import get_settings
 from ..core import audit, authz, namespace, ratelimit
-from ..db import session_scope
+from ..db import read_scope, session_scope
 from ..models import User
 from ..security import verify_password_safe
 from ..utils import utcnow
@@ -26,12 +28,41 @@ from .fs import IFSFilesystem, _norm
 
 logger = logging.getLogger("ifs.ftp")
 
+# Wird nur von run_server gesetzt. None = synchrone Finalisierung.
+_finalize_pool: ThreadPoolExecutor | None = None
+
 # Datenkanal-Durchsatz: pyftpdlib liest/schreibt standardmäßig in 64-KiB-Blöcken.
 # Größere Puffer senken die Zahl der recv/send-Syscalls und TLS-Records je
 # Transfer. 16 KiB ist die Untergrenze (darunter wird der Durchsatz wieder
 # durch Syscall-Overhead begrenzt), Standard 256 KiB.
 _DEFAULT_TRANSFER_BUFFER = 256 * 1024
 _MIN_TRANSFER_BUFFER = 16 * 1024
+
+# Kommandos, die den Namespace lesen/ändern: Vor der Ausführung muss die
+# asynchrone Finalisierung abgeschlossen sein (Read-after-Write). Reine
+# Verbindungs-/Transfer-Setup-Kommandos (TYPE, PASV, PORT, NOOP, …)
+# bleiben absichtlich außen vor, damit der nächste Upload parallel laufen kann.
+_DRAIN_COMMANDS = frozenset(
+    {
+        "LIST",
+        "NLST",
+        "MLSD",
+        "MLST",
+        "SIZE",
+        "MDTM",
+        "RETR",
+        "DELE",
+        "RNFR",
+        "RNTO",
+        "MKD",
+        "RMD",
+        "APPE",
+        "REST",
+        "STAT",
+        "SITE",
+        "QUIT",
+    }
+)
 
 _PERM_ACTIONS = {
     "e": "read",
@@ -140,7 +171,7 @@ class IFSAuthorizer(DummyAuthorizer):
             return False
         if path is None:
             return True
-        with session_scope() as db:
+        with read_scope() as db:
             user = db.execute(
                 select(User).where(User.username == username)
             ).scalars().first()
@@ -165,13 +196,87 @@ class IFSFTPHandler(TLS_FTPHandler):
     abstracted_fs = IFSFilesystem
     tls_control_required = True
     tls_data_required = True
+    # Von run_server gesetzt; None = synchrone Finalisierung (Tests/Fallback).
+    finalize_pool: ThreadPoolExecutor | None = None
+    finalize_slots: threading.BoundedSemaphore | None = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ifs_finalizer_lock = threading.Lock()
+        self._ifs_finalizers: set[Future] = set()
+        self._ifs_path_futures: dict[str, Future] = {}
 
     def on_file_received(self, file):
+        """226 ist bereits gesendet; Finalisierung darf den nächsten Transfer überlappen."""
+        info = self.fs.take_pending(file)
+        if info is None:
+            return
+        pool = self.finalize_pool
+        if pool is None or self.finalize_slots is None:
+            try:
+                self.fs.finalize_taken(*info)
+            except Exception:
+                logger.exception("Finalisieren des FTP-Uploads fehlgeschlagen: %s", file)
+            return
+
+        path = info[0]
+        with self._ifs_finalizer_lock:
+            previous = self._ifs_path_futures.get(path)
+        if previous is not None:
+            # Gleicher Zielpfad: Reihenfolge wahren, bevor der nächste Stand schreibt.
+            try:
+                previous.result()
+            except Exception:
+                logger.exception("Vorherige Finalisierung fehlgeschlagen: %s", path)
+
+        self.finalize_slots.acquire()
         try:
-            self.fs.finalize_received(file)
+            future = pool.submit(self.fs.finalize_taken, *info)
         except Exception:
-            logger.exception("Finalisieren des FTP-Uploads fehlgeschlagen: %s", file)
-            super().on_file_received(file)
+            self.finalize_slots.release()
+            raise
+        with self._ifs_finalizer_lock:
+            self._ifs_finalizers.add(future)
+            self._ifs_path_futures[path] = future
+        future.add_done_callback(lambda fut, p=path: self._ifs_finalizer_done(fut, p))
+
+    def _ifs_finalizer_done(self, future: Future, path: str) -> None:
+        try:
+            future.result()
+        except Exception:
+            logger.exception("Finalisieren des FTP-Uploads fehlgeschlagen: %s", path)
+        with self._ifs_finalizer_lock:
+            self._ifs_finalizers.discard(future)
+            if self._ifs_path_futures.get(path) is future:
+                self._ifs_path_futures.pop(path, None)
+        slots = self.finalize_slots
+        if slots is not None:
+            try:
+                slots.release()
+            except ValueError:
+                pass
+
+    def _ifs_wait_finalizers(self) -> None:
+        """Vor lesenden/nicht-STOR-Kommandos: Read-after-Write sicherstellen."""
+        if self.finalize_pool is None:
+            return
+        lock = getattr(self, "_ifs_finalizer_lock", None)
+        if lock is None:
+            return
+        with lock:
+            futures = list(self._ifs_finalizers)
+            self._ifs_finalizers.clear()
+            self._ifs_path_futures.clear()
+        for future in futures:
+            try:
+                future.result()
+            except Exception:
+                logger.exception("Finalisieren des FTP-Uploads fehlgeschlagen")
+
+    def pre_process_command(self, line, cmd, arg):
+        if self.finalize_pool is not None and cmd.upper() in _DRAIN_COMMANDS:
+            self._ifs_wait_finalizers()
+        return super().pre_process_command(line, cmd, arg)
 
     def on_incomplete_file_received(self, file):
         # Abgebrochene Uploads (ABOR/Disconnect) hinterlassen sonst einen
@@ -189,6 +294,10 @@ class IFSFTPHandler(TLS_FTPHandler):
         try:
             super().close()
         finally:
+            try:
+                self._ifs_wait_finalizers()
+            except Exception:
+                logger.exception("Warten auf FTP-Finalisierungen fehlgeschlagen")
             if logged_in and username:
                 with session_scope() as db:
                     user = db.execute(
@@ -239,11 +348,23 @@ def build_handler() -> type[IFSFTPHandler]:
 
 
 def run_server() -> None:
+    global _finalize_pool
     settings = get_settings()
     if not settings.ftp_enabled:
         logger.info("FTPS ist deaktiviert (IFS_FTP_ENABLED=false)")
         return
     handler = build_handler()
+    workers = max(0, int(settings.ftp_finalize_workers or 0))
+    if workers > 0:
+        _finalize_pool = ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="ifs-ftp-finalize"
+        )
+        handler.finalize_pool = _finalize_pool
+        handler.finalize_slots = threading.BoundedSemaphore(workers * 2)
+        logger.info("FTPS: %s Finalisierungs-Worker aktiv", workers)
+    else:
+        handler.finalize_pool = None
+        handler.finalize_slots = None
     server = ThreadedFTPServer((settings.ftp_host, settings.ftp_port), handler)
     logger.info(
         "FTPS gestartet auf %s:%s (PASV %s, TLS erzwungen)",
@@ -255,3 +376,9 @@ def run_server() -> None:
         server.serve_forever()
     except KeyboardInterrupt:
         server.close_all()
+    finally:
+        if _finalize_pool is not None:
+            _finalize_pool.shutdown(wait=True)
+            _finalize_pool = None
+        handler.finalize_pool = None
+        handler.finalize_slots = None

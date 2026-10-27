@@ -247,6 +247,16 @@ Faustregel für den Speicherbedarf: `chunksize × concurrency` (Standard:
 16 MiB × 8 = 128 MiB Peak). Auf speicherknappen Hosts `chunksize`/`concurrency`
 reduzieren; auf leistungsfähigen Hosts z. B. 32 MiB × 8.
 
+Kleine Dateien werden nach dem `226` **asynchron** finalisiert: S3-PUT,
+DB-Eintrag und Audit laufen in `IFS_FTP_FINALIZE_WORKERS` Workern (Standard 2,
+`0` = synchron). Der nächste Transfer kann dadurch bereits starten. Vor
+Namespace-lesenden Kommandos (`LIST`, `NLST`, `MLSD`, `MLST`, `SIZE`, `MDTM`,
+`RETR`, `DELE`, `RNFR`/`RNTO`, `MKD`/`RMD`, `STAT`, `SITE`, `QUIT`) wartet der
+Server auf offene Finalisierungen; Read-after-Write bleibt damit korrekt.
+Reine Verbindungs-/Transfer-Setup-Kommandos (`TYPE`, `PASV`, `PORT`, `NOOP`, …)
+drainen bewusst nicht. Fehler werden geloggt und auditiert; das `226` sendet
+pyftpdlib – wie zuvor – vor der Finalisierung.
+
 ### 7.5 Richtwerte
 
 | Umgebung | `IFS_FTP_TRANSFER_BUFFER_BYTES` | `IFS_FTP_S3_READAHEAD_BYTES` | `IFS_S3_MAX_POOL_CONNECTIONS` |

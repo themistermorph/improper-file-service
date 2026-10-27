@@ -68,6 +68,23 @@ def session_scope() -> Iterator[Session]:
         session.close()
 
 
+@contextmanager
+def read_scope() -> Iterator[Session]:
+    """Session für Prüf-/Auflösungspfade ohne dauerhaften Commit.
+
+    Die Transaktion wird beim Verlassen zurückgerollt; etwaige Schreibversuche
+    (z. B. die transiente Root-Anlage beim allerersten Zugriff) werden bewusst
+    verworfen. Das spart pro Aufruf einen Commit-Roundtrip – relevant bei
+    vielen kleinen FTP-Dateien. Nicht für dauerhafte Änderungen verwenden.
+    """
+    session = get_session_factory()()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
+
+
 def create_all() -> None:
     # Modelle importieren, damit sie im Metadata registriert sind
     from . import models  # noqa: F401

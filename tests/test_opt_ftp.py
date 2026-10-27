@@ -169,7 +169,7 @@ def _tree_with_acl(viewer_username: str, perms: int) -> dict:
 def _fs_with_mapping(username: str, mapping: dict) -> IFSFilesystem:
     """IFSFilesystem, dessen Auflösung auf einen fremden Baum zeigt (wie F2-Test)."""
 
-    def _resolve(db, path):
+    def _resolve(db, path, user=None):
         entry_id = mapping.get(path)
         return db.get(Entry, entry_id) if entry_id else None
 

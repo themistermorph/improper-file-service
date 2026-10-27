@@ -236,14 +236,16 @@ def _existing_writable(
 
 def ensure_writable(
     db: Session, parent: Entry, name: str, owner_id: UUID, size: int
-) -> None:
+) -> Entry | None:
     """Vorabprüfung **vor** dem S3-Upload: Name, Zieltyp, Konflikt und Quota.
 
     Verhindert verwaiste Objekte im Objektspeicher, wenn ein Upload sonst erst
     nach dem Hochladen an einem absehbaren Fehler (Namenskonflikt, Quota)
     scheitern würde. Die eigentliche Prüfung erfolgt in ``apply_write`` erneut.
+    Liefert den bereits vorhandenen aktiven Eintrag (oder ``None``), damit
+    Aufrufer das ``replace``-Flag ohne zusätzliche Abfrage setzen können.
     """
-    _existing_writable(db, parent, name, owner_id, size)
+    return _existing_writable(db, parent, name, owner_id, size)
 
 
 def apply_write(

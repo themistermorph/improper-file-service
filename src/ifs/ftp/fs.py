@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from ..config import get_settings
 from ..core import audit, authz, content, namespace
-from ..db import session_scope
+from ..db import read_scope, session_scope
 from ..errors import IFSError
 from ..models import Entry, EntryType, User
 from ..utils import as_utc
@@ -359,9 +359,11 @@ class IFSFilesystem(AbstractedFS):
             raise FilesystemError("Unbekannter oder deaktivierter Benutzer")
         return user
 
-    def _resolve(self, db, path: str) -> Entry | None:
+    def _resolve(self, db, path: str, user: User | None = None) -> Entry | None:
         """Löst einen FTP-Pfad relativ zur Wurzel des eingeloggten Benutzers auf."""
-        root = namespace.ensure_root(db, self._user(db).id)
+        if user is None:
+            user = self._user(db)
+        root = namespace.ensure_root(db, user.id)
         return namespace.resolve_path(db, path, root)
 
     def _lookup(self, path: str) -> Entry | None:
@@ -696,9 +698,9 @@ class IFSFilesystem(AbstractedFS):
         if not name:
             raise FilesystemError("Ungültiger Dateiname")
 
-        with session_scope() as db:
+        with read_scope() as db:
             user = self._user(db)
-            parent = self._resolve(db, parent_path)
+            parent = self._resolve(db, parent_path, user)
             if parent is None or parent.type != EntryType.folder:
                 raise FilesystemError("Zielverzeichnis nicht gefunden")
             authz.authorize(db, user, "write", parent)
@@ -726,7 +728,7 @@ class IFSFilesystem(AbstractedFS):
 
                 with session_scope() as db:
                     user = self._user(db)
-                    entry = self._resolve(db, path)
+                    entry = self._resolve(db, path, user)
                     if entry is not None and entry.type == EntryType.file:
                         # Auch das Vorladen ist ein Lesezugriff: Ein
                         # write-only-Nutzer darf fremden Inhalt nicht in den
@@ -770,13 +772,27 @@ class IFSFilesystem(AbstractedFS):
 
     # --- Finalisierung / Aufräumen --------------------------------------
 
-    @_audited("upload.ftp")
-    def finalize_received(self, filename: str) -> None:
+    def take_pending(
+        self, filename: str
+    ) -> tuple[str, str, str, _UploadWriter] | None:
+        """Entfernt den Pending-Upload und liefert ``(path, parent, name, writer)``."""
         path = _norm(filename)
         info = self._pending.pop(path, None)
         if info is None:
-            return
+            return None
         parent_path, name, writer = info
+        return path, parent_path, name, writer
+
+    def finalize_received(self, filename: str) -> None:
+        """Synchroner Pfad (Tests/Fallback): Pending nehmen und finalisieren."""
+        info = self.take_pending(filename)
+        if info is not None:
+            self.finalize_taken(*info)
+
+    @_audited("upload.ftp")
+    def finalize_taken(
+        self, path: str, parent_path: str, name: str, writer: _UploadWriter
+    ) -> None:
         spool = writer._path
         # Inkrementeller Digest (nur bei sequenziellem STOR verfügbar); sonst
         # fällt store_blob auf den vollständigen Scan zurück.
@@ -784,7 +800,7 @@ class IFSFilesystem(AbstractedFS):
         try:
             with session_scope() as db:
                 user = self._user(db)
-                parent = self._resolve(db, parent_path)
+                parent = self._resolve(db, parent_path, user)
                 if parent is None:
                     raise FilesystemError("Zielverzeichnis nicht gefunden")
                 authz.authorize(db, user, "write", parent)
@@ -794,8 +810,7 @@ class IFSFilesystem(AbstractedFS):
                 limit = get_settings().max_upload_size
                 if limit and size > limit:
                     raise FilesystemError("Maximale Dateigröße überschritten")
-                existing = namespace.find_child(db, parent.id, name)
-                namespace.ensure_writable(db, parent, name, user.id, size)
+                existing = namespace.ensure_writable(db, parent, name, user.id, size)
                 blob = content.store_blob(db, spool, None, sha256=sha256)
                 entry = namespace.apply_write(db, parent, name, user.id, blob, None)
                 self._audit(

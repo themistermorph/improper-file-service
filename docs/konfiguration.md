@@ -165,6 +165,7 @@ IFS_S3_USE_SSL=true
 | `IFS_FTP_BANNER` | string | `IFS FTPS ready` | Begrüßungstext beim Verbinden. |
 | `IFS_FTP_TRANSFER_BUFFER_BYTES` | int | `262144` | Blockgröße des FTPS-Datenkanals (Socket-Puffer und Datei-Producer) in Bytes. Untergrenze 16 KiB. Größere Blöcke senken Syscall- und TLS-Overhead, kosten pro aktivem Transfer etwas RAM. |
 | `IFS_FTP_S3_READAHEAD_BYTES` | int | `4194304` | S3-Read-Ahead je Download in Bytes (Untergrenze 64 KiB). Innerhalb eines Bereichs wird das Objekt mit **einem** S3-Request gestreamt statt mit einem Request je 64-KiB-Block. |
+| `IFS_FTP_FINALIZE_WORKERS` | int | `2` | Parallele Worker für die Finalisierung kleiner FTP-Uploads (S3/DB) nach dem `226`. `0` = synchron. Vor lesenden Namespace-Kommandos (`LIST`, `RETR`, `SIZE`, …) wartet der Server auf offene Finalisierungen. |
 
 > **Durchsatz:** Die drei Werte `IFS_FTP_TRANSFER_BUFFER_BYTES`,
 > `IFS_FTP_S3_READAHEAD_BYTES` und `IFS_S3_MAX_POOL_CONNECTIONS` sollten zur

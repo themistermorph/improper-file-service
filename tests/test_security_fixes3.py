@@ -184,7 +184,7 @@ def test_s3_ftp_append_requires_read(monkeypatch):
     fs._pending = {}
 
     # Fremder Baum (z. B. via ACL freigegeben) wird hier gezielt aufgelöst.
-    def fake_resolve(db, path):
+    def fake_resolve(db, path, user=None):
         mapping = {"/docs": docs_id, "/docs/file.txt": file_id}
         entry_id = mapping.get(path)
         return db.get(Entry, entry_id) if entry_id else None

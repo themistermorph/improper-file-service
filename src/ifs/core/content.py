@@ -126,18 +126,34 @@ def upload_file(local_path: str, sha256: str, mime: str | None = None) -> BlobIn
     storage_key = f"cas/{sha256[:2]}/{sha256}"
     size = os.path.getsize(local_path)
     mib = 1024 * 1024
-    transfer_config = TransferConfig(
-        multipart_threshold=max(1, settings.s3_multipart_threshold_mb) * mib,
-        multipart_chunksize=max(1, settings.s3_multipart_chunksize_mb) * mib,
-        max_concurrency=max(1, settings.s3_transfer_concurrency),
-    )
-    get_s3_client().upload_file(
-        local_path,
-        settings.s3_bucket,
-        storage_key,
-        ExtraArgs=_extra_args(mime),
-        Config=transfer_config,
-    )
+    threshold = max(1, settings.s3_multipart_threshold_mb) * mib
+    extra_args = _extra_args(mime)
+    client = get_s3_client()
+    if size < threshold:
+        # Kleine Objekte: direkter PUT statt TransferManager. Der Manager
+        # erzeugt für jeden Upload einen Thread-Pool/Future und kostet bei
+        # Kleindateien mehr Zeit als der eigentliche S3-Request.
+        with open(local_path, "rb") as handle:
+            client.put_object(
+                Bucket=settings.s3_bucket,
+                Key=storage_key,
+                Body=handle,
+                ContentLength=size,
+                **extra_args,
+            )
+    else:
+        transfer_config = TransferConfig(
+            multipart_threshold=threshold,
+            multipart_chunksize=max(1, settings.s3_multipart_chunksize_mb) * mib,
+            max_concurrency=max(1, settings.s3_transfer_concurrency),
+        )
+        client.upload_file(
+            local_path,
+            settings.s3_bucket,
+            storage_key,
+            ExtraArgs=extra_args,
+            Config=transfer_config,
+        )
     return BlobInfo(storage_key=storage_key, sha256=sha256, size=size)
 
 
