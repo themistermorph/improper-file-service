@@ -493,3 +493,37 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 - **R7 – Kein pip-Cache im Release-Build.**
 - **R8 – Secret-Scan:** Die CI enthält einen Gitleaks-Secret-Scan (für öffentliche
   Repos; private benötigen eine Lizenz).
+
+---
+
+## 20. Verifikationsnachweise (0.1.7)
+
+Für 0.1.7 wurden SQL-Injection und RCE zusätzlich systematisch geprüft; die
+Nachweise sind als Regressionssuiten im Repo verankert.
+
+**SQL-Injection** (`tests/test_security_sql_injection.py`):
+
+- Payloads: `' OR '1'='1`, `'; DROP TABLE …; --`, `UNION SELECT …`,
+  `pg_sleep(3)`, `%`/`_`/`\`, `admin'--` u. a.
+- Flächen: Login, Benutzer-/Galerie-Suche, Eintragsnamen, Published-Suffix,
+  Audit-Filter, UUID-/Share-/Preview-Pfade, Pagination.
+- Ergebnis: alle Werte werden über SQLAlchemy/psycopg als **gebundene Parameter**
+  übergeben; keine OR-/Union-Treffer, kein Zeitverzug, keine 5xx-/SQL-Fehlerlecks.
+  Live-Canary auf PostgreSQL: Tabellen/Sentinel intakt.
+
+**RCE** (`tests/test_security_rce.py`):
+
+- **AST-Guard** über `src/ifs`: verbietet `eval`/`exec`/`compile` (Builtin),
+  `subprocess`/`os.system`/`popen`/`pty`/`exec*`/`spawn*`, `pickle`/`marshal`/
+  `yaml`/`ctypes`, `importlib`/`__import__`, Server-Templates sowie
+  `tarfile`/`unpack_archive`/`extract*`. `re.compile` und `getattr` mit literalem
+  Attribut sind eng allowlistet.
+- **Marker-Payloads**: Shell, Python-Eval, `{{7*7}}`, Jinja-`cycler…popen`,
+  Shell-Inhalt, ZIP-Einträge und FTP-Uploads bleiben Daten; `api`/`ftp`/`worker`
+  und Host enthalten **keine Markerdatei**.
+- **Keine Archive-Extraktion**, keine ausführbaren Upload-Verzeichnisse;
+  statische Web-Auslieferung getrennt von S3/FTP-Spools.
+
+**Grenzen:** Die Nachweise betreffen den **Anwendungscode**. Dependency-/CVE-Scans
+und Container-Härtung (non-root, `cap_drop`, `no-new-privileges`, ggf. `read_only`)
+bleiben separate Aufgaben; das aktuelle Image läuft als root im Container.

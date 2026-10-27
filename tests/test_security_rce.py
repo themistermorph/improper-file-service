@@ -177,8 +177,8 @@ def test_marker_payloads_stay_data(monkeypatch, tmp_path):
         for payload in payloads:
             response = _folder(client, admin, payload)
             assert response.status_code == 201, (payload, response.text)
+            # Gleichheit beweist auch für {{7*7}}, dass kein Template gerendert wurde.
             assert response.json()["name"] == payload
-            assert "49" not in response.json()["name"]
 
         # Datei mit Payload-Namen + Shell-Inhalt; Download liefert exakt die Daten.
         file_name = payloads[3]

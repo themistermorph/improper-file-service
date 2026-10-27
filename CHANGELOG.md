@@ -6,6 +6,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.1.7] – 2026-10-27
+
+Schwerpunkt: Vanity-Links für Veröffentlichungen, schnellere FTPS-/S3-Uploads
+(inkl. Kleindateien), Sicherheits-Regressionsnachweise (SQL-Injection/RCE) und
+UI-Korrekturen.
+
 ### Performance
 - **FTP-Upload:** Der SHA-256 wird beim sequenziellen `STOR` **inkrementell
   während des Schreibens** berechnet und an `store_blob` übergeben; der bisherige
@@ -52,6 +58,31 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   aktiven Dateien angezeigt (statt „ZIP“). Zeitstempel werden in beiden Web-Seiten
   explizit als **`DD.MM.YYYY, HH:MM:SS`** statt im US-Format (`MM/DD/YYYY`)
   dargestellt.
+- **Monitor:** Netzwerk-Raten unter 1024 B/s werden gerundet dargestellt (kein „0.0“).
+
+### Security
+- **SQL-Injection-Regressionssuite** (`tests/test_security_sql_injection.py`):
+  destruktive, Union-, Zeit- und Wildcard-Payloads über Login, Benutzer-/Galerie-Suche,
+  Eintragsnamen, Published-Suffix, Audit-Filter, UUID-/Token-Pfade und Pagination.
+  Alle Werte gehen als gebundene Parameter über SQLAlchemy/psycopg; der Live-Canary
+  auf PostgreSQL bestätigt: keine OR-/Union-Treffer, kein `pg_sleep`, Tabellen intakt.
+- **RCE-Regressionssuite** (`tests/test_security_rce.py`): AST-Guard verbietet
+  `eval`/`exec`/`subprocess`/`pickle`/`yaml`/`importlib`/Template-/Extract-Sinks;
+  Shell-, Python-, Template-/Jinja-, ZIP- und FTP-Marker-Payloads bleiben Daten.
+  Live-Canary: keine Markerdatei in `api`/`ftp`/`worker` oder auf dem Host.
+- **Grenzen:** Dependency-/Container-Härtung (non-root, `cap_drop`,
+  `no-new-privileges`) und CVE-Scans bleiben separate Aufgaben; die Nachweise
+  betreffen den Anwendungscode. Details: `docs/sicherheit.md` §20.
+
+### Tests
+- **348 Tests** (ruff + `pytest -n auto` grün). Neue/erweiterte Suiten für
+  SQL-Injection, RCE, Vanity-Links, FTP-Finalisierung/Autorisierung, S3-Transfer,
+  Published-Ordnergröße und Zeitformat; Live-Canaries für PostgreSQL und FTPS.
+
+### Documentation
+- API-Referenz (Vanity-Links, Ordnergröße), FTPS-/Throughput-Handbuch,
+  Datenmodell, Installation/Betrieb (Migration `0010`), Sicherheit (V7/§20),
+  Tutorial 11 sowie README/RELEASING auf `0.1.7` aktualisiert.
 
 ## [0.1.6] – 2026-10-04
 
@@ -270,7 +301,10 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Login-Rate-Limit ist pro Prozess (In-Memory); für den vorgesehenen Maßstab
   (eine API-Instanz) ausgelegt.
 
-[Unreleased]: https://github.com/themistermorph/inproper-file-service/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/themistermorph/inproper-file-service/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.7
+[0.1.6]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.6
+[0.1.5]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.5
 [0.1.4]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.4
 [0.1.3]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.3
 [0.1.2]: https://github.com/themistermorph/inproper-file-service/releases/tag/v0.1.2
