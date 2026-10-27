@@ -22,9 +22,10 @@ from sqlalchemy import select
 from ..config import get_settings
 from ..core import audit, authz, content, namespace
 from ..db import read_scope, session_scope
-from ..errors import IFSError
+from ..errors import Conflict, IFSError
 from ..models import Entry, EntryType, User
 from ..utils import as_utc
+from . import context as ftp_context
 
 _FALLBACK_READAHEAD = 4 * 1024 * 1024
 # Kleinstes sinnvolles Read-Ahead. Kleinere Werte würden wieder pro Block einen
@@ -698,6 +699,10 @@ class IFSFilesystem(AbstractedFS):
         if not name:
             raise FilesystemError("Ungültiger Dateiname")
 
+        cached = ftp_context.take(path)
+        if cached is not None:
+            return self._open_writer_cached(cached, path, mode)
+
         with read_scope() as db:
             user = self._user(db)
             parent = self._resolve(db, parent_path, user)
@@ -762,6 +767,70 @@ class IFSFilesystem(AbstractedFS):
         # abgebrochen protokolliert (und der Spool verworfen).
         self.discard_pending(path)
         self._pending[path] = (parent_path, name, writer)
+        return writer
+
+    def _open_writer_cached(
+        self, target: ftp_context.WriteTarget, path: str, mode: str
+    ):
+        """Schneller STOR/APPE-Pfad: Autorisierung und Vorprüfung sind bereits erfolgt.
+
+        ``has_perm`` hat Parent und Ziel in einer Read-Only-Session aufgelöst und
+        autorisiert. Hier bleiben nur die reine Namens-/Konfliktprüfung und – bei
+        APPE/REST – das Vorladen des bestehenden Inhalts.
+        """
+        try:
+            namespace.validate_name(target.name)
+            if target.existing_is_folder:
+                raise Conflict(f"'{target.name}' ist ein Verzeichnis")
+        except IFSError as exc:
+            raise _as_fs_error(exc) from exc
+
+        writer = _UploadWriter(
+            content.new_spool_path(),
+            path,
+            limit=get_settings().max_upload_size,
+            track_digest=not mode.startswith(("a", "r+")),
+        )
+
+        if mode.startswith(("a", "r+")):
+            try:
+                from ..models import Blob, Version
+
+                with session_scope() as db:
+                    user = db.get(User, target.user_id)
+                    if user is None or not user.is_active:
+                        raise FilesystemError("Unbekannter oder deaktivierter Benutzer")
+                    entry = (
+                        db.get(Entry, target.existing_id)
+                        if target.existing_id is not None
+                        else None
+                    )
+                    if entry is not None and entry.trashed_at is not None:
+                        entry = None
+                    if entry is not None and entry.type == EntryType.file:
+                        authz.authorize(db, user, "read", entry)
+                        version = (
+                            db.get(Version, entry.current_version_id)
+                            if entry.current_version_id
+                            else None
+                        )
+                        blob = db.get(Blob, version.blob_id) if version else None
+                        if blob is not None:
+                            self._preload(blob.storage_key, writer._path)
+                        if mode.startswith("a"):
+                            writer._handle.close()
+                            writer._handle = open(writer._path, "ab")
+                        writer.sync_size()
+                    elif mode.startswith("r+"):
+                        writer.close()
+                        raise FilesystemError("REST auf nicht vorhandene Datei")
+            except Exception:
+                writer.close()
+                content.remove_spool(writer._path)
+                raise
+
+        self.discard_pending(path)
+        self._pending[path] = (target.parent_path, target.name, writer)
         return writer
 
     @staticmethod

@@ -19,11 +19,12 @@ except ImportError:  # pragma: no cover - pyftpdlib 1.x
     from pyftpdlib.handlers import FileProducer
 
 from ..config import get_settings
-from ..core import audit, authz, namespace, ratelimit
+from ..core import audit, authz, namespace, quota, ratelimit
 from ..db import read_scope, session_scope
-from ..models import User
+from ..models import EntryType, User
 from ..security import verify_password_safe
 from ..utils import utcnow
+from . import context as ftp_context
 from .fs import IFSFilesystem, _norm
 
 logger = logging.getLogger("ifs.ftp")
@@ -88,6 +89,40 @@ def _nearest_entry(db, user, path: str):
         if current == "/":
             return root
         current = posixpath.dirname(current) or "/"
+
+
+def _write_target(db, user, fs_path: str) -> ftp_context.WriteTarget | None:
+    """Löst Parent und Ziel eines STOR/APPE in einer Session auf und autorisiert beide.
+
+    Damit bleibt die bisherige Semantik erhalten (``has_perm`` prüfte das Ziel,
+    ``_open_writer`` den Parent); die zweite Session entfällt. Bei aktiver Quota
+    wird bewusst der klassische Pfad genutzt, damit die Vorabprüfung vor dem
+    Spool-Anlegen vollständig bleibt.
+    """
+    if quota.limit_bytes() > 0:
+        return None
+    parent_path = posixpath.dirname(fs_path) or "/"
+    name = posixpath.basename(fs_path)
+    if not name:
+        return None
+    root = namespace.ensure_root(db, user.id)
+    parent = namespace.resolve_path(db, parent_path, root)
+    if parent is None or parent.type != EntryType.folder:
+        return None
+    if not authz.can(db, user, "write", parent):
+        return None
+    existing = namespace.find_child(db, parent.id, name)
+    if existing is not None and not authz.can(db, user, "write", existing):
+        return None
+    return ftp_context.WriteTarget(
+        path=fs_path,
+        user_id=user.id,
+        parent_id=parent.id,
+        parent_path=parent_path,
+        name=name,
+        existing_id=existing.id if existing is not None else None,
+        existing_is_folder=existing is not None and existing.type == EntryType.folder,
+    )
 
 
 class IFSAuthorizer(DummyAuthorizer):
@@ -177,6 +212,15 @@ class IFSAuthorizer(DummyAuthorizer):
             ).scalars().first()
             if user is None or not user.is_active:
                 return False
+            cmd = getattr(ftp_context.ctx, "cmd", None)
+            fs_path = getattr(ftp_context.ctx, "fs_path", None)
+            if cmd in ("STOR", "APPE") and perm == "w" and fs_path:
+                target = _write_target(db, user, fs_path)
+                if target is not None:
+                    ftp_context.ctx.target = target
+                    return True
+                # Kein Cache (z. B. Quota aktiv, Parent fehlt): klassischer Pfad.
+                ftp_context.ctx.target = None
             entry = _nearest_entry(db, user, path)
             return authz.can(db, user, action, entry)
 
@@ -274,9 +318,20 @@ class IFSFTPHandler(TLS_FTPHandler):
                 logger.exception("Finalisieren des FTP-Uploads fehlgeschlagen")
 
     def pre_process_command(self, line, cmd, arg):
-        if self.finalize_pool is not None and cmd.upper() in _DRAIN_COMMANDS:
-            self._ifs_wait_finalizers()
-        return super().pre_process_command(line, cmd, arg)
+        ftp_context.clear()
+        upper = cmd.upper()
+        if upper in ("STOR", "APPE"):
+            ftp_context.ctx.cmd = upper
+            try:
+                ftp_context.ctx.fs_path = self.fs.ftp2fs(arg)
+            except Exception:
+                ftp_context.ctx.fs_path = None
+        try:
+            if self.finalize_pool is not None and upper in _DRAIN_COMMANDS:
+                self._ifs_wait_finalizers()
+            return super().pre_process_command(line, cmd, arg)
+        finally:
+            ftp_context.clear()
 
     def on_incomplete_file_received(self, file):
         # Abgebrochene Uploads (ABOR/Disconnect) hinterlassen sonst einen

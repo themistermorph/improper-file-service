@@ -257,6 +257,12 @@ Reine Verbindungs-/Transfer-Setup-Kommandos (`TYPE`, `PASV`, `PORT`, `NOOP`, …
 drainen bewusst nicht. Fehler werden geloggt und auditiert; das `226` sendet
 pyftpdlib – wie zuvor – vor der Finalisierung.
 
+Für `STOR`/`APPE` löst die Berechtigungsprüfung (`has_perm`) Parent und Ziel in
+**einer** Read-Only-Session auf und autorisiert beide; der Dateiöffner übernimmt
+das Ergebnis ohne zweite DB-Session. Die Prüfsemantik bleibt unverändert
+(Parent- und Zielrecht). Bei aktiver Quota läuft weiterhin der klassische Pfad
+mit vollständiger Vorabprüfung vor dem Spool-Anlegen.
+
 ### 7.5 Richtwerte
 
 | Umgebung | `IFS_FTP_TRANSFER_BUFFER_BYTES` | `IFS_FTP_S3_READAHEAD_BYTES` | `IFS_S3_MAX_POOL_CONNECTIONS` |
