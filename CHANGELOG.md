@@ -21,6 +21,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   finalisiert S3/DB nach dem `226` im Hintergrund, sodass der nächste Transfer
   parallel laufen kann. Vor lesenden Namespace-Kommandos wird gedrained
   (Read-after-Write); `0` schaltet auf das synchrone Verhalten zurück.
+- **STOR/APPE-Autorisierung:** `has_perm` löst Parent und Ziel in einer
+  Read-Only-Session auf und autorisiert **beide**; `_open_writer` übernimmt den
+  Kontext ohne zweite DB-Session. Die Prüfsemantik bleibt unverändert; bei
+  aktiver Quota läuft weiterhin der klassische Pfad mit Vorabprüfung.
 
 ### Added
 - **FTPS-Aktionen im Audit-Log:** FTPES-Operationen werden jetzt mit `protocol="ftps"`
@@ -30,6 +34,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   (`upload.ftp`, `transfer.download`), Metadaten (`entry.update`, `entry.chmod`) sowie
   abgebrochene Uploads (`upload.aborted`). Abgelehnte Operationen erhalten
   `result="denied"`. Audit-Einträge des FTP-Logins setzen zusätzlich `last_login_at`.
+
+### Fixed
+- **nginx-Reverse-Proxy / Uploads:** nginx begrenzt Request-Bodies standardmäßig auf
+  1 MB (`client_max_body_size`) und antwortet bei größeren Uploads mit `413`, bevor die
+  API sie sieht – die Web-UI überträgt in 8-MiB-Chunks. Beispielkonfiguration
+  (`deploy/nginx-ifs.conf.example`) sowie Hinweise in Konfigurations- und
+  Troubleshooting-Doku ergänzt.
 
 ## [0.1.6] – 2026-10-04
 

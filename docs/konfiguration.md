@@ -129,6 +129,12 @@ IFS_S3_USE_SSL=true
 > **Hinweis hinter einem Reverse-Proxy:** Ohne gesetztes `IFS_TRUSTED_PROXIES` sehen alle
 > Clients wie ein einziger aus (die Proxy-IP). Login-Sperre und Rate-Limits wirken dann
 > global statt pro Client – die Proxy-Netze (z. B. `172.16.0.0/12`) deshalb eintragen.
+>
+> **nginx und Uploads:** nginx begrenzt Request-Bodies standardmäßig auf **1 MB**
+> (`client_max_body_size`) und antwortet bei größeren Uploads mit `413`, bevor die API
+> prüft. Für Uploads mindestens die Chunk-Größe der Web-UI (8 MiB) oder `0`
+> (unbegrenzt) setzen; siehe
+> [Produktiv-Deployment](../tutorials/09-produktiv-deployment.md#alternative-https-über-nginx).
 
 | Variable | Typ | Standard | Beschreibung |
 |---|---|---|---|

@@ -106,6 +106,49 @@ files.example.org {
 
 Caddy besorgt automatisch ein Let's-Encrypt-Zertifikat.
 
+### Alternative: HTTPS über nginx
+
+Bei nginx ist besonders `client_max_body_size` wichtig: Der Standardwert ist **1 MB**,
+die Web-UI lädt aber in **8-MiB-Chunks** – ohne Anpassung antwortet nginx mit
+`413 Request Entity Too Large`, bevor die API den Upload sieht.
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name files.example.org;
+
+    ssl_certificate     /etc/letsencrypt/live/files.example.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/files.example.org/privkey.pem;
+
+    # 0 = kein nginx-Limit; die API begrenzt über IFS_MAX_UPLOAD_SIZE.
+    client_max_body_size 0;
+    client_body_timeout 3600s;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Uploads streamen statt puffern (große Dateien).
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+Danach `sudo nginx -t && sudo systemctl reload nginx`. Außerdem die Proxy-Adresse in
+`IFS_TRUSTED_PROXIES` eintragen (siehe [Konfiguration](../docs/konfiguration.md)),
+damit Client-IP und HTTPS-Erkennung korrekt funktionieren.
+
+Eine vollständige Vorlage liegt unter
+[`deploy/nginx-ifs.conf.example`](../deploy/nginx-ifs.conf.example).
+
 ---
 
 ## 5. FTPS-Zertifikat

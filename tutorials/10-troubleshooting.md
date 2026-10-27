@@ -28,10 +28,28 @@ Im Log steht meist die konkrete Ursache (Konfiguration, DB-/S3-Verbindung).
 | `403 Forbidden` | fehlendes Recht | ACL/Besitz prüfen; [Tutorial 5](05-benutzer-gruppen-rechte.md) |
 | `404 Not Found` | Eintrag gelöscht/nie existiert | Pfad/ID prüfen; Soft-Delete nach 30 Tagen endgültig |
 | `409 Conflict` | Name existiert oder Upload-Offset falsch | anderen Namen wählen; Offset per `HEAD` lesen |
-| `413 Payload Too Large` | `IFS_MAX_UPLOAD_SIZE` überschritten | Limit erhöhen oder Datei verkleinern |
+| `413 Payload Too Large` (JSON `{"code": "…"}`) | `IFS_MAX_UPLOAD_SIZE`/Quota überschritten | Limit erhöhen oder Datei verkleinern |
+| `413 Request Entity Too Large` (nginx-HTML-Seite) | nginx-`client_max_body_size` (Standard 1 MB) | in nginx `client_max_body_size 0;` setzen (siehe unten) |
 | `416 Range Not Satisfiable` | Range außerhalb der Datei | Größe per `HEAD` ermitteln, `Content-Range` beachten |
 | `500 Blob fehlt` | Metadaten vorhanden, Blob in S3 fehlt | Restore aus Backup; S3-Zugriff/Bucket prüfen |
 | `503`/Verbindungsfehler | api down oder DB nicht erreichbar | `docker compose ps`, DB-Logs prüfen |
+
+### `413` bei Uploads über nginx
+
+Kommt die Antwort bereits von nginx (HTML-Seite statt JSON), greift
+`client_max_body_size` – Standard **1 MB**. Die Web-UI überträgt in 8-MiB-Chunks,
+daher schlägt sonst jeder größere Upload fehl. In der nginx-Server-Config:
+
+```nginx
+client_max_body_size 0;          # 0 = unbegrenzt, oder z. B. 10g
+client_body_timeout 3600s;
+proxy_request_buffering off;     # Uploads direkt an die API streamen
+proxy_send_timeout 3600s;
+proxy_read_timeout 3600s;
+```
+
+Danach `sudo nginx -t && sudo systemctl reload nginx`. Vollständige Vorlage:
+[`deploy/nginx-ifs.conf.example`](../deploy/nginx-ifs.conf.example).
 
 ### Token manuell prüfen
 

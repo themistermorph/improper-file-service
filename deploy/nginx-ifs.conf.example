@@ -1,0 +1,58 @@
+# Beispielkonfiguration für IFS hinter nginx (TLS-Terminierung)
+#
+# Ablage z. B. unter /etc/nginx/conf.d/ifs.conf und danach:
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Wichtig:
+# - nginx begrenzt Request-Bodies standardmäßig auf 1 MB (client_max_body_size).
+#   Die Web-UI lädt in 8-MiB-Chunks; ohne Anpassung antwortet nginx mit 413,
+#   bevor die API den Upload überhaupt sieht.
+# - Die tatsächliche Obergrenze für Dateien setzt IFS über IFS_MAX_UPLOAD_SIZE
+#   (0 = unbegrenzt). nginx kann zusätzlich eine harte Grenze vorgeben.
+
+# HTTP -> HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name files.example.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name files.example.org;
+
+    ssl_certificate     /etc/letsencrypt/live/files.example.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/files.example.org/privkey.pem;
+
+    # Kein nginx-Limit (0) oder bewusst großzügig, z. B. 10g.
+    client_max_body_size 0;
+
+    # Große Uploads nicht künstlich abbrechen.
+    client_body_timeout 3600s;
+    client_body_buffer_size 1m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        # Client-IP und HTTPS-Schema an die API weiterreichen.
+        # IFS_TRUSTED_PROXIES muss die Proxy-Adresse enthalten (z. B.
+        # 172.16.0.0/12 bzw. das LAN-Netz des nginx).
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Uploads direkt an die API streamen statt komplett zu puffern.
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+
+        # Lange Transfers großer Dateien erlauben.
+        proxy_connect_timeout 60s;
+        proxy_send_timeout    3600s;
+        proxy_read_timeout    3600s;
+    }
+}
