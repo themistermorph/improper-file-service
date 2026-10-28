@@ -184,7 +184,9 @@ docker compose up -d
 
 | Engpass | Maßnahme |
 |---|---|
-| Viele gleichzeitige HTTP-Transfers | `api`-Instanzen hinter dem Ingress vervielfachen |
+| Viele gleichzeitige HTTP-Transfers | `api`-Instanzen hinter dem Ingress vervielfachen; DB-Verbindungen werden bei Downloads vor dem Stream freigegeben |
+| Geringer HTTP-Download-Durchsatz bei großen Dateien | `IFS_HTTP_DOWNLOAD_PARALLELISM` und `IFS_HTTP_STREAM_CHUNK_BYTES` prüfen (siehe [HTTP-Transfers](http-transfers.md#2-download)) |
+| Langsame große HTTP-Uploads | `IFS_HTTP_UPLOAD_PART_BYTES`/`IFS_HTTP_UPLOAD_PARALLELISM` und S3-Schreibrate prüfen (siehe [HTTP-Transfers](http-transfers.md#3-upload)) |
 | Viele FTPS-Sitzungen | `ftp` replizieren; Passive-Range je Instanz oder via L4-LB |
 | Geringer FTPS-Durchsatz bei großen Dateien | `IFS_FTP_S3_READAHEAD_BYTES` und `IFS_FTP_TRANSFER_BUFFER_BYTES` prüfen (siehe [FTPS-Handbuch](ftps.md#7-durchsatz-und-tuning)) |
 | Parallele Transfers serialisieren sich | `IFS_S3_MAX_POOL_CONNECTIONS` erhöhen |
@@ -195,6 +197,26 @@ docker compose up -d
 Da alle Rollen zustandslos sind, genügt für horizontale Skalierung im Wesentlichen die
 Erhöhung der Replikate. Der Übergang zu Kubernetes ist vorgesehen, aber nicht
 Voraussetzung.
+
+### HTTP-Transfers
+
+- **Downloads** laufen in der Web-UI über ein kurzlebiges Ticket und werden vom
+  Browser nativ auf die Platte gestreamt. Der Server liest S3 optional mit
+  mehreren Range-Requests parallel (`IFS_HTTP_DOWNLOAD_PARALLELISM`, Default 4)
+  und gibt die Fenster in Dateireihenfolge aus. Die DB-Verbindung wird vor dem
+  Stream freigegeben.
+- **Uploads** großer Dateien laufen als parallele Parts
+  (`IFS_HTTP_UPLOAD_PART_BYTES`, Default 16 MiB; `IFS_HTTP_UPLOAD_PARALLELISM`,
+  Default 4). Die Finalisierung liest die Parts ohne zusätzliche Vollkopie nach
+  S3. Der Spool muss die größte gleichzeitig laufende Datei aufnehmen können.
+- **Dimensionierung:** Für `n` gleichzeitige Downloads bei Parallelität `p`
+  sollten mindestens `n × p` S3-Pool-Verbindungen verfügbar sein
+  (`IFS_S3_MAX_POOL_CONNECTIONS`, Default 32). Speicher pro Download ≈
+  `IFS_HTTP_STREAM_CHUNK_BYTES × p` (Default 16 MiB).
+- **Grenze:** Die HTTP-Rate kann nie über der S3-Schreibrate liegen. Auf dem
+  Testsystem limitiert SeaweedFS beim Schreiben bei ~22–28 MB/s; der Download
+  profitiert dagegen deutlich vom Parallel-Prefetch. Messwerte und
+  Troubleshooting: [HTTP-Transfers](http-transfers.md).
 
 ---
 

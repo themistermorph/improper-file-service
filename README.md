@@ -33,8 +33,11 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 
 - **HTTP(S)**: Login (JWT), Verzeichnisse/Dateien auflisten, anlegen, umbenennen,
   verschieben, kopieren, löschen
-- **Download**: `GET`/`HEAD` mit `Range`-Support (resumable, `206`), ETag, Streaming
-- **Upload**: einfacher `PUT` und resumable Session (tus-ähnlich) über `POST`/`PATCH`
+- **Download**: `GET`/`HEAD` mit `Range`-Support (resumable, `206`), ETag, Streaming;
+  Web-UI lädt große Dateien über ein kurzlebiges Ticket nativ auf die Platte
+  (kein RAM-Blob), serverseitig optional paralleles S3-Prefetch
+- **Upload**: einfacher `PUT` und resumable Session (tus-ähnlich) über `POST`/`PATCH`;
+  große Dateien zusätzlich parallel in Parts (`PUT /api/uploads/{id}/parts/{n}`)
 - **FTPS**: explizites TLS, Login gegen denselben Benutzer-/Rechtebestand,
   `LIST`/`NLST`/`MLSD`, `RETR` (resumable per `REST`), `STOR`/`APPE`, `MKD`/`RMD`/`DELE`/`RNFR`
 - **Rechte**: zentrales Autorisierungsmodul (PDP), Vererbung entlang des Baums,
@@ -152,6 +155,11 @@ Die wichtigsten:
 | `IFS_S3_SSE` | Serverseitige Verschlüsselung | `AES256` |
 | `IFS_UPLOAD_SPOOL_DIR` | Temp-Verzeichnis für Uploads | `/var/lib/ifs/spool` |
 | `IFS_MAX_UPLOAD_SIZE` | Max. Dateigröße in Bytes (0 = ∞) | `0` |
+| `IFS_HTTP_STREAM_CHUNK_BYTES` | Blockgröße HTTP-Streaming (Min. 64 KiB) | `4194304` |
+| `IFS_HTTP_DOWNLOAD_PARALLELISM` | Parallele S3-Range-Streams je Download | `4` |
+| `IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS` | Gültigkeit des Download-Tickets | `3600` |
+| `IFS_HTTP_UPLOAD_PART_BYTES` | Part-Größe paralleler HTTP-Uploads | `16777216` |
+| `IFS_HTTP_UPLOAD_PARALLELISM` | Parallele Parts je Upload | `4` |
 | `IFS_SHARE_UPLOAD_MAX_SIZE` | Max. Größe öffentlicher Drop-Link-Uploads (0 = ∞) | `104857600` |
 | `IFS_SHARE_UPLOAD_MAX_REQUESTS` | Rate-Limit öffentliche Share-Uploads (pro Freigabe+IP) | `60` |
 | `IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS` | Rate-Limit anonymer Galerie-Downloads (pro Eintrag+IP) | `120` |
@@ -184,9 +192,12 @@ POST   /api/trash/bulk/purge           mehrere endgültig löschen
 DELETE /api/trash/{id}                 endgültig löschen
 DELETE /api/trash                      Papierkorb leeren
 GET    /api/entries/{id}/content       Download (Range → 206)
+POST   /api/entries/{id}/download-token  Ticket für nativen Browser-Download
+GET    /api/download/{token}           Download über Ticket (Range-fähig)
 PUT    /api/uploads/simple             einfacher Upload
-POST   /api/uploads                    Upload-Session eröffnen (resumable)
+POST   /api/uploads                    Upload-Session eröffnen (resumable/parallel)
 PATCH  /api/uploads/{id}               Chunk anhängen (Header Upload-Offset)
+PUT    /api/uploads/{id}/parts/{n}     Parallelen Part senden
 POST   /api/uploads/{id}/complete      abschließen
 POST   /api/archive/jobs               ZIP-Erstellung starten (Fortschritt)
 GET    /api/archive/jobs/{token}       ZIP-Fortschritt abfragen
@@ -295,8 +306,9 @@ alembic upgrade head
 
 ## Bewusste MVP-Einschränkungen
 
-- Resumable Uploads spoolen lokal (Temp-Datei) und laden erst beim Abschluss nach S3.
-  Für sehr große Dateien ist der direkte S3-Multipart-Upload der nächste Ausbau.
+- Resumable Uploads spoolen lokal (Temp-/Part-Dateien) und laden erst beim Abschluss nach S3.
+  Große Dateien werden dabei parallel in Parts übertragen; ein direkter S3-Multipart-Upload
+  schon während des Empfangs bleibt der nächste Ausbau (CAS-Schlüssel erst nach SHA-256).
 - `STOU` (Store Unique) wird nicht unterstützt.
 - Es gibt noch keinen WebDAV-Endpunkt. Versionierungs- und Papierkorb-UI sind vorhanden.
 - Der Core ist synchron; die Streaming-Endpunkte laufen als synchrone Aufrufe im

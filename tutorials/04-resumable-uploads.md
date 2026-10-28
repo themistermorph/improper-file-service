@@ -13,7 +13,8 @@ Der resumable Upload ist an das **tus**-Protokoll angelehnt:
 ```
 POST /api/uploads                 → Session anlegen, Offset 0
 PATCH /api/uploads/{id}           → Chunk anhängen (Header Upload-Offset)
-HEAD  /api/uploads/{id}           → aktuellen Offset abfragen
+PUT  /api/uploads/{id}/parts/{n}  → Part parallel senden (Part-Session)
+HEAD  /api/uploads/{id}           → Offset/Parts abfragen
 POST  /api/uploads/{id}/complete  → abschließen (Blob + Version anlegen)
 DELETE /api/uploads/{id}          → abbrechen
 ```
@@ -21,6 +22,11 @@ DELETE /api/uploads/{id}          → abbrechen
 Der Server prüft bei jedem `PATCH`, dass der `Upload-Offset` exakt dem erwarteten Offset
 entspricht (sonst `409`). Empfangene Chunks werden im Spool-Verzeichnis
 (`IFS_UPLOAD_SPOOL_DIR`) gesammelt und erst bei `complete` nach S3 übertragen.
+
+Für große Dateien gibt es zusätzlich **Part-Sessions**: Die Web-UI überträgt ab
+8 MiB standardmäßig 4 Parts à 16 MiB parallel und out-of-order. Jeder Part wird
+atomar gespeichert, ein Retry ist idempotent. Details in
+[HTTP-Transfers](../docs/http-transfers.md#32-paralleler-part-upload).
 
 ---
 
@@ -142,7 +148,58 @@ with httpx.Client(base_url=HOST, headers=headers, timeout=None) as client:
 
 ---
 
-## 5. Mit Prüfsumme absichern
+## 5. Variante C – Parallele Parts (für große Dateien)
+
+Die Web-UI nutzt diesen Weg automatisch. Für Skripte:
+
+```python
+import concurrent.futures
+import httpx
+
+HOST = "http://localhost:8000"
+TOKEN = "<bearer-token>"
+FOLDER_ID = "<ordner-uuid>"
+PATH = "big.bin"
+SIZE = __import__("os").path.getsize(PATH)
+headers = {"Authorization": f"Bearer {TOKEN}"}
+
+with httpx.Client(base_url=HOST, headers=headers, timeout=None) as client:
+    session = client.post("/api/uploads", json={
+        "parent_id": FOLDER_ID, "name": "big.bin",
+        "size": SIZE, "parallel": True,
+    }).json()
+    upload_id = session["id"]
+    part_size = session["part_size"]
+    parts = (SIZE + part_size - 1) // part_size
+
+    def put_part(number: int) -> None:
+        start = (number - 1) * part_size
+        with open(PATH, "rb") as handle:
+            handle.seek(start)
+            data = handle.read(part_size)
+        response = client.put(
+            f"/api/uploads/{upload_id}/parts/{number}",
+            content=data,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        response.raise_for_status()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(put_part, range(1, parts + 1)))
+
+    # Status: Upload-Parts zeigt alle vorhandenen Parts.
+    print(client.head(f"/api/uploads/{upload_id}").headers["Upload-Parts"])
+    print(client.post(f"/api/uploads/{upload_id}/complete").json())
+```
+
+- `part_size` und `parallelism` kommen aus der Session-Antwort; nicht hart kodieren.
+- Parts dürfen in beliebiger Reihenfolge eintreffen und dürfen wiederholt werden.
+- Der letzte Part darf kleiner als `part_size` sein; alle anderen müssen exakt passen.
+- Bei einem Fehler nach mehreren Versuchen die Session per `DELETE` abbrechen.
+
+---
+
+## 6. Mit Prüfsumme absichern
 
 Gibst du beim Anlegen `sha256` an, vergleicht der Server die Prüfsumme beim Abschluss.
 Stimmt sie nicht, antwortet er mit `400` und legt **keinen** Eintrag an.
@@ -154,7 +211,7 @@ sha = hashlib.sha256(open("big.bin", "rb").read()).hexdigest()
 
 ---
 
-## 6. Abbrechen und Aufräumen
+## 7. Abbrechen und Aufräumen
 
 ```bash
 curl -s -X DELETE "$HOST/api/uploads/$UPLOAD" -H "Authorization: Bearer $TOKEN"
@@ -165,13 +222,15 @@ Worker automatisch – inklusive der zugehörigen Spool-Dateien.
 
 ---
 
-## 7. Häufige Fehler
+## 8. Häufige Fehler
 
 | Antwort | Ursache | Lösung |
 |---|---|---|
 | `409` bei `PATCH` | `Upload-Offset` passt nicht | aktuellen Offset per `HEAD` lesen |
+| `409` bei Part-`PUT` | Part-Größe weicht ab oder Session ist keine Part-Session | `part_size`/`Upload-Parts` per `HEAD` prüfen |
+| `400` bei Part-`PUT` | Body ist nicht exakt `part_size` Bytes (letzter Part ausgenommen) | Dateigröße/letzten Part prüfen |
 | `413` | Größenlimit überschritten | `IFS_MAX_UPLOAD_SIZE` prüfen |
-| `400` bei `complete` | Größe/SHA-256 stimmt nicht | erwartete Werte korrigieren |
+| `400` bei `complete` | Größe/SHA-256 stimmt nicht oder Part fehlt | erwartete Werte/`Upload-Parts` prüfen |
 | `404` | Session abgelaufen/abgebrochen | neue Session anlegen |
 
 Weiter mit [Tutorial 5 – Benutzer, Gruppen und Rechte](05-benutzer-gruppen-rechte.md).

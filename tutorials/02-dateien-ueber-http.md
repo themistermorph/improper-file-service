@@ -85,6 +85,26 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 cat kopie.txt
 ```
 
+### Große Dateien: nativer Browser-Download per Ticket
+
+`curl` streamt ohnehin direkt auf die Platte. Ein Browser, der die Datei per
+`fetch().blob()` lädt, müsste sie dagegen **komplett im RAM** halten. Die Web-UI
+fordert deshalb ein kurzlebiges Ticket an und lässt den Browser nativ streamen:
+
+```bash
+TICKET=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  "$HOST/api/entries/$FILE_ID/download-token")
+URL=$(echo "$TICKET" | python -c "import sys,json;print(json.load(sys.stdin)['url'])")
+echo "$HOST$URL"      # im Browser öffnen oder mit curl -OJ laden
+
+curl -OJ "$HOST$URL"
+```
+
+Das Ticket ist an Benutzer, Eintrag und `token_version` gebunden und standardmäßig
+eine Stunde gültig (`IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS`). Range-Requests
+funktionieren auch über diese URL. Details:
+[HTTP-Transfers](../docs/http-transfers.md#21-nativer-browser-download-download-ticket).
+
 ---
 
 ## Schritt 5 – Unterbrochenen Download fortsetzen (Range)
@@ -172,6 +192,7 @@ Worker entfernt.
 | Upload | `PUT /api/uploads/simple` |
 | Liste | `GET /api/entries?parent_id=…` |
 | Download | `GET /api/entries/{id}/content` |
+| Browser-Download großer Dateien | `POST /api/entries/{id}/download-token` → `/api/download/{token}` |
 | Resume | `Range: bytes=…` |
 | Umbenennen | `PATCH /api/entries/{id}` |
 | Verschieben | `POST /api/entries/{id}/move` |

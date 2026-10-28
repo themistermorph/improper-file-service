@@ -218,6 +218,12 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   Principals; `copy` verhindert Kopien eines Ordners in sich selbst.
 - **Freigaben:** Werden bei Deaktivierung/Löschung des Erstellers automatisch widerrufen;
   Tokens erscheinen nicht mehr im Audit-Log und werden in Access-Logs redigiert.
+- **Download-Tickets:** `POST /api/entries/{id}/download-token` erzeugt ein
+  zweckgebundenes, an Benutzer/Eintrag/`token_version` gebundenes JWT. Es läuft
+  nach `IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS` ab; Logout, Passwortänderung oder
+  Deaktivierung invalidieren es sofort. Die Token-Segmente werden im Access-Log
+  redigiert. Der Endpunkt verlangt `read`; der Download selbst läuft ohne
+  Authorization-Header, damit der Browser nativ streamen kann.
 - **FTP:** Lese-/Metadatenoperationen prüfen zusätzlich serverseitig die Rechte
   (Defense-in-Depth).
 - **Deploy-Tooling:** Host-Key-Prüfung (RejectPolicy, `IFS_DEPLOY_HOSTKEY_POLICY=auto` als

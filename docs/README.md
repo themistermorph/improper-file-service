@@ -27,6 +27,7 @@ Diese Dokumentation ist in zwei Teile gegliedert:
 | Einen Fehler untersuchen | [Tutorial 10 – Troubleshooting](../tutorials/10-troubleshooting.md) |
 | Die REST-API nachschlagen | [API-Referenz](api-referenz.md) |
 | FTPS-Befehle und Clients verstehen | [FTPS-Handbuch](ftps.md) |
+| HTTP-Transfers und Durchsatz tunen | [HTTP-Transfers](http-transfers.md) |
 | Die Datenhaltung verstehen | [Datenmodell](datenmodell.md) |
 | Alle Einstellungen finden | [Konfiguration](konfiguration.md) |
 | Sicherheitsentscheidungen nachvollziehen | [Sicherheit](sicherheit.md) |

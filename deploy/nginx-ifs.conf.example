@@ -5,8 +5,9 @@
 #
 # Wichtig:
 # - nginx begrenzt Request-Bodies standardmäßig auf 1 MB (client_max_body_size).
-#   Die Web-UI lädt in 8-MiB-Chunks; ohne Anpassung antwortet nginx mit 413,
-#   bevor die API den Upload überhaupt sieht.
+#   Die Web-UI lädt große Dateien in parallelen Parts à
+#   IFS_HTTP_UPLOAD_PART_BYTES (Standard 16 MiB); ohne Anpassung antwortet nginx
+#   mit 413, bevor die API den Upload überhaupt sieht.
 # - Die tatsächliche Obergrenze für Dateien setzt IFS über IFS_MAX_UPLOAD_SIZE
 #   (0 = unbegrenzt). nginx kann zusätzlich eine harte Grenze vorgeben.
 

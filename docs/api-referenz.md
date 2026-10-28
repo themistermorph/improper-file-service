@@ -58,7 +58,7 @@ Validierungs- und Framework-Fehler (FastAPI) liefern:
 | `401` | Nicht angemeldet / Token ungültig / Share-Passwort falsch |
 | `403` | Keine Berechtigung |
 | `404` | Nicht gefunden |
-| `409` | Konflikt (Name existiert, Upload-Offset passt nicht) |
+| `409` | Konflikt (Name existiert, Upload-Offset/Part-Größe passt nicht) |
 | `410` | Freigabe abgelaufen oder Downloadlimit erreicht |
 | `412` | Vorbedingung fehlgeschlagen (ETag, reserviert) |
 | `413` | Datei zu groß / Quota |
@@ -284,6 +284,32 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 Antwort `206` mit `Content-Range`. Ein ungültiger oder außerhalb liegender Bereich
 ergibt `416`.
 
+### Download-Ticket (nativer Browser-Download)
+
+Die Web-UI lädt große Dateien nicht mehr per `fetch().blob()` in den RAM, sondern
+fordert ein kurzlebiges Ticket an und übergibt dessen URL dem Browser. Der Browser
+streamt die Datei dann nativ auf die Platte (Fortschritt, Abbruch und Range-Resume
+durch den Browser).
+
+| Methode & Pfad | Beschreibung |
+|---|---|
+| `POST /api/entries/{entry_id}/download-token` | Erzeugt ein Ticket; Antwort `{ token, url, expires_in, name, size }`. Erfordert `read` am Eintrag. |
+| `GET /api/download/{token}` | Streamt die Datei wie `/api/entries/{id}/content?download=true` – **ohne** Authorization-Header, Range-fähig. |
+| `HEAD /api/download/{token}` | Metadaten ohne Body (nicht in OpenAPI gelistet). |
+
+Das Ticket ist an **Eintrag**, **Benutzer** und **`token_version`** gebunden und
+läuft nach `IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS` (Standard 3600 s) ab. Logout,
+Passwortänderung oder Deaktivierung des Benutzers machen es sofort ungültig.
+Token-Segmente werden im Access-Log redigiert. Antworten tragen
+`Cache-Control: no-store`.
+
+```bash
+TICKET=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  localhost:8000/api/entries/$ID/download-token)
+URL=$(echo "$TICKET" | python -c "import sys,json;print(json.load(sys.stdin)['url'])")
+curl -OJ "localhost:8000$URL"
+```
+
 ### `HEAD /api/entries/{entry_id}/content`
 
 Wie `GET`, aber ohne Body (nicht in OpenAPI gelistet). Liefert Größe, Typ, ETag und
@@ -388,8 +414,11 @@ Schreiben geprüft; Überschreitung liefert `413`.
 | `size` | int | nein | Erwartete Gesamtgröße (wird geprüft) |
 | `sha256` | string | nein | Erwartete Prüfsumme (wird geprüft) |
 | `mime` | string | nein | MIME-Typ |
+| `parallel` | bool | nein | Parallele Part-Session anfordern. Benötigt `size`; Antwort enthält dann `part_size` und `parallelism`. |
 
-Antwort `201`: `{ "id": "<upload-id>", "offset": 0, "status": "pending" }`
+Antwort `201`: `{ "id": "<upload-id>", "offset": 0, "status": "pending" }`.
+Bei `parallel=true` zusätzlich z. B. `{ "part_size": 16777216, "parallelism": 4 }`.
+Der klassische sequenzielle Pfad bleibt unverändert.
 
 **Schritt 2 – Chunk anhängen:** `PATCH /api/uploads/{upload_id}`
 
@@ -409,7 +438,10 @@ Bei falschem Offset: `409`.
 > fremde Sessions weder abfragen noch abbrechen.
 
 **Schritt 3 – Status abfragen (optional):** `HEAD /api/uploads/{upload_id}`
-→ `204` mit `Upload-Offset` und `Upload-Length`.
+→ `204` mit `Upload-Offset` und `Upload-Length`. Bei Part-Sessions zusätzlich
+`Upload-Part-Size` und `Upload-Parts` (kommagetrennte, 1-basierte Part-Nummern).
+`Upload-Offset` ist der lückenlose Präfix; einzeln vorhandene spätere Parts
+stehen nur in `Upload-Parts`.
 
 **Schritt 4 – Abschließen:** `POST /api/uploads/{upload_id}/complete?mime=<typ>`
 → `201` mit `{ id, name, size, sha256 }`. Prüft Größe und ggf. SHA-256, legt den Blob
@@ -418,6 +450,56 @@ an und erzeugt eine neue Version.
 **Schritt 5 – Abbrechen (optional):** `DELETE /api/uploads/{upload_id}` → `204`.
 
 Vollständiges Beispiel: [Tutorial 4](../tutorials/04-resumable-uploads.md).
+
+### 5.3 Paralleler Upload (Part-Session)
+
+Für große Dateien kann der Client die Teile **parallel und in beliebiger Reihenfolge**
+senden. Die Web-UI nutzt das automatisch ab 8 MiB. Jeder Part wird serverseitig
+atomar in eine eigene Spool-Datei geschrieben; `complete` prüft alle Parts, bildet
+den SHA-256 und überträgt sie ohne zusätzliche Vollkopie nach S3.
+
+**Session anlegen:**
+
+```bash
+SESSION=$(curl -s -X POST "$HOST/api/uploads" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"parent_id\":\"$FOLDER\",\"name\":\"big.bin\",\"size\":$SIZE,\"parallel\":true}")
+UPLOAD=$(echo "$SESSION" | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
+PART_SIZE=$(echo "$SESSION" | python -c "import sys,json;print(json.load(sys.stdin)['part_size'])")
+```
+
+**Einen Part senden:** `PUT /api/uploads/{upload_id}/parts/{part_number}`
+
+- `part_number` ist **1-basiert**; die erwartete Größe ergibt sich aus
+  `part_size` und der Gesamtgröße (letzter Part darf kleiner sein).
+- Body = genau die Bytes dieses Parts. `Content-Length` wird, wenn gesetzt,
+  exakt geprüft.
+- Antwort `204` mit `Upload-Part` und dem aktuellen `Upload-Offset`.
+- Ein Retry desselben Parts ist idempotent (atomares `os.replace`).
+- Falsche Größe/Nummer → `400`; abweichende vorhandene Part-Größe → `409`;
+  sequenzieller `PATCH` auf einer Part-Session → `409`.
+
+```bash
+# Parts 2 und 1 (bewusst out-of-order); Parallelität im Client z. B. 4
+curl -s -X PUT "$HOST/api/uploads/$UPLOAD/parts/2" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/octet-stream' \
+  --data-binary @part2.bin
+curl -s -X PUT "$HOST/api/uploads/$UPLOAD/parts/1" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/octet-stream' \
+  --data-binary @part1.bin
+
+# Status: welche Parts sind da?
+curl -sI -X HEAD "$HOST/api/uploads/$UPLOAD" -H "Authorization: Bearer $TOKEN" \
+  | grep -iE 'upload-(offset|length|part-size|parts)'
+
+# Abschließen
+curl -s -X POST "$HOST/api/uploads/$UPLOAD/complete" -H "Authorization: Bearer $TOKEN"
+```
+
+**Grenzen und Aufräumen:** Die Part-Größe wird serverseitig auf 5–64 MiB geklemmt
+(`IFS_HTTP_UPLOAD_PART_BYTES`). Abgebrochene oder nach 24 h verwaiste Sessions
+entfernt der Worker inklusive Marker, Parts und Temp-Dateien. Upload-Sessions
+bleiben strikt nutzergebunden.
 
 ---
 

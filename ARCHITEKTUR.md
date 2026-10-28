@@ -186,27 +186,34 @@ outbox           (id, event_type, payload, published_at)
 
 ```
 Client → API: GET /api/entries/{id}/content  (Authorization, Range: bytes=…)
+          oder GET /api/download/{ticket}     (kurzlebig, browser-nativ)
 API    → AuthZ: authorize(user, read, entry)          ── deny → 403
 API    → Namespace: current_version → blob_key
-API    → S3: GET blob (Range)      ──stream──►  Client (200 / 206)
-API    → Audit: transfer.download
+API    → S3: GET blob (Range)  ──parallel Prefetch──►  Client (200 / 206)
+API    → Audit: transfer.download  (DB-Verbindung vor dem Stream freigegeben)
 ```
 
-Option für große Dateien: API antwortet `302` auf eine **kurzlebige Presigned URL**
-(TTL ~5 min). Vorteil: Datenpfad direkt Client↔S3. `Range` funktioniert nativ.
-Nachteil: feingranulares Byte-Audit entfällt (nur Autorisierung wird geloggt).
-Empfehlung: Streaming durch den Core als Default (kleine Installation reicht völlig),
-Presigned-URLs als konfigurierbares Opt-in für sehr große Dateien.
+Für große Dateien nutzt die Web-UI ein **kurzlebiges Download-Ticket** und lässt den
+Browser nativ auf die Platte streamen (kein RAM-Blob, Range-Resume). Serverseitig
+kann der S3-Bereich mit `IFS_HTTP_DOWNLOAD_PARALLELISM` parallelen Range-Requests
+gelesen werden; die Ausgabe bleibt in Dateireihenfolge.
+
+Option für sehr große Dateien bleibt eine **Presigned URL** (TTL ~5 min) als
+konfigurierbares Opt-in – auf dem Testsystem ist S3 dafür nicht öffentlich
+erreichbar. Empfehlung: Streaming durch den Core als Default, Presigned-URLs
+später für Installationen mit direkt erreichbarem Objektspeicher.
 
 ### 6.2 HTTP-Upload (resumable)
 
 ```
-1. Client → API: POST /api/uploads {parentId, name, size, sha256}
-   API → AuthZ (write) + Quota-Check → upload_session + S3-Multipart-Init
-2. Client → API: PATCH /api/uploads/{id}  (tus, Content-Range)   [oder presigned Parts]
-   API → S3: Multipart-Upload der Chunks
+1. Client → API: POST /api/uploads {parentId, name, size, sha256, parallel}
+   API → AuthZ (write) + Quota-Check → upload_session (+ Part-Marker)
+2. Client → API: PATCH /api/uploads/{id}  (tus, Content-Range)   [sequenziell]
+   oder PUT /api/uploads/{id}/parts/{n}    (parallel, out-of-order)
+   API → Spool: Chunk/Part atomar schreiben (asyncio.to_thread)
 3. Client → API: POST /api/uploads/{id}/complete
    API → Integritätsprüfung (Größe, SHA-256), ggf. Virenscan
+   API → S3: PartReader (keine zusätzliche Vollkopie)
    API → DB-Tx: version anlegen + current_version setzen  (atomar)
 4. Antwort: neuer entry (201)
 ```

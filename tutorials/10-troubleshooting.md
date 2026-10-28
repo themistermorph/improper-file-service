@@ -31,14 +31,20 @@ Im Log steht meist die konkrete Ursache (Konfiguration, DB-/S3-Verbindung).
 | `413 Payload Too Large` (JSON `{"code": "…"}`) | `IFS_MAX_UPLOAD_SIZE`/Quota überschritten | Limit erhöhen oder Datei verkleinern |
 | `413 Request Entity Too Large` (nginx-HTML-Seite) | nginx-`client_max_body_size` (Standard 1 MB) | in nginx `client_max_body_size 0;` setzen (siehe unten) |
 | `416 Range Not Satisfiable` | Range außerhalb der Datei | Größe per `HEAD` ermitteln, `Content-Range` beachten |
+| Download im Browser hängt/lädt nicht | Ticket abgelaufen oder Logout/Passwortänderung | Web-UI neu laden, neues Ticket anfordern (`IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS`) |
+| Download startet erst nach langer Wartezeit | alter Client puffert per `blob()` in den RAM | Web-UI aktualisieren; nativen Ticket-Download nutzen |
+| Sehr langsamer Download trotz schneller API | einzelner S3-Stream | `IFS_HTTP_DOWNLOAD_PARALLELISM` erhöhen (Default 4) |
+| `409` bei `/parts/{n}` | Part-Größe falsch oder keine Part-Session | `HEAD` → `Upload-Part-Size`/`Upload-Parts` prüfen |
+| `400` bei Part-Upload | Body entspricht nicht der erwarteten Part-Größe | letzter Part darf kleiner sein, alle anderen exakt |
 | `500 Blob fehlt` | Metadaten vorhanden, Blob in S3 fehlt | Restore aus Backup; S3-Zugriff/Bucket prüfen |
 | `503`/Verbindungsfehler | api down oder DB nicht erreichbar | `docker compose ps`, DB-Logs prüfen |
 
 ### `413` bei Uploads über nginx
 
 Kommt die Antwort bereits von nginx (HTML-Seite statt JSON), greift
-`client_max_body_size` – Standard **1 MB**. Die Web-UI überträgt in 8-MiB-Chunks,
-daher schlägt sonst jeder größere Upload fehl. In der nginx-Server-Config:
+`client_max_body_size` – Standard **1 MB**. Die Web-UI überträgt große Dateien in
+Parts à `IFS_HTTP_UPLOAD_PART_BYTES` (Standard **16 MiB**), daher schlägt sonst
+jeder größere Upload fehl. In der nginx-Server-Config:
 
 ```nginx
 client_max_body_size 0;          # 0 = unbegrenzt, oder z. B. 10g

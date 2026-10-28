@@ -6,6 +6,53 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Performance
+- **HTTP-Download (Web-UI):** Große Dateien werden nicht mehr per
+  `fetch().blob()` vollständig in den Browser-RAM geladen, sondern über ein
+  kurzlebiges Download-Ticket (`POST /api/entries/{id}/download-token`,
+  `GET /api/download/{token}`) **nativ streamend** auf die Platte geschrieben.
+  Das senkt den Speicherbedarf drastisch, zeigt den Fortschritt im Browser und
+  erlaubt Range-Resume ohne Zusatzcode.
+- **HTTP-Download (Server):** `IFS_HTTP_DOWNLOAD_PARALLELISM` (Standard 4) liest
+  den angeforderten S3-Bereich mit mehreren Range-Requests parallel; die
+  Ausgabe bleibt streng in Dateireihenfolge. Auf dem Testsystem stieg der
+  S3-Lesedurchsatz von ~40 MB/s (ein Stream) auf ~200–220 MB/s (4 Streams).
+  `IFS_HTTP_STREAM_CHUNK_BYTES` (Standard 4 MiB) senkt die Zahl der
+  Read-/ASGI-/Socket-Operationen. Die DB-Verbindung wird vor dem Stream
+  freigegeben, damit lange Downloads keinen Pool-Slot belegen.
+- **HTTP-Upload:** Parallele Part-Sessions (`PUT /api/uploads/{id}/parts/{n}`)
+  übertragen große Dateien out-of-order mit mehreren Verbindungen; die Web-UI
+  nutzt standardmäßig 4 Parts à 16 MiB mit Retry. Die Finalisierung liest die
+  Parts über `content.PartReader` direkt nach S3, ohne eine zusätzliche
+  vollständige Spool-Kopie. Spool-Schreiben läuft über `asyncio.to_thread`.
+- **Konfigurierbar:** `IFS_HTTP_UPLOAD_PART_BYTES` (16 MiB) und
+  `IFS_HTTP_UPLOAD_PARALLELISM` (4). Auf dem Testsystem limitiert SeaweedFS
+  selbst bei ~22–28 MB/s; dort hilft der Part-Modus vor allem WAN-Clients und
+  der UI-Reaktionsfähigkeit.
+
+### Added
+- **Download-Tickets:** `POST /api/entries/{entry_id}/download-token` erzeugt
+  ein an Benutzer, Eintrag und `token_version` gebundenes Ticket
+  (`IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS`, Standard 3600 s). `GET`/`HEAD`
+  `/api/download/{token}` liefern die Datei Range-fähig ohne Authorization-
+  Header; Tokens werden in Access-Logs redigiert.
+- **Paralleler Upload:** `POST /api/uploads` akzeptiert `parallel: true` und
+  liefert `part_size`/`parallelism`. `PUT /api/uploads/{id}/parts/{n}` nimmt
+  genau einen Part entgegen; `HEAD` meldet zusätzlich `Upload-Part-Size` und
+  `Upload-Parts`. Der bisherige sequenzielle `PATCH`-Pfad bleibt unverändert.
+- **Tests:** `tests/test_opt_http_throughput.py` deckt geordnetes Parallel-
+  Prefetch, Range/Ticket, Out-of-order-Parts, Idempotenz, Größenprüfung,
+  Cleanup und `PartReader`/S3-Finalisierung ab.
+
+### Security
+- Download-Tickets sind zweckgebunden (`purpose=download`), laufen ab und
+  werden bei Logout/Passwortänderung über `token_version` ungültig. Die
+  Token-Segmente erscheinen nicht mehr im Access-Log.
+
+### Tests
+- Volle Suite: **361 Tests grün**; `ruff check src tests` sauber; keine
+  Datenbankmigration erforderlich.
+
 ## [0.1.7.1] – 27.10.2026
 
 ### Fixed
