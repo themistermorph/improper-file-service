@@ -175,8 +175,16 @@ def test_object_urls_are_always_revoked():
     source = _html()
     created = source.count("URL.createObjectURL(")
     revoked = source.count("URL.revokeObjectURL(")
-    assert created >= 2
+    # Seit dem nativen Streaming-Download gibt es nur noch die Vorschau-URL.
+    assert created >= 1
     assert created == revoked, "Blob-URL ohne revokeObjectURL (Speicherleck)"
+
+
+def test_download_uses_native_streaming_ticket():
+    """Große Downloads dürfen nicht mehr vollständig in den Browser-RAM."""
+    block = _function_block(_html(), "download")
+    assert "download-token" in block
+    assert ".blob()" not in block, "Download puffert die Datei weiterhin im RAM"
 
 
 def test_upload_progress_caches_dom_nodes():

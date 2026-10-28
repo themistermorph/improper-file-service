@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from uuid import UUID
 
@@ -45,12 +46,23 @@ def create_upload(
         size_expected=payload.size,
         sha256_expected=payload.sha256,
         protocol="http",
+        parallel=payload.parallel,
     )
     audit.record(
         db, "upload.create", actor_id=user.id, target_entry=parent.id,
         protocol="http", ip=client_ip(request), details={"upload_id": str(session.id)},
     )
-    return UploadOut(id=session.id, offset=session.offset, status=session.status.value)
+    return UploadOut(
+        id=session.id,
+        offset=session.offset,
+        status=session.status.value,
+        part_size=uploads.session_part_size(session),
+        parallelism=(
+            max(1, min(8, get_settings().http_upload_parallelism))
+            if uploads.is_part_session(session)
+            else None
+        ),
+    )
 
 
 @router.head("/uploads/{upload_id}")
@@ -61,13 +73,15 @@ def upload_status(
 ) -> Response:
     session = uploads.get_session(db, upload_id)
     _check_owner(session, user)
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-        headers={
-            "Upload-Offset": str(session.offset),
-            "Upload-Length": str(session.size_expected or session.offset),
-        },
-    )
+    state = uploads.state(session)
+    headers = {
+        "Upload-Offset": str(state.offset),
+        "Upload-Length": str(state.length),
+    }
+    if state.part_size is not None:
+        headers["Upload-Part-Size"] = str(state.part_size)
+        headers["Upload-Parts"] = ",".join(str(number) for number in state.parts)
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=headers)
 
 
 @router.patch("/uploads/{upload_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -106,7 +120,10 @@ async def patch_upload(
                 # Nicht mehr schreiben; Abbruch passiert nach dem Schließen.
                 exceeded = True
                 break
-            handle.write(chunk)
+            # Schreiben in einen Worker-Thread: Ein langsamer Client oder eine
+            # volle Platte darf den Event-Loop (und damit andere Transfers)
+            # nicht blockieren.
+            await asyncio.to_thread(handle.write, chunk)
             written += len(chunk)
 
     if exceeded:
@@ -127,6 +144,71 @@ async def patch_upload(
     return Response(
         status_code=status.HTTP_204_NO_CONTENT,
         headers={"Upload-Offset": str(session.offset)},
+    )
+
+
+@router.put("/uploads/{upload_id}/parts/{part_number}", status_code=status.HTTP_204_NO_CONTENT)
+async def put_part(
+    upload_id: UUID,
+    part_number: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Nimmt genau einen Part eines parallelen Uploads entgegen.
+
+    Die Parts dürfen in beliebiger Reihenfolge und parallel eintreffen. Jeder
+    Part wird zuerst in eine Temp-Datei geschrieben und erst nach vollständiger
+    Größenprüfung atomar an seinen endgültigen Namen umbenannt. Ein Retry
+    desselben Parts ist damit gefahrlos.
+    """
+    session = uploads.get_session(db, upload_id)
+    _check_owner(session, user)
+    authz.authorize(db, user, "write", namespace.get_entry(db, session.parent_id))
+    spec = uploads.part_target(db, session, part_number)
+
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) != spec.size:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Part {part_number} muss {spec.size} Bytes haben",
+        )
+
+    # Keine DB-Verbindung während des Part-Transfers halten: Bei vier
+    # parallelen Parts je Upload würde sonst der Connection-Pool zum Engpass.
+    db.commit()
+    db.close()
+
+    temp = uploads.new_part_temp(spec)
+    written = 0
+    try:
+        with open(temp, "wb") as handle:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                if written + len(chunk) > spec.size:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        f"Part {part_number} ist zu groß",
+                    )
+                await asyncio.to_thread(handle.write, chunk)
+                written += len(chunk)
+        if written != spec.size:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Part {part_number} hat {written} statt {spec.size} Bytes",
+            )
+        uploads.commit_part(spec, temp)
+    finally:
+        content.remove_spool(temp)
+
+    state = uploads.state(session)
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT,
+        headers={
+            "Upload-Part": str(part_number),
+            "Upload-Offset": str(state.offset),
+        },
     )
 
 
@@ -198,7 +280,7 @@ async def simple_upload(
                     raise HTTPException(
                         status.HTTP_413_CONTENT_TOO_LARGE, "Datei zu groß"
                     )
-                handle.write(chunk)
+                await asyncio.to_thread(handle.write, chunk)
                 digest.update(chunk)
                 size += len(chunk)
         namespace.ensure_writable(db, parent, name, user.id, size)

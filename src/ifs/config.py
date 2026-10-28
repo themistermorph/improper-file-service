@@ -96,6 +96,24 @@ class Settings(BaseSettings):
     default_quota_bytes: int = 0  # 0 = unbegrenzt (Gesamt-Quota pro Besitzer)
     trash_retention_days: int = 30
 
+    # HTTP-Transfers: Blockgröße beim Streamen aus S3 in Richtung Client.
+    # Größere Blöcke bedeuten weniger read()/ASGI-/Socket-Operationen pro Datei.
+    # Untergrenze 64 KiB (siehe content.MIN_STREAM_CHUNK); Standard 4 MiB.
+    http_stream_chunk_bytes: int = 4 * 1024 * 1024
+    # HTTP-Download: Zahl paralleler S3-Range-Requests pro Download. Ein
+    # einzelner S3-Stream ist oft der Engpass; 4 Streams erreichen auf dem
+    # Testsystem ein Vielfaches. 1 = klassisches Ein-Stream-Verhalten.
+    # Speicherbedarf pro Download ≈ chunk_bytes × parallelism.
+    http_download_parallelism: int = 4
+    # Gültigkeit der kurzlebigen Download-Tickets (Web-UI lädt nativ über den
+    # Browser statt über einen RAM-Blob). Lang genug für Range-Resume.
+    http_download_token_ttl_seconds: int = 3600
+    # Parallele HTTP-Uploads: Größe eines Parts (mindestens 5 MiB, damit die
+    # Parts später auch direkt als S3-Multipart-Parts taugen) und die vom
+    # Server an die Web-UI gemeldete Parallelität.
+    http_upload_part_bytes: int = 16 * 1024 * 1024
+    http_upload_parallelism: int = 4
+
     # Worker: Intervall zwischen den Läufen (Sekunden) und Batch-Größe der Outbox.
     worker_interval_seconds: int = 10
     worker_outbox_batch_size: int = 200

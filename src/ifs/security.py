@@ -91,6 +91,24 @@ def decode_preview_token(token: str) -> dict[str, Any] | None:
     return _decode_scoped_token(token, "preview")
 
 
+def create_download_token(
+    entry_id: str, user_id: str, token_version: int, ttl_seconds: int = 3600
+) -> str:
+    """Kurzlebiger Token für einen nativen, streamenden Browser-Download.
+
+    Der Browser kann bei einer normalen ``<a href>``-Navigation keinen
+    ``Authorization``-Header setzen. Statt die Datei daher per ``fetch`` in den
+    RAM zu laden (bei großen Dateien unbrauchbar), erlaubt dieses Ticket eine
+    direkte, Range-fähige Anfrage. Es ist an Eintrag, Benutzer und
+    ``token_version`` gebunden und läuft nach ``ttl_seconds`` ab.
+    """
+    return _create_scoped_token("download", entry_id, user_id, token_version, ttl_seconds)
+
+
+def decode_download_token(token: str) -> dict[str, Any] | None:
+    return _decode_scoped_token(token, "download")
+
+
 def create_archive_token(
     entry_ids: list[str], user_id: str, token_version: int, ttl_seconds: int = 300
 ) -> str:

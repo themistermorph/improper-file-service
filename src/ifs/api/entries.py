@@ -9,8 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload
 
+from ..config import get_settings
 from ..core import audit, authz, content, namespace
 from ..models import (
     ACL,
@@ -22,10 +23,12 @@ from ..models import (
     User,
     Version,
 )
+from ..security import create_download_token, decode_download_token
 from ..utils import as_utc, content_disposition, safe_mime
 from .deps import client_ip, get_current_user, get_db
 from .schemas import (
     CopyRequest,
+    DownloadTokenOut,
     EntryOut,
     EntryUpdate,
     FolderCreate,
@@ -475,13 +478,11 @@ def stream_blob(
         base_headers["Content-Length"] = str(blob.size)
         return Response(status_code=status.HTTP_200_OK, headers=base_headers)
 
-    start, end = byte_range if byte_range else (None, None)
-    response = content.get_object(blob.storage_key, start, end)
-    body = response["Body"]
+    start, end = byte_range if byte_range else (0, blob.size - 1)
 
     if byte_range:
         base_headers["Content-Range"] = f"bytes {start}-{end}/{blob.size}"
-        base_headers["Content-Length"] = str(response["ContentLength"])
+        base_headers["Content-Length"] = str(end - start + 1)
     else:
         base_headers["Content-Length"] = str(blob.size)
 
@@ -490,8 +491,21 @@ def stream_blob(
         protocol="http", ip=client_ip(request),
         details={"range": request.headers.get("range"), "size": blob.size},
     )
+    # Die DB-Verbindung wird vor dem eigentlichen Stream freigegeben: Ein
+    # Multi-GB-Download darf keinen Pool-Slot (und keine Transaktion) für
+    # Minuten belegen. Der Audit-Eintrag ist zu diesem Zeitpunkt committed.
+    db.commit()
+    db.close()
+    # ``iter_object`` liest optional mehrere S3-Range-Fenster parallel, gibt
+    # sie aber immer in Dateireihenfolge aus. Bei parallelism=1 bleibt es der
+    # klassische einzelne S3-Stream. Die HTTP-Range-Semantik ändert sich nicht.
     return StreamingResponse(
-        content.stream_out(body),
+        content.iter_object(
+            blob.storage_key,
+            start=start,
+            end=end,
+            total_size=blob.size,
+        ),
         status_code=status.HTTP_206_PARTIAL_CONTENT if byte_range else status.HTTP_200_OK,
         headers=base_headers,
     )
@@ -507,6 +521,80 @@ def _serve_content(
     entry = namespace.get_entry(db, entry_id)
     authz.authorize(db, user, "read", entry)
     return stream_entry_content(db, entry, request, download=download, actor_id=user.id)
+
+
+@router.post("/entries/{entry_id}/download-token", response_model=DownloadTokenOut)
+def create_download_link(
+    entry_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DownloadTokenOut:
+    """Erzeugt ein kurzlebiges Ticket für einen nativen Browser-Download.
+
+    Die Web-UI lädt große Dateien damit direkt streamend auf die Platte,
+    statt sie per ``fetch().blob()`` vollständig in den RAM zu holen.
+    """
+    entry = namespace.get_entry(db, entry_id)
+    authz.authorize(db, user, "read", entry)
+    resolve_blob(db, entry)
+    ttl = max(30, int(get_settings().http_download_token_ttl_seconds))
+    token = create_download_token(
+        str(entry.id), str(user.id), user.token_version, ttl
+    )
+    return DownloadTokenOut(
+        token=token,
+        url=f"/api/download/{token}",
+        expires_in=ttl,
+        name=entry.name,
+        size=entry.size,
+    )
+
+
+def _serve_download_token(token: str, request: Request, db: Session) -> Response:
+    payload = decode_download_token(token)
+    if payload is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Ungültiger oder abgelaufener Download-Token"
+        )
+    try:
+        entry_id = UUID(str(payload["entry"]))
+        user_id = UUID(str(payload["sub"]))
+    except (KeyError, ValueError):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Ungültiger Download-Token")
+
+    entry = namespace.get_entry(db, entry_id)
+    user = db.get(User, user_id, options=[lazyload(User.groups)])
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Benutzer unbekannt oder inaktiv")
+    if int(payload.get("tv", -1)) != user.token_version:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Download-Token ist nicht mehr gültig"
+        )
+    authz.authorize(db, user, "read", entry)
+    response = stream_blob(
+        db,
+        entry,
+        resolve_blob(db, entry),
+        request,
+        download=True,
+        actor_id=user.id,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.get("/download/{token}", include_in_schema=False)
+def download_token(
+    token: str, request: Request, db: Session = Depends(get_db)
+) -> Response:
+    return _serve_download_token(token, request, db)
+
+
+@router.head("/download/{token}", include_in_schema=False)
+def download_token_head(
+    token: str, request: Request, db: Session = Depends(get_db)
+) -> Response:
+    return _serve_download_token(token, request, db)
 
 
 @router.get("/entries/{entry_id}/content")

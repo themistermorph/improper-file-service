@@ -10,7 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import aliased
 
 from .config import get_settings
-from .core import content
+from .core import content, uploads
 from .db import session_scope
 from .models import Blob, BlobStatus, Entry, Outbox, UploadSession, UploadStatus, Version
 from .utils import utcnow
@@ -77,7 +77,7 @@ def abort_stale_uploads() -> int:
             )
         ).scalars().all()
         for session in sessions:
-            content.remove_spool(session.spool_path)
+            uploads.cleanup(session)
             session.status = UploadStatus.aborted
             aborted += 1
     return aborted

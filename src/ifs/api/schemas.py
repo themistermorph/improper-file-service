@@ -128,12 +128,26 @@ class UploadCreate(BaseModel):
     # SHA-256 als 64 Hex-Zeichen (Body-/CPU-Schutz vor der Prüfung).
     sha256: str | None = Field(default=None, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
     mime: str | None = Field(default=None, max_length=255)
+    # Paralleler Part-Upload (Web-UI). Benötigt `size`; ohne diese Option bleibt
+    # der bisherige sequenzielle PATCH-Pfad unverändert.
+    parallel: bool = False
 
 
 class UploadOut(BaseModel):
     id: UUID
     offset: int
     status: str
+    # Nur bei parallelen Sessions gesetzt: Part-Größe und Client-Parallelität.
+    part_size: int | None = None
+    parallelism: int | None = None
+
+
+class DownloadTokenOut(BaseModel):
+    token: str
+    url: str
+    expires_in: int
+    name: str
+    size: int
 
 
 class ShareCreate(BaseModel):

@@ -15,7 +15,7 @@ class _TokenRedactionFilter(logging.Filter):
 
     # Auch mehrsegmentige Pfade wie /api/archive/jobs/<token> erfassen.
     _PATTERN = re.compile(
-        r"(/(?:api/)?(?:shares|preview|archive)/(?:jobs/)?)[A-Za-z0-9._\-]+"
+        r"(/(?:api/)?(?:shares|preview|archive|download)/(?:jobs/)?)[A-Za-z0-9._\-]+"
     )
     _PASSWORD = re.compile(r"(password=)[^&\s]+")
 
@@ -29,6 +29,7 @@ class _TokenRedactionFilter(logging.Filter):
                 "shares" in message
                 or "preview" in message
                 or "archive" in message
+                or "/download/" in message
                 or "password=" in message
             ):
                 new_args = list(args)
