@@ -13,10 +13,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `GET /api/download/{token}`) **nativ streamend** auf die Platte geschrieben.
   Das senkt den Speicherbedarf drastisch, zeigt den Fortschritt im Browser und
   erlaubt Range-Resume ohne Zusatzcode.
-- **HTTP-Download (Server):** `IFS_HTTP_DOWNLOAD_PARALLELISM` (Standard 4) liest
-  den angeforderten S3-Bereich mit mehreren Range-Requests parallel; die
-  Ausgabe bleibt streng in Dateireihenfolge. Auf dem Testsystem stieg der
-  S3-Lesedurchsatz von ~40 MB/s (ein Stream) auf ~200–220 MB/s (4 Streams).
+- **HTTP-Download (Server):** `IFS_HTTP_DOWNLOAD_PARALLELISM` kann den
+  angeforderten S3-Bereich mit mehreren Range-Requests parallel lesen; die
+  Ausgabe bleibt streng in Dateireihenfolge. Default ist **1** (ein Stream):
+  auf dem Testsystem war ein einzelner Stream mit ~135–150 MB/s schneller als
+  vier Range-Streams mit ~105–110 MB/s. Die Option bleibt für Objektspeicher
+  mit klarem Limit pro Verbindung verfügbar (messbasiert aktivieren).
   `IFS_HTTP_STREAM_CHUNK_BYTES` (Standard 4 MiB) senkt die Zahl der
   Read-/ASGI-/Socket-Operationen. Die DB-Verbindung wird vor dem Stream
   freigegeben, damit lange Downloads keinen Pool-Slot belegen.
@@ -27,8 +29,9 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   vollständige Spool-Kopie. Spool-Schreiben läuft über `asyncio.to_thread`.
 - **Konfigurierbar:** `IFS_HTTP_UPLOAD_PART_BYTES` (16 MiB) und
   `IFS_HTTP_UPLOAD_PARALLELISM` (4). Auf dem Testsystem limitiert SeaweedFS
-  selbst bei ~22–28 MB/s; dort hilft der Part-Modus vor allem WAN-Clients und
-  der UI-Reaktionsfähigkeit.
+  selbst bei ~10–28 MB/s; ein 128-MiB-Part-Upload brauchte ~8,7 MB/s im
+  Gesamtverlauf (Client-PUTs ~70 MB/s, `complete` ~10 MB/s). Der Part-Modus
+  hilft dort vor allem WAN-Clients und der UI-Reaktionsfähigkeit.
 
 ### Added
 - **Download-Tickets:** `POST /api/entries/{entry_id}/download-token` erzeugt

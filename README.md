@@ -157,7 +157,7 @@ Die wichtigsten:
 | `IFS_UPLOAD_SPOOL_DIR` | Temp-Verzeichnis für Uploads | `/var/lib/ifs/spool` |
 | `IFS_MAX_UPLOAD_SIZE` | Max. Dateigröße in Bytes (0 = ∞) | `0` |
 | `IFS_HTTP_STREAM_CHUNK_BYTES` | Blockgröße HTTP-Streaming (Min. 64 KiB) | `4194304` |
-| `IFS_HTTP_DOWNLOAD_PARALLELISM` | Parallele S3-Range-Streams je Download | `4` |
+| `IFS_HTTP_DOWNLOAD_PARALLELISM` | Parallele S3-Range-Streams je Download | `1` |
 | `IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS` | Gültigkeit des Download-Tickets | `3600` |
 | `IFS_HTTP_UPLOAD_PART_BYTES` | Part-Größe paralleler HTTP-Uploads | `16777216` |
 | `IFS_HTTP_UPLOAD_PARALLELISM` | Parallele Parts je Upload | `4` |

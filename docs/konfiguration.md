@@ -110,7 +110,7 @@ IFS_S3_USE_SSL=true
 ```bash
 # HTTP-Transfers (Produktionsbeispiel: LAN, 1-GBit-Clients)
 IFS_HTTP_STREAM_CHUNK_BYTES=4194304
-IFS_HTTP_DOWNLOAD_PARALLELISM=4
+IFS_HTTP_DOWNLOAD_PARALLELISM=1
 IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS=3600
 IFS_HTTP_UPLOAD_PART_BYTES=16777216
 IFS_HTTP_UPLOAD_PARALLELISM=4
@@ -121,16 +121,16 @@ IFS_HTTP_UPLOAD_PARALLELISM=4
 | Variable | Typ | Standard | Beschreibung |
 |---|---|---|---|
 | `IFS_HTTP_STREAM_CHUNK_BYTES` | int | `4194304` | Blockgröße beim Streamen aus S3 Richtung Client in Bytes. Untergrenze **65536** (64 KiB). Größere Blöcke senken Read-/ASGI-/Socket-Overhead; die Parallelität begrenzt den Speicherbedarf. |
-| `IFS_HTTP_DOWNLOAD_PARALLELISM` | int | `4` | Zahl paralleler S3-Range-Requests pro Download. `1` = klassischer einzelner S3-Stream. Werte werden auf **1–16** begrenzt. Speicherbedarf pro Download ≈ `IFS_HTTP_STREAM_CHUNK_BYTES × IFS_HTTP_DOWNLOAD_PARALLELISM`. |
+| `IFS_HTTP_DOWNLOAD_PARALLELISM` | int | `1` | Zahl paralleler S3-Range-Requests pro Download. `1` = klassischer einzelner S3-Stream (Default, auf dem Testsystem gemessen schneller als 4). Werte werden auf **1–16** begrenzt. Speicherbedarf pro Download ≈ `IFS_HTTP_STREAM_CHUNK_BYTES × IFS_HTTP_DOWNLOAD_PARALLELISM`. |
 | `IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS` | int | `3600` | Gültigkeit des kurzlebigen Download-Tickets (Untergrenze 30 s). Lang genug für Range-Resume großer Dateien; das Ticket ist an Benutzer, Eintrag und `token_version` gebunden. |
 | `IFS_HTTP_UPLOAD_PART_BYTES` | int | `16777216` | Part-Größe für parallele HTTP-Uploads in Bytes. Wird auf **5 MiB–64 MiB** geklemmt (S3-Multipart-Untergrenze). Die Web-UI verwendet diesen Wert. |
 | `IFS_HTTP_UPLOAD_PARALLELISM` | int | `4` | Anzahl gleichzeitig übertragener Parts; der Server meldet sie der Web-UI. Werte werden auf **1–8** begrenzt. |
 
 > **Speicher:** Beim Download werden höchstens `Parallelität` Fenster à
-> `STREAM_CHUNK_BYTES` gleichzeitig gehalten (Standard 4 × 4 MiB = 16 MiB pro
-> aktivem Download). Beim Upload schreibt jeder Part in eine eigene Spool-Datei;
-> der zusätzliche Plattenplatz entspricht der Dateigröße, bis `complete`
-> aufräumt. Details und Messwerte:
+> `STREAM_CHUNK_BYTES` gleichzeitig gehalten (Default 1 × 4 MiB = 4 MiB, bei
+> Parallelität 4 = 16 MiB pro aktivem Download). Beim Upload schreibt jeder Part
+> in eine eigene Spool-Datei; der zusätzliche Plattenplatz entspricht der
+> Dateigröße, bis `complete` aufräumt. Details und Messwerte:
 > [HTTP-Transfers](http-transfers.md).
 
 ## Uploads

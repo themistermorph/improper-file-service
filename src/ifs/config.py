@@ -101,10 +101,12 @@ class Settings(BaseSettings):
     # Untergrenze 64 KiB (siehe content.MIN_STREAM_CHUNK); Standard 4 MiB.
     http_stream_chunk_bytes: int = 4 * 1024 * 1024
     # HTTP-Download: Zahl paralleler S3-Range-Requests pro Download. Ein
-    # einzelner S3-Stream ist oft der Engpass; 4 Streams erreichen auf dem
-    # Testsystem ein Vielfaches. 1 = klassisches Ein-Stream-Verhalten.
+    # einzelner S3-Stream ist oft der Engpass; auf dem Testsystem (SeaweedFS)
+    # war er jedoch schneller als 4 parallele Range-Streams (Messung 2026-10-29:
+    # ~135–150 MB/s single vs. ~105–110 MB/s mit 4). Default daher konservativ
+    # 1; 2–4 sind ein Opt-in für Objektspeicher mit klarem Limit pro Verbindung.
     # Speicherbedarf pro Download ≈ chunk_bytes × parallelism.
-    http_download_parallelism: int = 4
+    http_download_parallelism: int = 1
     # Gültigkeit der kurzlebigen Download-Tickets (Web-UI lädt nativ über den
     # Browser statt über einen RAM-Blob). Lang genug für Range-Resume.
     http_download_token_ttl_seconds: int = 3600

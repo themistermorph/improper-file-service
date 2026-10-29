@@ -33,7 +33,7 @@ Im Log steht meist die konkrete Ursache (Konfiguration, DB-/S3-Verbindung).
 | `416 Range Not Satisfiable` | Range außerhalb der Datei | Größe per `HEAD` ermitteln, `Content-Range` beachten |
 | Download im Browser hängt/lädt nicht | Ticket abgelaufen oder Logout/Passwortänderung | Web-UI neu laden, neues Ticket anfordern (`IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS`) |
 | Download startet erst nach langer Wartezeit | alter Client puffert per `blob()` in den RAM | Web-UI aktualisieren; nativen Ticket-Download nutzen |
-| Sehr langsamer Download trotz schneller API | einzelner S3-Stream | `IFS_HTTP_DOWNLOAD_PARALLELISM` erhöhen (Default 4) |
+| Sehr langsamer Download trotz schneller API | einzelner S3-Stream bzw. Speicher pro Verbindung limitiert | `IFS_HTTP_DOWNLOAD_PARALLELISM` messbasiert auf 2–4 erhöhen (Default 1) |
 | `409` bei `/parts/{n}` | Part-Größe falsch oder keine Part-Session | `HEAD` → `Upload-Part-Size`/`Upload-Parts` prüfen |
 | `400` bei Part-Upload | Body entspricht nicht der erwarteten Part-Größe | letzter Part darf kleiner sein, alle anderen exakt |
 | `500 Blob fehlt` | Metadaten vorhanden, Blob in S3 fehlt | Restore aus Backup; S3-Zugriff/Bucket prüfen |

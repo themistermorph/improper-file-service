@@ -64,14 +64,20 @@ Fenster vertauscht oder doppelt gesendet.
 
 | Wert | Verhalten |
 |---|---|
-| `1` | klassischer einzelner S3-Stream (bisheriges Verhalten) |
-| `2`–`4` | empfohlen für LAN/WAN; Default `4` |
+| `1` | klassischer einzelner S3-Stream (Default) |
+| `2`–`4` | Opt-in für Objektspeicher mit klarem Limit pro Verbindung |
 | `> 4` | mehr S3-Last und Speicher; auf 16 begrenzt |
 
+> **Messung statt Annahme:** Auf dem Testsystem (SeaweedFS, 2026-10-29) war ein
+> einzelner Stream mit warmem Cache **~135–150 MB/s** schnell, vier parallele
+> Range-Streams erreichten **~105–110 MB/s**. Deshalb ist der Default `1`.
+> Die Option bleibt für Umgebungen sinnvoll, in denen der Objektspeicher pro
+> Verbindung drosselt; vor dem Aktivieren mit derselben Datei messen.
+
 Speicherbedarf pro aktivem Download: `IFS_HTTP_STREAM_CHUNK_BYTES × Parallelität`
-(Default 4 MiB × 4 = **16 MiB**). Zusätzlich belegt jeder Download einen
-S3-Pool-Slot; `IFS_S3_MAX_POOL_CONNECTIONS` muss zu `Parallelität × gleichzeitige
-Downloads` passen.
+(Default 4 MiB × 1 = **4 MiB**, bei 4 = 16 MiB). Zusätzlich belegt jeder Download
+einen S3-Pool-Slot; `IFS_S3_MAX_POOL_CONNECTIONS` muss zu `Parallelität ×
+gleichzeitige Downloads` passen.
 
 Range-Requests vom Client werden genauso behandelt: Der angeforderte
 `[start, end]`-Bereich wird in Fenster geteilt; `206`/`Content-Range` bleiben
@@ -169,7 +175,7 @@ Die Web-UI kann komplette Verzeichnisbäume übertragen:
 | Variable | Default | Untergrenze | Wirkung |
 |---|---|---|---|
 | `IFS_HTTP_STREAM_CHUNK_BYTES` | `4194304` | `65536` | Blockgröße Download-Stream und Prefetch-Fenster |
-| `IFS_HTTP_DOWNLOAD_PARALLELISM` | `4` | `1` (max. `16`) | Parallele S3-Range-Requests je Download |
+| `IFS_HTTP_DOWNLOAD_PARALLELISM` | `1` | `1` (max. `16`) | Parallele S3-Range-Requests je Download (Opt-in 2–4) |
 | `IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS` | `3600` | `30` | Gültigkeit des Download-Tickets |
 | `IFS_HTTP_UPLOAD_PART_BYTES` | `16777216` | `5242880` (max. `64 MiB`) | Part-Größe paralleler Uploads |
 | `IFS_HTTP_UPLOAD_PARALLELISM` | `4` | `1` (max. `8`) | Client-Parallelität für Parts |
@@ -179,10 +185,10 @@ Die Web-UI kann komplette Verzeichnisbäume übertragen:
 
 | Umgebung | Download-Parallelität | Stream-Chunk | Upload-Parts |
 |---|---|---|---|
-| LAN, wenige Nutzer | `2`–`4` | `4194304` | `4` × 16 MiB |
-| WAN, hohe Latenz | `4`–`8` | `4194304`–`8388608` | `4`–`8` × 16 MiB |
-| Speicherbegrenzter Container | `2` | `1048576` | `2` × 8 MiB |
-| Viele parallele Downloads | `2` | `2097152` | – |
+| LAN, wenige Nutzer | `1` | `4194304` | `4` × 16 MiB |
+| WAN, per-Verbindung limitierter Speicher | `2`–`4` | `4194304`–`8388608` | `4`–`8` × 16 MiB |
+| Speicherbegrenzter Container | `1` | `1048576` | `2` × 8 MiB |
+| Viele parallele Downloads | `1` | `2097152` | – |
 
 Für `n` gleichzeitige Downloads mit Parallelität `p` sollten mindestens
 `n × p` S3-Pool-Verbindungen verfügbar sein (Default-Pool: 32).
@@ -239,23 +245,25 @@ docker compose exec -T api python - <<'PY'
 PY
 ```
 
-Gemessene Richtwerte (2026-10-28, 256–512 MiB):
+Gemessene Richtwerte (2026-10-29, Testsystem mit SeaweedFS):
 
 | Messung | Ergebnis |
 |---|---|
-| S3 ein Stream lesen | ~40 MB/s |
-| S3 parallel 2 / 4 / 8 Streams | ~201 / 220 / 195 MB/s |
-| S3 schreiben (Multipart) | ~21–28 MB/s |
-| S3 CopyObject | ~31 MB/s |
-| HTTP-Download klassisch | ~139–156 MB/s |
-| HTTP-Upload simple (512 MiB) | ~22,4 MB/s |
+| HTTP-Download 256 MiB, warm, `Parallelität=1` | **~135–150 MB/s** |
+| HTTP-Download 256 MiB, warm, `Parallelität=4` | **~105–110 MB/s** |
+| Part-Upload 128 MiB: Client-PUTs (4 parallel) | ~70 MB/s |
+| Part-Upload 128 MiB: `complete` (S3) | ~10 MB/s |
+| Part-Upload 128 MiB: Gesamt | ~8,7 MB/s (S3-limitiert) |
+| S3 schreiben (Multipart, stark lastabhängig) | ~10–28 MB/s |
 
 > **Einordnung:** Auf diesem Testsystem ist **SeaweedFS beim Schreiben** der
 > Engpass. Kein HTTP-Upload kann dauerhaft schneller sein als der
-> Objektspeicher. Der Part-Modus verkürzt dort die clientseitige Wartezeit und
-> hilft bei WAN-Clients, weil die Teile parallel übertragen werden; die
-> S3-Schreibrate selbst bleibt begrenzt. Der Download profitiert dagegen direkt
-> vom Parallel-Prefetch.
+> Objektspeicher. Der Part-Modus verkürzt die clientseitige Wartezeit und hilft
+> bei WAN-Clients, weil die Teile parallel übertragen werden; die S3-Schreibrate
+> selbst bleibt begrenzt. Beim Download war ein einzelner Stream messbar
+> schneller als vier Range-Streams; deshalb Default `1`. Der große praktische
+> Gewinn für sehr große Dateien ist der **native Browser-Download per Ticket**
+> (kein RAM-Blob, Fortschritt/Resume).
 
 ---
 

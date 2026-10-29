@@ -201,10 +201,10 @@ Voraussetzung.
 ### HTTP-Transfers
 
 - **Downloads** laufen in der Web-UI über ein kurzlebiges Ticket und werden vom
-  Browser nativ auf die Platte gestreamt. Der Server liest S3 optional mit
-  mehreren Range-Requests parallel (`IFS_HTTP_DOWNLOAD_PARALLELISM`, Default 4)
-  und gibt die Fenster in Dateireihenfolge aus. Die DB-Verbindung wird vor dem
-  Stream freigegeben.
+  Browser nativ auf die Platte gestreamt. Der Server kann S3 optional mit
+  mehreren Range-Requests parallel lesen (`IFS_HTTP_DOWNLOAD_PARALLELISM`;
+  Default `1`, auf dem Testsystem war ein Stream schneller) und gibt die Fenster
+  in Dateireihenfolge aus. Die DB-Verbindung wird vor dem Stream freigegeben.
 - **Uploads** großer Dateien laufen als parallele Parts
   (`IFS_HTTP_UPLOAD_PART_BYTES`, Default 16 MiB; `IFS_HTTP_UPLOAD_PARALLELISM`,
   Default 4). Die Finalisierung liest die Parts ohne zusätzliche Vollkopie nach
@@ -212,7 +212,7 @@ Voraussetzung.
 - **Dimensionierung:** Für `n` gleichzeitige Downloads bei Parallelität `p`
   sollten mindestens `n × p` S3-Pool-Verbindungen verfügbar sein
   (`IFS_S3_MAX_POOL_CONNECTIONS`, Default 32). Speicher pro Download ≈
-  `IFS_HTTP_STREAM_CHUNK_BYTES × p` (Default 16 MiB).
+  `IFS_HTTP_STREAM_CHUNK_BYTES × p` (Default 4 MiB bei Parallelität 1).
 - **Grenze:** Die HTTP-Rate kann nie über der S3-Schreibrate liegen. Auf dem
   Testsystem limitiert SeaweedFS beim Schreiben bei ~22–28 MB/s; der Download
   profitiert dagegen deutlich vom Parallel-Prefetch. Messwerte und
