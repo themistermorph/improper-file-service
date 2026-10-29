@@ -44,13 +44,20 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Prefetch, Range/Ticket, Out-of-order-Parts, Idempotenz, Größenprüfung,
   Cleanup und `PartReader`/S3-Finalisierung ab.
 
+### Fixed
+- **Ordner-Upload in der Web-UI:** Drag-&-Drop und ein neuer Button
+  „Ordner hochladen“ (`webkitdirectory`) übertragen komplette Verzeichnisbäume.
+  Die UI legt fehlende Ordner an, verwendet vorhandene Ordner weiter und behält
+  die relative Struktur bei. Zuvor wurden Ordner beim Drop nicht erkannt bzw.
+  als leere Datei behandelt. Leere Ordner werden ebenfalls angelegt.
+
 ### Security
 - Download-Tickets sind zweckgebunden (`purpose=download`), laufen ab und
   werden bei Logout/Passwortänderung über `token_version` ungültig. Die
   Token-Segmente erscheinen nicht mehr im Access-Log.
 
 ### Tests
-- Volle Suite: **361 Tests grün**; `ruff check src tests` sauber; keine
+- Volle Suite: **365 Tests grün**; `ruff check src tests` sauber; keine
   Datenbankmigration erforderlich.
 
 ## [0.1.7.1] – 27.10.2026

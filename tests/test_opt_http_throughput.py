@@ -227,6 +227,59 @@ def test_paralleler_upload_verweigert_falsche_partgroesse_und_luecke(monkeypatch
         assert patch.status_code == 409
 
 
+def test_paralleler_upload_in_vorhandenen_ordner(monkeypatch):
+    """Part-Uploads respektieren `parent_id` und landen im Zielordner."""
+    monkeypatch.setattr(content, "object_exists", lambda key: False)
+    monkeypatch.setattr(
+        content,
+        "upload_parts",
+        lambda paths, sha256, mime=None: content.BlobInfo(
+            storage_key=f"cas/{sha256[:2]}/{sha256}",
+            sha256=sha256,
+            size=sum(os.path.getsize(path) for path in paths),
+        ),
+    )
+    _patch_settings(monkeypatch, http_upload_part_bytes=5 * 1024 * 1024)
+
+    payload = b"ordner" * (1024 * 1024)  # ~6 MiB -> 2 Parts
+    with TestClient(main.app) as client:
+        headers = auth(client)
+        folder = client.post(
+            "/api/folders", headers=headers, json={"name": "zielordner"}
+        ).json()["id"]
+        created = client.post(
+            "/api/uploads",
+            headers=headers,
+            json={
+                "parent_id": folder,
+                "name": "drin.bin",
+                "size": len(payload),
+                "parallel": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        session = created.json()
+        part_size = session["part_size"]
+        parts = [payload[i : i + part_size] for i in range(0, len(payload), part_size)]
+        for number, chunk in enumerate(parts, start=1):
+            response = client.put(
+                f"/api/uploads/{session['id']}/parts/{number}",
+                headers=headers,
+                content=chunk,
+            )
+            assert response.status_code == 204, response.text
+        done = client.post(
+            f"/api/uploads/{session['id']}/complete", headers=headers
+        )
+        assert done.status_code == 201, done.text
+
+        listing = client.get(
+            f"/api/entries?parent_id={folder}", headers=headers
+        ).json()
+        assert [entry["name"] for entry in listing] == ["drin.bin"]
+        assert listing[0]["size"] == len(payload)
+
+
 def test_legacy_upload_bleibt_unveraendert(monkeypatch):
     monkeypatch.setattr(content, "store_blob", fake_store_blob)
     with TestClient(main.app) as client:

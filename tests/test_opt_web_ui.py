@@ -187,6 +187,34 @@ def test_download_uses_native_streaming_ticket():
     assert ".blob()" not in block, "Download puffert die Datei weiterhin im RAM"
 
 
+# --- Ordner-Upload ---
+
+def test_folder_upload_has_directory_input_and_button():
+    source = _html()
+    assert 'id="folderInput"' in source
+    assert "webkitdirectory" in source
+    assert "Ordner hochladen" in source
+
+
+def test_dropped_folders_are_walked_recursively():
+    source = _html()
+    assert "webkitGetAsEntry" in source, "Drag-&-Drop erkennt Ordner nicht"
+    walk = _function_block(source, "walkEntry")
+    assert "isDirectory" in walk
+    assert "createReader" in walk
+    reader = _function_block(source, "readDirectory")
+    assert "readEntries" in reader
+
+
+def test_folder_upload_reuses_existing_folders_and_keeps_tree():
+    block = _function_block(_html(), "uploadEntries")
+    assert "ensureFolder" in block, "Ordner werden nicht wiederverwendet/angelegt"
+    assert "item.path" in block, "relative Pfade werden nicht ausgewertet"
+    assert "childrenOf" in block
+    one = _function_block(_html(), "uploadOne")
+    assert "parentId" in one, "uploadOne kann kein Zielverzeichnis erhalten"
+
+
 def test_upload_progress_caches_dom_nodes():
     block = _function_block(_html(), "progressEl")
     assert "const pctEl" in block

@@ -58,6 +58,22 @@ Antwort (gekürzt):
 
 Merke dir die `id` als `FILE_ID`.
 
+### Ordner samt Unterordnern hochladen
+
+In der Web-UI gibt es dafür zwei Wege:
+
+1. **Button „Ordner hochladen“** – öffnet die Verzeichnisauswahl
+   (`<input type="file" webkitdirectory>`).
+2. **Ordner per Drag & Drop** auf die Dateiliste ziehen.
+
+Die UI legt fehlende Ordner über `POST /api/folders` an, verwendet bereits
+vorhandene Ordner weiter und behält die relative Struktur bei. Leere Ordner
+werden ebenfalls angelegt. Über die reine API gibt es dafür keinen
+Sammel-Endpunkt: Ein Skript legt die Ordner mit `POST /api/folders` an und lädt
+die Dateien anschließend mit `PUT /api/uploads/simple` bzw. einer
+Upload-Session in den jeweiligen Zielordner. Details:
+[HTTP-Transfers](../docs/http-transfers.md).
+
 ---
 
 ## Schritt 3 – Auflisten

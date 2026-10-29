@@ -145,6 +145,23 @@ Default 4).
 - Upload-Sessions bleiben strikt nutzergebunden; auch Admins haben keinen
   Zugriff auf fremde Sessions.
 
+### 3.4 Ordner-Upload (Web-UI)
+
+Die Web-UI kann komplette Verzeichnisbäume übertragen:
+
+- **Button „Ordner hochladen“** (`webkitdirectory`) und **Drag & Drop** eines
+  Ordners. Der Browser liefert die Dateien mit relativen Pfaden
+  (`webkitRelativePath` bzw. `webkitGetAsEntry`).
+- Die UI legt fehlende Ordner über `POST /api/folders` an, verwendet vorhandene
+  Ordner (case-insensitive) weiter und lädt jede Datei in ihr Zielverzeichnis.
+  Leere Ordner werden ebenfalls erstellt.
+- Die Übertragung erfolgt Datei für Datei; große Einzeldateien nutzen dabei
+  automatisch die parallelen Parts. Ein Fehler bei einer Datei bricht den
+  restlichen Ordner nicht ab, sondern wird je Datei gemeldet.
+- Namensprüfung, Quota und Rechte gelten unverändert pro Datei/Ordner. Für
+  Skripte gibt es keinen rekursiven Sammel-Endpunkt: Ordner mit
+  `POST /api/folders` anlegen und Dateien anschließend hochladen.
+
 ---
 
 ## 4. Konfiguration
