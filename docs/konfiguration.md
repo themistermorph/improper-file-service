@@ -153,11 +153,14 @@ Peak-RAM pro Transfer und die CPU-Konkurrenz, kosten aber etwas Durchsatz:
 | `IFS_WORKER_OUTBOX_BATCH_SIZE` | `50` | kleinere Batches |
 
 Auf dem Container-Host zusätzlich `GOMEMLIMIT=768MiB` für SeaweedFS setzen
-(siehe `docker-compose.yml`) und `-s3.readerCacheSizeMB=64`,
-`-s3.concurrentUploadLimitMB=128`, `-volume.concurrentUploadLimitMB=128`,
-`-volume.readBufferSizeMB=1`, `-volume.compactionMBps=50` und
-`-volume.maintenanceMBps=20`. Das ist reine Konfiguration; `leveldb`-Index und
-größere Volumes sind bewusst **nicht** Teil dieses Profils.
+(siehe `docker-compose.yml`) und `-s3.concurrentUploadLimitMB=128`,
+`-volume.concurrentUploadLimitMB=128`, `-volume.readBufferSizeMB=1`,
+`-volume.compactionMBps=50` und `-volume.maintenanceMBps=20`.
+**`-s3.readerCacheSizeMB` auf `0` (Default/unbeschränkt) lassen:** Ein Limit von
+64 MiB hat auf dem Testsystem den Lesedurchsatz von ~150 MB/s auf ~10 MB/s
+einbrechen lassen; die RAM-Begrenzung erfolgt über `GOMEMLIMIT`. Das ist reine
+Konfiguration; `leveldb`-Index und größere Volumes sind bewusst **nicht** Teil
+dieses Profils.
 
 ## Uploads
 

@@ -29,9 +29,10 @@ services:
   s3:
     image: chrislusf/seaweedfs:4.48
     # Low-Memory-Profil für kleine Hosts (2 vCPU / 1,8 GB im Testsystem):
-    # Reader-Cache und gleichzeitige Uploads begrenzen, Hintergrund-Compaction
-    # drosseln und den Go-Heap per GOMEMLIMIT deckeln. Keine Änderung an
-    # Volume-Größe oder Index-Modus.
+    # gleichzeitige Uploads und Hintergrund-Compaction begrenzen sowie den
+    # Go-Heap per GOMEMLIMIT deckeln. Der S3-Reader-Cache bleibt bewusst
+    # unbegrenzt (0), weil ein 64-MiB-Limit Reads massiv ausbremste.
+    # Keine Änderung an Volume-Größe oder Index-Modus.
     environment:
       GOMEMLIMIT: "768MiB"
     command: >
@@ -41,7 +42,10 @@ services:
       -master.raftBootstrap=true
       -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
       -s3.cacheCapacityMB=0
-      -s3.readerCacheSizeMB=64
+      # 0 = unbeschränkt. Ein Limit von 64 MiB hat den Lesedurchsatz auf dem
+      # Testsystem von ~150 MB/s auf ~10 MB/s einbrechen lassen; RAM wird
+      # stattdessen über GOMEMLIMIT begrenzt.
+      -s3.readerCacheSizeMB=0
       -s3.concurrentFileUploadLimit=2
       -s3.concurrentUploadLimitMB=128
       -filer -filer.port=8888

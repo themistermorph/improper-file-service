@@ -35,10 +35,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Added
 - **Low-Memory-Profil für kleine Hosts:** `docker-compose.yml` begrenzt
-  SeaweedFS per `GOMEMLIMIT=768MiB`, `-s3.readerCacheSizeMB=64`,
-  `-s3.concurrentUploadLimitMB=128`, `-volume.concurrentUploadLimitMB=128`,
-  `-volume.readBufferSizeMB=1`, `-volume.compactionMBps=50` und
-  `-volume.maintenanceMBps=20`. `.env.example` und
+  SeaweedFS per `GOMEMLIMIT=768MiB`, `-s3.concurrentUploadLimitMB=128`,
+  `-volume.concurrentUploadLimitMB=128`, `-volume.readBufferSizeMB=1`,
+  `-volume.compactionMBps=50` und `-volume.maintenanceMBps=20`.
+  `-s3.readerCacheSizeMB=64` wurde nach einer Messung **verworfen**: Es senkte
+  den Lesedurchsatz von ~150 MB/s auf ~10 MB/s; der Cache bleibt bei `0`, die
+  RAM-Begrenzung übernimmt `GOMEMLIMIT`. `.env.example` und
   [Konfiguration](docs/konfiguration.md#low-memory-profil-2-vcpu--ca-2-gb-ram)
   dokumentieren die passenden IFS-Werte (8-MiB-Multipart-Chunks, Concurrency 4,
   Pool 8, 2-MiB-Streams, FTP-Puffer 128 KiB, Worker-Intervall 30 s). Das ist
