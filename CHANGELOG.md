@@ -61,7 +61,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   „Ordner hochladen“ (`webkitdirectory`) übertragen komplette Verzeichnisbäume.
   Die UI legt fehlende Ordner an, verwendet vorhandene Ordner weiter und behält
   die relative Struktur bei. Zuvor wurden Ordner beim Drop nicht erkannt bzw.
-  als leere Datei behandelt. Leere Ordner werden ebenfalls angelegt.
+  als leere Datei behandelt. Leere Ordner werden ebenfalls angelegt. Zusätzlich
+  committen `POST /api/folders` und die Upload-Endpunkte jetzt **vor** der
+  Antwort, damit direkt folgende Requests (Unterordner, erster Part) den
+  angelegten Zustand sofort sehen (Read-after-Write-Race).
 
 ### Security
 - Download-Tickets sind zweckgebunden (`purpose=download`), laufen ab und
@@ -69,7 +72,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Token-Segmente erscheinen nicht mehr im Access-Log.
 
 ### Tests
-- Volle Suite: **365 Tests grün**; `ruff check src tests` sauber; keine
+- Volle Suite: **366 Tests grün**; `ruff check src tests` sauber; keine
   Datenbankmigration erforderlich.
 
 ## [0.1.7.1] – 27.10.2026

@@ -52,6 +52,8 @@ def create_upload(
         db, "upload.create", actor_id=user.id, target_entry=parent.id,
         protocol="http", ip=client_ip(request), details={"upload_id": str(session.id)},
     )
+    # Der erste PATCH/PUT-Part darf die Session sofort sehen.
+    db.commit()
     return UploadOut(
         id=session.id,
         offset=session.offset,
@@ -141,6 +143,7 @@ async def patch_upload(
         db.commit()
         raise
 
+    db.commit()
     return Response(
         status_code=status.HTTP_204_NO_CONTENT,
         headers={"Upload-Offset": str(session.offset)},
@@ -228,6 +231,7 @@ def complete_upload(
         db, "upload.complete", actor_id=user.id, target_entry=entry.id,
         protocol="http", ip=client_ip(request), details={"upload_id": str(upload_id)},
     )
+    db.commit()
     return {"id": str(entry.id), "name": entry.name, "size": entry.size, "sha256": entry.sha256}
 
 
@@ -240,6 +244,7 @@ def abort_upload(
     session = uploads.get_session(db, upload_id)
     _check_owner(session, user)
     uploads.abort(db, session)
+    db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -297,4 +302,5 @@ async def simple_upload(
         db, "upload.simple", actor_id=user.id, target_entry=entry.id,
         protocol="http", ip=client_ip(request), details={"size": blob.size},
     )
+    db.commit()
     return {"id": str(entry.id), "name": entry.name, "size": entry.size, "sha256": entry.sha256}

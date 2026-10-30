@@ -270,6 +270,10 @@ def create_folder(
         db, "folder.create", actor_id=user.id, target_entry=folder.id,
         protocol="http", ip=client_ip(request),
     )
+    # Read-after-Write: Die nächste Anfrage (z. B. Unterordner/Datei im gerade
+    # angelegten Ordner) darf den Ordner sofort sehen. ``get_db`` committet
+    # sonst erst nach dem Senden der Antwort.
+    db.commit()
     return to_entry_out(db, folder)
 
 

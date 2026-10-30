@@ -19,9 +19,10 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from ifs import main
+from ifs.api.deps import get_db
 from ifs.config import get_settings
 from ifs.core import content
-from ifs.db import session_scope
+from ifs.db import get_session_factory, session_scope
 from ifs.models import UploadSession, UploadStatus
 
 from .helpers import auth, fake_store_blob, range_get_object
@@ -133,6 +134,62 @@ def _part_upload_client(client, headers, size: int):
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_create_folder_commits_vor_der_antwort():
+    """Read-after-Write: Unterordner/Uploads sehen den Elternordner sofort.
+
+    ``get_db`` committet normalerweise erst nach dem Senden der Antwort. Für
+    den Ordner-Upload wird explizit vor der Antwort committet; dieser Test
+    ersetzt ``get_db`` durch eine Variante ohne Commit und prüft, dass die
+    Folgerequests den angelegten Ordner trotzdem sehen.
+    """
+
+    def no_commit_db():
+        session = get_session_factory()()
+        try:
+            yield session
+        finally:
+            session.rollback()
+            session.close()
+
+    main.app.dependency_overrides[get_db] = no_commit_db
+    try:
+        with TestClient(main.app) as client:
+            headers = auth(client)
+            parent = client.post(
+                "/api/folders", headers=headers, json={"name": "race-parent"}
+            )
+            assert parent.status_code == 201, parent.text
+            parent_id = parent.json()["id"]
+
+            child = client.post(
+                "/api/folders",
+                headers=headers,
+                json={"parent_id": parent_id, "name": "race-child"},
+            )
+            assert child.status_code == 201, child.text
+
+            created = client.post(
+                "/api/uploads",
+                headers=headers,
+                json={
+                    "parent_id": child.json()["id"],
+                    "name": "race.bin",
+                    "size": 1,
+                    "parallel": True,
+                },
+            )
+            assert created.status_code == 201, created.text
+            upload_id = created.json()["id"]
+
+            # Neue DB-Session: Sichtbar nur, wenn create_upload committed hat.
+            head = client.head(f"/api/uploads/{upload_id}", headers=headers)
+            assert head.status_code == 204, head.text
+            assert head.headers["upload-length"] == "1"
+            client.delete(f"/api/uploads/{upload_id}", headers=headers)
+    finally:
+        main.app.dependency_overrides.pop(get_db, None)
 
 
 def test_paralleler_upload_out_of_order_idempotent_und_cleanup(monkeypatch):
