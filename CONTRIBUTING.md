@@ -22,7 +22,8 @@ Die Tests laufen ohne externe Dienste (SQLite + Fakes für den Objektspeicher):
 ```bash
 python -m pytest                # parallel (Standard, pytest-xdist)
 python -m pytest -n0            # seriell, z. B. zum Debuggen
-python -m ruff check src tests
+python -m ruff check src tests scripts
+python scripts/check-doc-links.py
 ```
 
 ## Projektstruktur
@@ -43,7 +44,8 @@ deploy/             Betriebsskripte (bench/ = Messungen, archive/ = historische 
 3. Für Verhalten **Tests** ergänzen (`tests/`), für Features **Doku** aktualisieren
    (`README.md`, `docs/`, `FEATURES.md`, ggf. `CHANGELOG.md`).
 4. Vor dem PR ausführen:
-   - `python -m ruff check src tests`
+   - `python -m ruff check src tests scripts`
+   - `python scripts/check-doc-links.py`
    - `python -m pytest`
 5. PR mit klarer Beschreibung (Was/Warum, Referenz auf Issues, Test-Hinweise).
 

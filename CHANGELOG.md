@@ -68,6 +68,9 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `apply-migrations.sh` ersetzt.
 - **`status.sh`:** Die Log-Abfrage nutzt die aktuellen Compose-Services
   `s3`/`s3-ui` statt des veralteten `minio`.
+- **CI:** Ruff prüft jetzt auch `scripts/`; der Doku-Link-Check
+  (`scripts/check-doc-links.py`) läuft in der CI und deckt zusätzlich
+  `deploy/README.md` ab.
 
 ### Fixed
 - **Ordner-Upload in der Web-UI:** Drag-&-Drop und ein neuer Button

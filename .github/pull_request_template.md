@@ -12,7 +12,8 @@
 
 ## Checkliste
 
-- [ ] `python -m ruff check src tests` ist sauber
+- [ ] `python -m ruff check src tests scripts` ist sauber
+- [ ] `python scripts/check-doc-links.py` meldet keine toten Links
 - [ ] `python -m pytest` ist grün
 - [ ] Tests für neues/geändertes Verhalten ergänzt (falls zutreffend)
 - [ ] Doku aktualisiert (`README.md`, `docs/`, `FEATURES.md`, `CHANGELOG.md`)

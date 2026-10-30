@@ -29,8 +29,7 @@ def main() -> int:
         for relative in sys.argv[1:]:
             # Windows-Pfade (Backslash) auf POSIX-Separatoren normalisieren.
             relative = relative.replace("\\", "/")
-            if relative.startswith("./"):
-                relative = relative[2:]
+            relative = relative.removeprefix("./")
             local = ROOT / relative
             remote = f"{REMOTE}/{relative}"
             remote_dir = os.path.dirname(remote)
