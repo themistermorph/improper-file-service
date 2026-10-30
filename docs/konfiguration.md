@@ -133,6 +133,32 @@ IFS_HTTP_UPLOAD_PARALLELISM=4
 > Dateigröße, bis `complete` aufräumt. Details und Messwerte:
 > [HTTP-Transfers](http-transfers.md).
 
+### Low-Memory-Profil (2 vCPU / ca. 2 GB RAM)
+
+Für kleine Hosts sind diese Werte ein guter Ausgangspunkt. Sie senken den
+Peak-RAM pro Transfer und die CPU-Konkurrenz, kosten aber etwas Durchsatz:
+
+| Variable | Wert | Wirkung |
+|---|---|---|
+| `IFS_S3_MULTIPART_CHUNKSIZE_MB` | `8` | 8 MiB × 4 = 32 MiB statt 128 MiB Peak |
+| `IFS_S3_TRANSFER_CONCURRENCY` | `4` | weniger parallele S3-Parts/Threads |
+| `IFS_S3_MAX_POOL_CONNECTIONS` | `8` | weniger Sockets/Puffer pro Rolle |
+| `IFS_HTTP_STREAM_CHUNK_BYTES` | `2097152` | 2 MiB pro aktivem Download |
+| `IFS_HTTP_UPLOAD_PART_BYTES` | `8388608` | 2 × 8 MiB Browser-Puffer |
+| `IFS_HTTP_UPLOAD_PARALLELISM` | `2` | weniger parallele Parts |
+| `IFS_FTP_TRANSFER_BUFFER_BYTES` | `131072` | 128 KiB pro FTP-Datenkanal |
+| `IFS_FTP_S3_READAHEAD_BYTES` | `2097152` | 2 MiB Read-Ahead |
+| `IFS_FTP_FINALIZE_WORKERS` | `1` | ein Finalisierungs-Thread |
+| `IFS_WORKER_INTERVAL_SECONDS` | `30` | weniger Leerlauf-Scans |
+| `IFS_WORKER_OUTBOX_BATCH_SIZE` | `50` | kleinere Batches |
+
+Auf dem Container-Host zusätzlich `GOMEMLIMIT=768MiB` für SeaweedFS setzen
+(siehe `docker-compose.yml`) und `-s3.readerCacheSizeMB=64`,
+`-s3.concurrentUploadLimitMB=128`, `-volume.concurrentUploadLimitMB=128`,
+`-volume.readBufferSizeMB=1`, `-volume.compactionMBps=50` und
+`-volume.maintenanceMBps=20`. Das ist reine Konfiguration; `leveldb`-Index und
+größere Volumes sind bewusst **nicht** Teil dieses Profils.
+
 ## Uploads
 
 | Variable | Typ | Standard | Beschreibung |

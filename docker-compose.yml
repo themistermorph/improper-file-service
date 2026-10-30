@@ -28,14 +28,28 @@ services:
 
   s3:
     image: chrislusf/seaweedfs:4.48
+    # Low-Memory-Profil für kleine Hosts (2 vCPU / 1,8 GB im Testsystem):
+    # Reader-Cache und gleichzeitige Uploads begrenzen, Hintergrund-Compaction
+    # drosseln und den Go-Heap per GOMEMLIMIT deckeln. Keine Änderung an
+    # Volume-Größe oder Index-Modus.
+    environment:
+      GOMEMLIMIT: "768MiB"
     command: >
       server -dir=/data
       -ip=127.0.0.1
       -ip.bind=0.0.0.0
       -master.raftBootstrap=true
       -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+      -s3.cacheCapacityMB=0
+      -s3.readerCacheSizeMB=64
+      -s3.concurrentFileUploadLimit=2
+      -s3.concurrentUploadLimitMB=128
       -filer -filer.port=8888
       -master.volumeSizeLimitMB=1024
+      -volume.concurrentUploadLimitMB=128
+      -volume.readBufferSizeMB=1
+      -volume.compactionMBps=50
+      -volume.maintenanceMBps=20
     volumes:
       - s3-data:/data
       - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro

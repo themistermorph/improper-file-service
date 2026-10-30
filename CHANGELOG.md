@@ -34,6 +34,15 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   hilft dort vor allem WAN-Clients und der UI-Reaktionsfähigkeit.
 
 ### Added
+- **Low-Memory-Profil für kleine Hosts:** `docker-compose.yml` begrenzt
+  SeaweedFS per `GOMEMLIMIT=768MiB`, `-s3.readerCacheSizeMB=64`,
+  `-s3.concurrentUploadLimitMB=128`, `-volume.concurrentUploadLimitMB=128`,
+  `-volume.readBufferSizeMB=1`, `-volume.compactionMBps=50` und
+  `-volume.maintenanceMBps=20`. `.env.example` und
+  [Konfiguration](docs/konfiguration.md#low-memory-profil-2-vcpu--ca-2-gb-ram)
+  dokumentieren die passenden IFS-Werte (8-MiB-Multipart-Chunks, Concurrency 4,
+  Pool 8, 2-MiB-Streams, FTP-Puffer 128 KiB, Worker-Intervall 30 s). Das ist
+  reine Konfiguration; Index-Modus und Volume-Größe bleiben unverändert.
 - **Download-Tickets:** `POST /api/entries/{entry_id}/download-token` erzeugt
   ein an Benutzer, Eintrag und `token_version` gebundenes Ticket
   (`IFS_HTTP_DOWNLOAD_TOKEN_TTL_SECONDS`, Standard 3600 s). `GET`/`HEAD`
