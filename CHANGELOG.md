@@ -77,6 +77,9 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   SQL-Migrationen unter `migrations/sql/` sind der einzige Migrationsweg;
   `deploy/apply-migrations.sh` wendet sie an. `migrations/README.md` und die
   betroffenen Dokumente beschreiben das Vorgehen.
+- **`.env.example`:** fehlende Optionen `IFS_JWT_ALGORITHM`,
+  `IFS_WORKER_INTERVAL_SECONDS`, `IFS_WORKER_OUTBOX_BATCH_SIZE` und
+  `IFS_FTP_BANNER` ergänzt.
 
 ### Fixed
 - **Ordner-Upload in der Web-UI:** Drag-&-Drop und ein neuer Button
