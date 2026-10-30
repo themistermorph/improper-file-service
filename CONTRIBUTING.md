@@ -33,7 +33,7 @@ tests/              Pytest-Suite
 migrations/         Alembic + SQL-Skripte
 docs/               Handbücher (Installation, API, Sicherheit, Betrieb …)
 tutorials/          Schritt-für-Schritt-Anleitungen
-deploy/             Betriebs-/Deploy-Hilfsskripte
+deploy/             Betriebsskripte (bench/ = Messungen, archive/ = historische Einmal-Skripte)
 ```
 
 ## Arbeitsweise

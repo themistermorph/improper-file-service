@@ -14,7 +14,7 @@ docker compose exec -T ftp python -c \
   "from ifs.ftp.server import build_handler; h=build_handler(); d=h.dtp_handler; print('ac_in=', d.ac_in_buffer_size, 'ac_out=', d.ac_out_buffer_size)"
 
 echo "== FTP-Smoke =="
-bash deploy/ftp-check.sh 2>&1 | tail -n 2
+bash "$(dirname "$0")/ftp-check.sh" 2>&1 | tail -n 2
 
 echo "== Durchsatz 64 MiB (lokal) =="
 python3 - "$USER" "$PASS" <<'PY'

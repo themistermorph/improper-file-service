@@ -7,7 +7,7 @@ echo "== Compose-Status =="
 docker compose ps
 
 echo "== Container-Logs (letzte Zeilen) =="
-for svc in db minio api ftp worker; do
+for svc in db s3 s3-ui api ftp worker; do
   echo "--- $svc ---"
   docker compose logs --tail=15 "$svc" 2>&1 || true
 done

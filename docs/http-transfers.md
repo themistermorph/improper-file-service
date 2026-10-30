@@ -241,7 +241,7 @@ Auf dem Testsystem (SeaweedFS im Docker-Stack):
 ```bash
 # Ein Stream vs. parallele Range-Reads
 docker compose exec -T api python - <<'PY'
-# siehe deploy/bench-s3-read.sh im Testsystem
+# siehe deploy/bench/bench-s3-read.sh im Testsystem
 PY
 ```
 

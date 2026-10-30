@@ -58,6 +58,17 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Prefetch, Range/Ticket, Out-of-order-Parts, Idempotenz, Größenprüfung,
   Cleanup und `PartReader`/S3-Finalisierung ab.
 
+### Changed
+- **`deploy/` aufgeräumt:** Kanonische Skripte (`up.sh`, `down.sh`,
+  `status.sh`, `rebuild.sh`, `prepare.sh`, `setup-seaweedfs.sh`,
+  `preflight-s3.sh`, `apply-migrations.sh`, `verify.sh`) liegen im Root;
+  Messskripte unter `deploy/bench/`, historische Einmal-Skripte unter
+  `deploy/archive/`. `deploy/README.md` dokumentiert die Aufteilung. Die
+  Einzelaufrufe `apply-0004.sh` … `apply-0009.sh` sind durch das idempotente
+  `apply-migrations.sh` ersetzt.
+- **`status.sh`:** Die Log-Abfrage nutzt die aktuellen Compose-Services
+  `s3`/`s3-ui` statt des veralteten `minio`.
+
 ### Fixed
 - **Ordner-Upload in der Web-UI:** Drag-&-Drop und ein neuer Button
   „Ordner hochladen“ (`webkitdirectory`) übertragen komplette Verzeichnisbäume.

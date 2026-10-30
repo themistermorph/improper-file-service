@@ -269,7 +269,7 @@ src/ifs/
   web/index.html     Web-Frontend (Dateimanager)
 migrations/          Alembic + SQL-Migrationen (sql/000x_*.sql)
 scripts/             Hilfsskripte (Dev-Zertifikat, Doku-Link-Checker, Deploy-Helfer)
-deploy/              Skripte für das Test-Deployment (SSH/Compose)
+deploy/              Betriebsskripte (SSH/Compose); bench/ = Messungen, archive/ = historische Einmal-Skripte
 docs/                Handbücher; tutorials/ Schritt-für-Schritt-Anleitungen
 tests/               pytest (Kern, API, FTPS-End-to-End)
 docker-compose.yml       Stack (db, s3, s3-ui, api, ftp, worker) – Standard: lokales SeaweedFS, alternativ externes S3
