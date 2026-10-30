@@ -234,47 +234,47 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 
 ---
 
-## 14. Maßnahmen aus dem Sicherheits-Review
+## 14. Härtungsmaßnahmen (Runde 1)
 
-- **H1 – Papierkorb-Wiederherstellung:** Nur **direkt** gelöschte (oberste) Einträge sind
+- **Papierkorb-Wiederherstellung:** Nur **direkt** gelöschte (oberste) Einträge sind
   wiederherstellbar; zusätzlich ist `write` auf das **Zielverzeichnis** erforderlich. Das
   ungefragte Reaktivieren fremder Vorfahren entfällt (kein `_ensure_live_chain` mehr).
-- **M1 – Aktive Inhalte:** `text/html`, `application/xhtml+xml`, `image/svg+xml` und
+- **Aktive Inhalte:** `text/html`, `application/xhtml+xml`, `image/svg+xml` und
   XML/XSLT werden über den generischen Content-Endpunkt nur noch als **Attachment** mit
   `Content-Security-Policy: sandbox` ausgeliefert; die Vorschau sandboxt weiterhin gezielt.
-- **M2 – Freigabe-Passwörter:** Übergabe per Header `X-Share-Password` (Query veraltet),
+- **Freigabe-Passwörter:** Übergabe per Header `X-Share-Password` (Query veraltet),
   Rate-Limit/Lockout auf Fehlversuche; Downloads werden **atomar** gezählt mit Limitprüfung.
-- **N1 – Scoped Tokens:** Vorschau-/Archiv-Tokens tragen `tv` und werden nach
+- **Scoped Tokens:** Vorschau-/Archiv-Tokens tragen `tv` und werden nach
   Passwortänderung/-reset sofort ungültig.
-- **N2 – FTP:** `utime`, `chmod`, `exists`, `isdir`, `isfile` prüfen ebenfalls Rechte
+- **FTP-Rechteprüfung:** `utime`, `chmod`, `exists`, `isdir`, `isfile` prüfen ebenfalls Rechte
   (Defense-in-Depth).
-- **N3 – Eindeutigkeit:** funktionaler Unique-Index auf `(parent_id, lower(name))` (nur
+- **Eindeutigkeit:** funktionaler Unique-Index auf `(parent_id, lower(name))` (nur
   aktive Einträge) verhindert Namensduplikate durch parallele Requests; Verletzungen → `409`.
-- **N4:** `list_shares` nutzt `is_system_admin` (Rolle `admin` gleichgestellt).
-- **N5 – TOCTOU:** `PATCH`/`complete` eines Uploads prüfen `write` am Zielordner erneut.
-- **N6:** `max_downloads` wird atomar durchgesetzt (siehe M2).
-- **M1 (Folge-Review) – Kopie/Share:** `POST /api/entries/{id}/copy` verlangt neben
+- **Share-Übersicht:** `list_shares` nutzt `is_system_admin` (Rolle `admin` gleichgestellt).
+- **TOCTOU:** `PATCH`/`complete` eines Uploads prüfen `write` am Zielordner erneut.
+- **Download-Limit:** `max_downloads` wird atomar durchgesetzt (siehe Freigabe-Passwörter).
+- **Kopie/Share:** `POST /api/entries/{id}/copy` verlangt neben
   `read` auf der Quelle zusätzlich das `share`-Recht. Eine Kopie gehört dem Kopierenden
   und ist damit unabhängig verteilbar – ohne diese Prüfung ließe sich das Verbot,
   Freigabelinks anzulegen, durch Kopieren umgehen.
-- **M2 (Folge-Review) – Share-Upload:** Öffentliche Drop-Link-Uploads unterliegen einem
+- **Share-Upload:** Öffentliche Drop-Link-Uploads unterliegen einem
   harten Größenlimit (`IFS_SHARE_UPLOAD_MAX_SIZE`, Default 100 MiB) und einem
   Rate-Limit (`IFS_SHARE_UPLOAD_MAX_REQUESTS`/`IFS_SHARE_UPLOAD_WINDOW_SECONDS`). Beide
   greifen unabhängig von `IFS_MAX_UPLOAD_SIZE=0`.
-- **N1 (Folge-Review) – Archiv-Jobs:** `GET`/`DELETE /api/archive/jobs/{token}` prüfen den
+- **Archiv-Jobs:** `GET`/`DELETE /api/archive/jobs/{token}` prüfen den
   Token vollständig (Signatur, Zweck, `token_version`) – nach Passwortänderung/Deaktivierung
   sofort `401`, kein Job `404`.
-- **N2 (Folge-Review) – Freigabe-Metadaten:** `GET /api/shares/{token}` verlangt bei
+- **Freigabe-Metadaten:** `GET /api/shares/{token}` verlangt bei
   passwortgeschützten Freigaben das Passwort (Header) und trägt `Cache-Control: no-store`.
-- **N3 (Folge-Review) – Limiter-Speicher:** Login- und Share-Upload-Limiter begrenzen die
+- **Limiter-Speicher:** Login- und Share-Upload-Limiter begrenzen die
   Zahl der Einträge (`max_entries`) und räumen abgelaufene/älteste Einträge auf.
-- **N4 (Folge-Review) – DB-Zugangsdaten:** Der Prod-Start verweigert Default-Credentials in
+- **DB-Zugangsdaten:** Der Prod-Start verweigert Default-Credentials in
   `IFS_DATABASE_URL`; `docker-compose` leitet das Passwort aus `IFS_DB_PASSWORD` ab.
-- **N5 (Folge-Review) – HSTS:** `Strict-Transport-Security` wird jetzt auch gesetzt, wenn
+- **HSTS:** `Strict-Transport-Security` wird jetzt auch gesetzt, wenn
   `X-Forwarded-Proto: https` von einem konfigurierten vertrauenswürdigen Proxy kommt.
-- **N6 (Folge-Review) – Deploy:** Secret-Dateien (`seaweedfs/s3.json`, `Caddyfile`, `.env`)
+- **Deploy:** Secret-Dateien (`seaweedfs/s3.json`, `Caddyfile`, `.env`)
   sind nur für den Eigentümer lesbar; das Storage-UI-Passwort wird nicht mehr ausgegeben.
-- **N7 (Folge-Review) – Aufräumen/SSRF:** `delete_user` entfernt Rollenzuweisungen; der
+- **Aufräumen/SSRF:** `delete_user` entfernt Rollenzuweisungen; der
   SeaweedFS-Status-Abruf erlaubt nur `http`/`https` (kein `file://` u. Ä.).
 - **Betriebliches:** Der Objektspeicher wird standardmäßig **lokal** als
   SeaweedFS-Container betrieben (Volume `s3-data`), alternativ extern (AWS/Ceph/Wasabi);
@@ -283,7 +283,7 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 
 ---
 
-## 15. Maßnahmen aus dem zweiten Sicherheits-Review
+## 15. Härtungsmaßnahmen (Runde 2)
 
 - **MIME-Normalisierung:** `safe_mime` normalisiert MIME-Typen auf Kleinschreibung; die
   Erkennung aktiver Inhalte (`INLINE_RISKY_TYPES`, `SANDBOXED_TYPES`) vergleicht zusätzlich
@@ -316,9 +316,9 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 
 ---
 
-## 16. Maßnahmen aus dem dritten Sicherheits-Review
+## 16. Härtungsmaßnahmen (Runde 3)
 
-- **F1 – Share-Upload und `write`-Recht:** `allow_upload` erlaubt anonymes Schreiben in
+- **Share-Upload und `write`-Recht:** `allow_upload` erlaubt anonymes Schreiben in
   einen Ordner und setzt daher nun voraus, dass der Ersteller dort selbst `write` hat –
   beim Anlegen der Freigabe und erneut bei jedem PATCH, das den Upload scharfschaltet
   (reines Abschalten bleibt ohne `write` möglich). Der Upload-Endpunkt prüft das
@@ -326,53 +326,53 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   ihm später entzogen oder wird er deaktiviert/gelöscht, ist der Drop-Link sofort
   gesperrt (`403`). Ein Nutzer mit `share`, aber ohne `write` (z. B. Rolle `sharer`)
   kann damit keine Schreibrechte umgehen.
-- **F1 (Teil B) – Überschreiben als Freigabe-Eigenschaft:** Das bisherige
+- **Überschreiben als Freigabe-Eigenschaft:** Das bisherige
   Request-Flag `?overwrite=true` konnte fremde Dateien im Drop-Ordner ersetzen. Das
   Überschreiben ist jetzt eine Eigenschaft der Freigabe (`shares.overwrite`, Default
   `false`, API-Feld, Migration `0005_share_overwrite.sql`); anonyme Uploads weichen ohne
   diese Freigabe bei Namenskonflikten aus. Scharfschalten erfordert ebenfalls `write`
   am Eintrag.
-- **F2 – Verschieben verlangt `read`:** Da `move` die additive Rechtevererbung über den
+- **Verschieben verlangt `read`:** Da `move` die additive Rechtevererbung über den
   Pfad ändert, verlangen HTTP `POST /api/entries/{id}/move`, `POST /api/bulk/move` und
   FTP `RNFR`/`RNTO` zusätzlich zum `write` auf Quelle und Ziel nun `read` auf der Quelle.
   Ein write-only-Eintrag lässt sich damit nicht mehr in einen lesbaren Ordner
   verschieben und dort lesen. Dasselbe gilt für das **Wiederherstellen** aus dem
   Papierkorb (`POST /api/trash/{entry_id}/restore`): Es verlangt nun zusätzlich `read`
   auf dem Eintrag, sonst ließe sich ein delete-only-Eintrag von dort in einen lesbaren
-  Zielordner holen (Nachtrag aus der Verifikation des dritten Reviews).
-- **F3 – Quota beim Wiederherstellen:** `namespace.restore` prüft vor dem Umsetzen die
+  Zielordner holen (Nachtrag aus der Verifikation dieser Runde).
+- **Quota beim Wiederherstellen:** `namespace.restore` prüft vor dem Umsetzen die
   Quota des **betroffenen Besitzers** (`entry.owner_id`, sonst der handelnde Akteur).
   Da gelöschte Einträge nicht auf die Quota zählen, ließ sich der Papierkorb sonst als
   Puffer nutzen, um die Quota dauerhaft zu überschreiten (`413`).
-- **F4 – Zyklus-Schutz:** `namespace.move` sperrt beide beteiligten Einträge
+- **Zyklus-Schutz:** `namespace.move` sperrt beide beteiligten Einträge
   (`SELECT … FOR UPDATE`, auf SQLite ein No-op) vor der Zyklusprüfung, damit parallele
   Moves (A→B und B→A) unter PostgreSQL keinen Verzeichniszyklus erzeugen können.
   Defense-in-Depth brechen `path_of`, `_is_descendant` und `authz.effective_perms` bei
   einer Wiederholung mit einem `seen`-Set ab, statt in eine Endlosschleife zu laufen.
-- **H2 – Dev-Zertifikat:** `scripts/gen-dev-cert.py` setzt nach dem Schreiben die Rechte
+- **Dev-Zertifikat:** `scripts/gen-dev-cert.py` setzt nach dem Schreiben die Rechte
   des privaten FTPS-Schlüssels auf `0600` (Best-Effort; unter Windows nur eingeschränkt
   wirksam).
-- **H3 – Versionsendpunkt:** `/version` liefert keine Umgebungsangabe
+- **Versionsendpunkt:** `/version` liefert keine Umgebungsangabe
   (`environment`) mehr – der unauthentifizierte Endpunkt gibt damit keine
   Betriebsinformationen preis.
-- **H4 – Eingabelimits:** Die Rechte-Listen in `AclCreate`, `RoleCreate` und
+- **Eingabelimits:** Die Rechte-Listen in `AclCreate`, `RoleCreate` und
   `RoleUpdate` sind auf höchstens fünf Einträge begrenzt (Body-/CPU-Schutz vor der
   Bitmasken-Auswertung).
-- **H5 – Proxy-Betrieb:** Ohne gesetztes `IFS_TRUSTED_PROXIES` sehen alle Clients wie
+- **Proxy-Betrieb:** Ohne gesetztes `IFS_TRUSTED_PROXIES` sehen alle Clients wie
   ein einziger aus; Rate-Limit und Login-Sperre wirken dann global statt pro Client.
   `.env.example` und [Konfiguration](konfiguration.md) warnen nun deutlich davor, die
   Proxy-Netze zu setzen.
 
 ---
 
-## 17. Maßnahmen aus dem vierten Sicherheits-Review
+## 17. Härtungsmaßnahmen (Runde 4)
 
-- **S1 – `read`-Pflicht beim Erstellen von Freigaben:** `POST /api/shares` verlangt jetzt
+- **`read`-Pflicht beim Erstellen von Freigaben:** `POST /api/shares` verlangt jetzt
   `read` **und** `share` am Eintrag. Zuvor konnte ein Principal mit ACL `share` (ohne
   `read`) einen öffentlichen Link anlegen und den Inhalt darüber selbst abrufen – `share`
   wirkte damit faktisch als `read`-Recht. Wer Inhalte nicht lesen darf, darf sie auch
   nicht veröffentlichen.
-- **S2 – Admins umgehen die Per-User-Isolation nicht mehr per API:**
+- **Admins umgehen die Per-User-Isolation nicht mehr per API:**
   `POST /api/roles/{id}/assignments` mit `entry_id` verlangt nun `admin` am Eintrag; ein
   Systemadmin kann sich keine Ressourcenrolle an fremden Wurzeln mehr selbst zuweisen.
   `PATCH /api/shares/{token}` erlaubt Systemadmins ebenfalls nicht mehr (ein PATCH hätte
@@ -381,18 +381,18 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   weiterhin sichtbar – nicht passwortgeschützte Links sind ohnehin für jeden mit Token
   abrufbar. Bewusste Break-Glass-Funktion bleibt `delete_user(..., transfer_to)`
   (Besitzübernahme beim Löschen eines Kontos).
-- **S3 – FTP-Vorladen prüft `read`:** `IFSFilesystem._open_writer` verlangt bei
+- **FTP-Vorladen prüft `read`:** `IFSFilesystem._open_writer` verlangt bei
   `APPE`/`REST` (`a`/`r+`) zusätzlich `read` auf der bestehenden Datei, bevor deren Inhalt
   in den Spool kopiert wird. In der Per-User-Architektur sind fremde Bäume per FTP-Pfad
   normalerweise nicht erreichbar – die Prüfung ist Defense-in-Depth. Schlägt das Vorladen
   fehl, wird der Spool aufgeräumt.
-- **S4 – Eingabelimits:** `POST /api/shares/bulk/revoke` begrenzt Tokens auf 64 Zeichen
+- **Eingabelimits:** `POST /api/shares/bulk/revoke` begrenzt Tokens auf 64 Zeichen
   pro Eintrag; `POST /api/uploads` akzeptiert `sha256` nur noch als 64 Hex-Zeichen und
   begrenzt `mime` auf 255 Zeichen (Body-/CPU-Schutz vor der Prüfung).
 
 ---
 
-## 18. Maßnahmen aus dem fünften Review (Bugfixes)
+## 18. Bugfixes aus dem Härtungsprozess
 
 - **FTP-Downloads > 64 KiB (kritisch):** `_S3Reader` öffnete nur einen S3-Range und
   meldete nach dessen Erschöpfung EOF – `RETR`/`REST` wurden dadurch ab 64 KiB still
@@ -431,7 +431,7 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   nicht mehr ersetzt, sondern umbenannt. `DELETE /api/shares/{token}` wird als
   `share.revoke` auditiert (nur Token-Präfix).
 - **Rollen:** `DELETE /api/roles/assignments/{id}` verlangt bei Entry-gebundenen
-  Zuweisungen `admin` am Eintrag – konsistent zur Zuweisung (S2a). Verwaiste
+  Zuweisungen `admin` am Eintrag – konsistent zur Zuweisung am Eintrag. Verwaiste
   Zuweisungen darf der Systemadmin weiterhin aufräumen.
 - **Archiv:** Abgebrochene/abgelaufene ZIP-Jobs hinterlassen keine Dateien mehr im
   Spool; die Namensausweichung im ZIP kollidiert nicht mehr (`a`, `a`, `a (2)` →
@@ -450,30 +450,30 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 
 ---
 
-## 19. Maßnahmen aus dem sechsten Sicherheits-Review (Veröffentlichungen & Release-Prozess)
+## 19. Veröffentlichungen und Release-Prozess
 
 **In-App-Veröffentlichungen (öffentliche Galerie `/published`):**
 
-- **V1 – Download-Rate-Limit:** Anonyme Downloads veröffentlichter Dateien/Ordner sind
+- **Download-Rate-Limit:** Anonyme Downloads veröffentlichter Dateien/Ordner sind
   pro IP+Eintrag begrenzt (`IFS_PUBLISHED_DOWNLOAD_MAX_REQUESTS`, Standard 120;
   `IFS_PUBLISHED_DOWNLOAD_WINDOW_SECONDS`, Standard 300); bei Überschreitung `429` mit
   `Retry-After`. Dadurch wird unkontrolliertes Wiederholen (und die daraus folgende
   Audit-Schreib-/Spool-Last) gebremst. Hinweis: Das Ordner-ZIP wird weiterhin je Anfrage
   erzeugt; ein Cache bleibt Ausbaustufe.
-- **V2 – Admin-Pfadleck:** `GET /api/published/mine` liefert Systemadmins fremde
+- **Admin-Pfadleck:** `GET /api/published/mine` liefert Systemadmins fremde
   Veröffentlichungen weiterhin als Metadaten, aber ohne `path`; der volle virtuelle Pfad
   wird nur für eigene Veröffentlichungen ausgegeben (konsistent zur Per-User-Isolation).
-- **V3 – Wurzel nicht veröffentlichbar:** Die eigene Wurzel (`parent_id IS NULL`) kann
+- **Wurzel nicht veröffentlichbar:** Die eigene Wurzel (`parent_id IS NULL`) kann
   nicht veröffentlicht werden (`400`), verhindert das versehentliche öffentliche
   Bereitstellen des gesamten Heims.
-- **V4 – Publisher-Attribution:** Beim erneuten Veröffentlichen wird der ursprüngliche
+- **Publisher-Attribution:** Beim erneuten Veröffentlichen wird der ursprüngliche
   Ersteller korrekt als `published_by_username` gemeldet.
-- **V5 – Such-Wildcards:** Die Namenssuche der Galerie behandelt `%`, `_` und `\` als
+- **Such-Wildcards:** Die Namenssuche der Galerie behandelt `%`, `_` und `\` als
   Literale (LIKE-Escape).
-- **V6 – Akzeptiertes Restrisiko:** Die öffentliche Galerie zeigt den Benutzernamen des
+- **Akzeptiertes Restrisiko:** Die öffentliche Galerie zeigt den Benutzernamen des
   Veröffentlichenden (Attribution). Das ist eine bewusste Design-Entscheidung; wer
   veröffentlicht, gibt seinen Loginnamen öffentlich preis.
-- **V7 – Vanity-Links sind öffentlich:** `/published/<username>/<suffix>` ist ein
+- **Vanity-Links sind öffentlich:** `/published/<username>/<suffix>` ist ein
   reiner `307`-Redirect auf die kanonische API `/api/published/<uuid>/content`. Der
   Suffix ist **kein Geheimnis** (die Galerie listet die Veröffentlichung), wird
   case-insensitiv aufgelöst, ist auf ein Segment ohne `/` beschränkt und
@@ -482,22 +482,22 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 
 **Software-Release-Prozess (GitHub Actions):**
 
-- **R1 – Least Privilege:** Getrennter `build`-Job (nur `contents: read`) und
+- **Least Privilege:** Getrennter `build`-Job (nur `contents: read`) und
   `release`-Job (`contents: write`), der nur die gebauten Artefakte anhängt. Der Build
   führt getaggten Code aus und hat damit keinen Schreibzugriff mehr. `release` nutzt das
   Environment `release` (Approval empfohlen).
-- **R2 – SHA-Pinning:** Alle Actions sind auf Commit-SHAs statt veränderliche Tags
+- **SHA-Pinning:** Alle Actions sind auf Commit-SHAs statt veränderliche Tags
   gepinnt.
-- **R3 – Integrität/Provenance:** `SHA256SUMS` wird mitveröffentlicht; für öffentliche
+- **Integrität/Provenance:** `SHA256SUMS` wird mitveröffentlicht; für öffentliche
   Repos wird zusätzlich eine Build-Provenance (SLSA) via
   `actions/attest-build-provenance` erzeugt.
-- **R4 – Reproduzierbarkeit:** Die Build-Toolchain ist exakt gepinnt (`build`,
+- **Reproduzierbarkeit:** Die Build-Toolchain ist exakt gepinnt (`build`,
   `setuptools`, `wheel`).
-- **R5 – Tag-Gate:** Der Release-Workflow verifiziert, dass der getaggte Commit auf
+- **Tag-Gate:** Der Release-Workflow verifiziert, dass der getaggte Commit auf
   `main` liegt; `concurrency` verhindert parallele Läufe.
-- **R6 – CI-Rechte:** `ci.yml` setzt `permissions: contents: read`.
-- **R7 – Kein pip-Cache im Release-Build.**
-- **R8 – Secret-Scan:** Die CI enthält einen Gitleaks-Secret-Scan (für öffentliche
+- **CI-Rechte:** `ci.yml` setzt `permissions: contents: read`.
+- **Kein pip-Cache im Release-Build.**
+- **Secret-Scan:** Die CI enthält einen Gitleaks-Secret-Scan (für öffentliche
   Repos; private benötigen eine Lizenz).
 
 ---

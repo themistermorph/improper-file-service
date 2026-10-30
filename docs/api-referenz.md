@@ -377,7 +377,7 @@ bisherige aktuelle Version bleibt in der Historie erhalten. Erfordert `read`
 
 ### 5.1 Einfacher Upload
 
-### `PUT /api/uploads/simple`
+#### `PUT /api/uploads/simple`
 
 Body = Dateiinhalt (Stream). `201`.
 

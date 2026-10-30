@@ -192,7 +192,7 @@ UI-Korrekturen.
 
 ### Documentation
 - API-Referenz (Vanity-Links, Ordnergröße), FTPS-/Throughput-Handbuch,
-  Datenmodell, Installation/Betrieb (Migration `0010`), Sicherheit (V7/§20),
+  Datenmodell, Installation/Betrieb (Migration `0010`), Sicherheit (Vanity-Links/§20),
   Tutorial 11 sowie README/RELEASING auf `0.1.7` aktualisiert.
 
 ## [0.1.6] – 04.10.2026
@@ -363,7 +363,7 @@ UI-Korrekturen.
 ## [0.1.0] – 29.09.2026
 
 Erster öffentlicher **Pre-Release**. Funktionsumfang des MVP einschließlich
-mehrerer abgeschlossener Sicherheits-Reviews.
+mehrerer abgeschlossener Sicherheitsprüfungen.
 
 ### Added
 - **HTTP(S)-API** mit JWT-Login, Verzeichnis-/Dateioperationen (auflisten, anlegen,
@@ -395,14 +395,15 @@ mehrerer abgeschlossener Sicherheits-Reviews.
 - Gehärtete Konfiguration (JWT-Prüfung, Produktions-Validierung, Security-Header,
   Rate-Limiting für Login und Freigabe-Passwörter).
 - Scoped Tokens (Vorschau/Archiv) mit `token_version`-Invalidierung.
-- Sicherheits-Reviews 1–4 umgesetzt, u. a.: Autorisierung bei Wiederherstellung
+- Sicherheits- und Härtungsmaßnahmen umgesetzt, u. a.: Autorisierung bei Wiederherstellung
   (nur oberste Papierkorb-Einträge, `read`-Prüfung), aktive Inhalte nur als Attachment,
   Share-Passwörter per Header, eindeutige Dateinamen je Ordner, atomare Limits.
 - Per-User-Isolation: keine Sicht auf fremde Wurzeln, auch nicht als Systemadmin;
   Rollen-/ACL-Vergabe erfordert `admin` am Eintrag.
-- Review 4 (S1–S4): `POST /api/shares` verlangt `read`+`share`; Rollenzuweisung mit
-  `entry_id` erfordert `admin` am Eintrag; `PATCH` fremder Freigaben gesperrt
-  (Widerrufen bleibt möglich); FTP-Vorladen prüft `read`; strengere Feldvalidierung.
+- **Freigaben und Rollen:** `POST /api/shares` verlangt `read`+`share`;
+  Rollenzuweisung mit `entry_id` erfordert `admin` am Eintrag; `PATCH` fremder
+  Freigaben gesperrt (Widerrufen bleibt möglich); FTP-Vorladen prüft `read`;
+  strengere Feldvalidierung.
 
 ### Known limitations
 - Kein Multi-Tenant-Betrieb.

@@ -29,7 +29,7 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 
 ---
 
-## Funktionsumfang (MVP)
+## Funktionsumfang
 
 - **HTTP(S)**: Login (JWT), Verzeichnisse/Dateien auflisten, anlegen, umbenennen,
   verschieben, kopieren, löschen
@@ -298,7 +298,7 @@ kann gefahrlos wiederholt werden.
 
 ---
 
-## Bewusste MVP-Einschränkungen
+## Bewusste Einschränkungen
 
 - Resumable Uploads spoolen lokal (Temp-/Part-Dateien) und laden erst beim Abschluss nach S3.
   Große Dateien werden dabei parallel in Parts übertragen; ein direkter S3-Multipart-Upload
