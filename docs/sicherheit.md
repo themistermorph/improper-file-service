@@ -502,10 +502,11 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 
 ---
 
-## 20. Verifikationsnachweise (0.1.7)
+## 20. Verifikationsnachweise (0.1.7 / 0.1.7.1)
 
-Für 0.1.7 wurden SQL-Injection und RCE zusätzlich systematisch geprüft; die
-Nachweise sind als Regressionssuiten im Repo verankert.
+Für 0.1.7 und den Patch 0.1.7.1 wurden SQL-Injection und RCE zusätzlich
+systematisch geprüft; die Nachweise sind als Regressionssuiten im Repo
+verankert.
 
 **SQL-Injection** (`tests/test_security_sql_injection.py`):
 

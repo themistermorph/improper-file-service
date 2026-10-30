@@ -68,7 +68,7 @@ py -m venv .venv
 # Tests und Lint
 .venv\Scripts\python -m pytest          # parallel (Standard)
 .venv\Scripts\python -m pytest -n0      # seriell (Debuggen)
-.venv\Scripts\python -m ruff check src tests
+.venv\Scripts\python -m ruff check src tests scripts
 ```
 
 Die Tests laufen gegen **SQLite** mit temporärem Spool-Verzeichnis

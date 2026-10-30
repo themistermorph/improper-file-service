@@ -135,7 +135,7 @@ Tests:
 ```bash
 .venv\Scripts\python -m pytest                  # parallel (Standard, pytest-xdist)
 .venv\Scripts\python -m pytest -n0              # seriell (z. B. zum Debuggen)
-.venv\Scripts\python -m ruff check src tests
+.venv\Scripts\python -m ruff check src tests scripts
 ```
 
 ---

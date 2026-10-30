@@ -14,8 +14,8 @@ Bitte **keine** öffentlichen GitHub-Issues für Sicherheitslücken verwenden.
 
 - Bevorzugt: GitHub **Private Vulnerability Reporting** („Report a vulnerability")
   im Repository.
-- Alternativ per E-Mail an die im Repository hinterlegte Kontaktadresse
-  (siehe `pyproject.toml` / Maintainer-Profil).
+- Alternativ über das [Maintainer-Profil](https://github.com/themistermorph)
+  auf GitHub.
 
 Bitte angeben:
 - Betroffene Version/Commit,

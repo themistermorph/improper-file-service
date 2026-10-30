@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Version / Commit
-      placeholder: z. B. 0.1.0 oder Commit-Hash
+      placeholder: z. B. 0.1.7.1 oder Commit-Hash
     validations:
       required: true
   - type: dropdown

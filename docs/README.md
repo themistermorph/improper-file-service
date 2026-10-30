@@ -14,6 +14,7 @@ Diese Dokumentation ist in zwei Teile gegliedert:
 
 | Ziel | Dokument |
 |---|---|
+| IFS installieren (Docker/manuell) | [Installation](installation.md) |
 | IFS zum ersten Mal starten | [Tutorial 1 – Schnellstart](../tutorials/01-schnellstart.md) |
 | Dateien per HTTP hoch-/herunterladen | [Tutorial 2 – Dateien über HTTP](../tutorials/02-dateien-ueber-http.md) |
 | Dateien per FTPS übertragen | [Tutorial 3 – FTPS](../tutorials/03-ftps-mit-filezilla-und-curl.md) |

@@ -189,11 +189,10 @@ python -m ifs.cli run-worker   # Hintergrundjobs
 > `0008_published_entries.sql` (öffentliche Galerie),
 > `0009_published_public_name.sql` und `0010_published_public_path.sql` (Vanity-Links).
 > **Vor** dem Unique-Index aus 0006
-> muss für jeden Benutzer eine Wurzel existieren. Beispiel:
+> muss für jeden Benutzer eine Wurzel existieren. Beispiel (vom
+> Projektwurzelverzeichnis aus):
 > ```bash
-> for f in migrations/sql/000*.sql; do
->   docker compose exec -T db psql -U ifs -d ifs < "$f"
-> done
+> bash deploy/apply-migrations.sh
 > ```
 
 ### Docker Compose

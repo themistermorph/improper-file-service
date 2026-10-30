@@ -1,7 +1,7 @@
 # Release-Anleitung
 
-Diese Anleitung beschreibt, wie das Projekt erstmals in ein GitHub-Repository
-überführt und ein **Pre-Release** veröffentlicht wird.
+Diese Anleitung beschreibt den erstmaligen Import in ein neues GitHub-Repository
+(Abschnitte 1–3) und den regulären Release-Ablauf (Abschnitt 4).
 
 > Hinweis: In der Entwicklungs-Workspace ist `git`/`gh` ggf. nicht installiert.
 > Führe die Schritte auf einem Rechner mit installiertem
@@ -11,10 +11,10 @@ Diese Anleitung beschreibt, wie das Projekt erstmals in ein GitHub-Repository
 
 ## 0. Vorbereitung (einmalig)
 
-1. **Platzhalter ersetzen:** `OWNER/REPO` durch den echten GitHub-Pfad ersetzen in
-   - `README.md` (Badges),
-   - `CHANGELOG.md` (Release-Link),
-   - `.github/ISSUE_TEMPLATE/config.yml` (Links).
+1. **Repository-URLs prüfen:** Die Links in `README.md` (Badges),
+   `CHANGELOG.md` (Release-Links) und `.github/ISSUE_TEMPLATE/config.yml`
+   zeigen auf `themistermorph/inproper-file-service`. Bei einem Fork oder
+   Repo-Umzug anpassen.
 2. **Secrets prüfen:** Es dürfen **keine** Secrets im Repo liegen. `.gitignore`
    schließt `.env`, `certs/`, `ADMIN_CREDENTIALS.txt`, `seaweedfs/s3.json`,
    `seaweedfs/Caddyfile`, `deploy/known_hosts` und `for-agents/` aus.
@@ -35,7 +35,7 @@ cd <projektordner>
 git init -b main
 git add .
 git status            # sicherstellen, dass nichts Sensibles dabei ist
-git commit -m "chore: initial import (IFS 0.1.0)"
+git commit -m "chore: initial import (IFS <version>)"
 ```
 
 ## 2. GitHub-Repository anlegen und pushen
@@ -59,8 +59,8 @@ Nach dem ersten Push läuft **CI** (`.github/workflows/ci.yml`) auf Python 3.11/
 ## 3. Pre-Release taggen und veröffentlichen
 
 ```bash
-git tag -a v0.1.0 -m "IFS 0.1.0 (Pre-Release)"
-git push origin v0.1.0
+git tag -a vX.Y.Z -m "IFS X.Y.Z (Pre-Release)"
+git push origin vX.Y.Z
 ```
 
 Der Tag stößt `.github/workflows/release.yml` an. Der Workflow ist in zwei Jobs
@@ -87,10 +87,10 @@ Release als Pre-Release veröffentlichen:
 
 ```bash
 # Variante A: direkt als Pre-Release (ohne vorherigen Draft)
-gh release create v0.1.0 --prerelease --generate-notes
+gh release create vX.Y.Z --prerelease --generate-notes
 
 # Variante B: bestehenden Draft prüfen und als Pre-Release publizieren
-gh release edit v0.1.0 --draft=false --prerelease
+gh release edit vX.Y.Z --draft=false --prerelease
 ```
 
 Alternativ im GitHub-Web: Draft öffnen → „Set as a pre-release" aktivieren →
@@ -103,7 +103,8 @@ Alternativ im GitHub-Web: Draft öffnen → „Set as a pre-release" aktivieren 
 - [ ] `pyproject.toml`: `version`
 - [ ] `src/ifs/__init__.py`: `__version__`
 - [ ] `CHANGELOG.md`: neuer Abschnitt + Link
-- [ ] `python -m ruff check src tests` und `python -m pytest` grün
+- [ ] `python -m ruff check src tests scripts` und `python -m pytest` grün
+- [ ] `python scripts/check-doc-links.py` ohne tote Links
 - [ ] Tag `vX.Y.Z` (Pre-Release: `-rc.N` oder als Pre-release markiert)
 - [ ] Tag liegt auf `main`
 - [ ] Environment `release` mit Required Reviewer (Approval) konfiguriert
@@ -112,7 +113,8 @@ Alternativ im GitHub-Web: Draft öffnen → „Set as a pre-release" aktivieren 
 
 ## 5. CI-Erwartungen
 
-- `ruff check src tests` → sauber
+- `ruff check src tests scripts` → sauber
+- `check-doc-links.py` → keine toten Links
 - `pytest` → alle Tests grün (SQLite + Fakes, keine externen Dienste nötig)
 - `secret-scan` (gitleaks) → keine Secrets im Verlauf (nur bei öffentlichen Repos;
   private Repos bräuchten ein `GITLEAKS_LICENSE`-Secret)
