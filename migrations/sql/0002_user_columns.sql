@@ -1,6 +1,6 @@
 -- Ausbaustufe 2, M2 – Account-Manager
 -- Für bestehende Installationen (idempotent). Neue Installationen erhalten die
--- Spalten automatisch über create_all bzw. Alembic.
+-- Spalten automatisch über create_all.
 --
 -- Anwenden:
 --   docker compose exec -T db psql -U ifs -d ifs < migrations/sql/0002_user_columns.sql

@@ -6,7 +6,7 @@
 --   docker compose exec -T db psql -U ifs -d ifs < migrations/sql/0008_published_entries.sql
 --
 -- Idempotent: kann mehrfach angewendet werden. Neue Installationen erhalten die
--- Tabelle automatisch über create_all bzw. Alembic.
+-- Tabelle automatisch über create_all.
 
 CREATE TABLE IF NOT EXISTS published_entries (
     entry_id     uuid PRIMARY KEY REFERENCES entries (id) ON DELETE CASCADE,

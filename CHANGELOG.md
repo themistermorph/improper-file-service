@@ -71,6 +71,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 - **CI:** Ruff prüft jetzt auch `scripts/`; der Doku-Link-Check
   (`scripts/check-doc-links.py`) läuft in der CI und deckt zusätzlich
   `deploy/README.md` ab.
+- **Migrationen:** Das ungenutzte Alembic-Scaffolding (`alembic.ini`,
+  `migrations/env.py`, `migrations/script.py.mako`, `migrations/versions/`) und
+  die Laufzeitabhängigkeit `alembic` sind entfernt. Die idempotenten
+  SQL-Migrationen unter `migrations/sql/` sind der einzige Migrationsweg;
+  `deploy/apply-migrations.sh` wendet sie an. `migrations/README.md` und die
+  betroffenen Dokumente beschreiben das Vorgehen.
 
 ### Fixed
 - **Ordner-Upload in der Web-UI:** Drag-&-Drop und ein neuer Button

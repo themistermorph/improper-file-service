@@ -35,7 +35,7 @@ src/ifs/
   worker.py          Hintergrundjobs
   web/               Web-Frontend (index.html, published.html)
 tests/               pytest (Kern, API, FTPS-End-to-End)
-migrations/          Alembic-Konfiguration + SQL-Migrationen (sql/)
+migrations/          SQL-Migrationen (sql/)
 scripts/             Hilfsskripte
 ```
 
@@ -117,14 +117,13 @@ def touch_entry(entry_id: UUID, request: Request, db: Session = Depends(get_db),
 
 ## 6. Migrationen
 
-```bash
-# Modelle in src/ifs/models.py ändern, dann:
-alembic revision --autogenerate -m "kurze beschreibung"
-alembic upgrade head
-```
+Das Schema ist in `src/ifs/models.py` definiert. Für den schnellen Dev-Start
+genügt `IFS_AUTO_CREATE_SCHEMA=true` (`python -m ifs.cli init-db`).
 
-Für den schnellen Dev-Start genügt `IFS_AUTO_CREATE_SCHEMA=true`
-(`python -m ifs.cli init-db`). In Produktion immer Alembic.
+Produktive Änderungen werden als idempotente SQL-Migration unter
+`migrations/sql/` ergänzt (nächste freie Nummer, z. B.
+`0011_mein_feature.sql`) und mit `bash deploy/apply-migrations.sh` angewendet.
+Details: [`migrations/README.md`](../migrations/README.md).
 
 ---
 
@@ -172,6 +171,6 @@ Für den schnellen Dev-Start genügt `IFS_AUTO_CREATE_SCHEMA=true`
 - [ ] Autorisierung an jeder mutierenden/lesenden Operation
 - [ ] Audit-Eintrag bei Mutationen
 - [ ] Tests ergänzt (`pytest`)
-- [ ] `ruff check src tests` ohne Befund
+- [ ] `ruff check src tests scripts` ohne Befund
 - [ ] Dokumentation/API-Referenz aktualisiert
-- [ ] Bei Schemaänderung: Alembic-Revision
+- [ ] Bei Schemaänderung: idempotente SQL-Migration unter `migrations/sql/`

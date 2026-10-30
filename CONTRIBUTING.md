@@ -31,7 +31,7 @@ python scripts/check-doc-links.py
 ```
 src/ifs/            Anwendung (api/, core/, ftp/, web/)
 tests/              Pytest-Suite
-migrations/         Alembic + SQL-Skripte
+migrations/         SQL-Migrationen (sql/)
 docs/               Handbücher (Installation, API, Sicherheit, Betrieb …)
 tutorials/          Schritt-für-Schritt-Anleitungen
 deploy/             Betriebsskripte (bench/ = Messungen, archive/ = historische Einmal-Skripte)

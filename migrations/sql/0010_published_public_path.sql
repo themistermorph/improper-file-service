@@ -7,7 +7,7 @@
 --   docker compose exec -T db psql -U ifs -d ifs < migrations/sql/0010_published_public_path.sql
 --
 -- Idempotent: kann mehrfach angewendet werden. Neue Installationen erhalten die
--- Spalte automatisch über create_all bzw. Alembic.
+-- Spalte automatisch über create_all.
 
 ALTER TABLE published_entries
     ADD COLUMN IF NOT EXISTS public_path varchar(512);

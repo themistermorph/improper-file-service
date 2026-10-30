@@ -1,4 +1,4 @@
-"""Prüft relative Markdown-Links in README, docs/, tutorials/ und deploy/ auf Existenz.
+"""Prüft relative Markdown-Links in README, docs/, tutorials/, deploy/ und migrations/.
 
 Aufruf aus dem Projektwurzelverzeichnis:
 
@@ -22,6 +22,7 @@ def main() -> int:
         + list((root / "docs").glob("*.md"))
         + list((root / "tutorials").glob("*.md"))
         + list((root / "deploy").glob("*.md"))
+        + list((root / "migrations").glob("*.md"))
     )
     missing: list[tuple[pathlib.Path, str]] = []
     for file in files:

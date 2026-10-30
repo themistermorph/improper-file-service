@@ -267,7 +267,7 @@ src/ifs/
   ftp/               FTPS-Gateway (pyftpdlib) mit virtuellem Dateisystem
   worker.py          Outbox, Papierkorb, Blob-GC
   web/index.html     Web-Frontend (Dateimanager)
-migrations/          Alembic + SQL-Migrationen (sql/000x_*.sql)
+migrations/          SQL-Migrationen (sql/000x_*.sql)
 scripts/             Hilfsskripte (Dev-Zertifikat, Doku-Link-Checker, Deploy-Helfer)
 deploy/              Betriebsskripte (SSH/Compose); bench/ = Messungen, archive/ = historische Einmal-Skripte
 docs/                Handbücher; tutorials/ Schritt-für-Schritt-Anleitungen
@@ -280,28 +280,21 @@ docker-compose.yml       Stack (db, s3, s3-ui, api, ftp, worker) – Standard: l
 ## Datenbankmigrationen
 
 Für den schnellen Start legt `ifs init-db` das Schema per `create_all` an. Bestehende
-Installationen werden über die SQL-Migrationen unter `migrations/sql/` aktualisiert
-(siehe unten). Alembic ist für eigene, autogenerierte Schema-Änderungen vorbereitet:
+Installationen werden über die idempotenten SQL-Migrationen unter `migrations/sql/`
+aktualisiert:
 
 ```bash
-alembic revision --autogenerate -m "meine Änderung"
-alembic upgrade head
+bash deploy/apply-migrations.sh
 ```
 
-> **Bestehende Installation (Upgrade):** Die SQL-Migrationen unter
-> `migrations/sql/` nacheinander anwenden, insbesondere
-> `0004_unique_entry_names.sql`, `0005_share_overwrite.sql`,
-> `0006_per_user_roots.sql`, `0007_performance_indexes.sql` und
-> `0008_published_entries.sql`. **Vor** dem
-> Unique-Index aus 0006 muss für jeden
-> Benutzer eine Wurzel existieren (Per-User-Wurzel), sonst schlägt die Migration
-> fehl. Beispiel:
->
-> ```bash
-> for f in migrations/sql/000*.sql; do
->   docker compose exec -T db psql -U ifs -d ifs < "$f"
-> done
-> ```
+Das Skript wendet alle Dateien in Reihenfolge über den Compose-Dienst `db` an und
+kann gefahrlos wiederholt werden.
+
+> **Bestehende Installation (Upgrade):** **Vor** dem Unique-Index aus
+> `0006_per_user_roots.sql` muss für jeden Benutzer eine Wurzel existieren
+> (Per-User-Wurzel), sonst schlägt die Migration fehl. Details und die
+> Migrationsliste stehen in
+> [`docs/betrieb.md`](docs/betrieb.md#7-upgrades-und-migrationen).
 
 ---
 

@@ -241,9 +241,8 @@ Die Deduplizierung teilt Blobs zwischen mehreren Einträgen – der GC berücksi
 ## 7. Migrationen
 
 Das Schema ist in `src/ifs/models.py` definiert. Für den Schnellstart legt
-`ifs init-db` es per `create_all` an. Für produktive Änderungen Alembic verwenden:
-
-```bash
-alembic revision --autogenerate -m "beschreibung"
-alembic upgrade head
-```
+`ifs init-db` es per `create_all` an. Produktive Änderungen werden als
+idempotente SQL-Migration unter `migrations/sql/` ergänzt und mit
+`bash deploy/apply-migrations.sh` angewendet. Details:
+[Betrieb](betrieb.md#7-upgrades-und-migrationen) und
+[`migrations/README.md`](../migrations/README.md).

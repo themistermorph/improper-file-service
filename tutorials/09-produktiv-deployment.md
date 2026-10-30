@@ -188,11 +188,9 @@ Der Passive-Bereich muss exakt dem `IFS_FTP_PASSIVE_PORTS` entsprechen.
 > bewusst bei `true` bleiben (Automatik) und die Migrationen für bestehende
 > Installationen trotzdem anwenden.
 
-**Nicht** über `alembic upgrade head` im Container migrieren: Das `Dockerfile` kopiert
-nur `pyproject.toml`, `requirements.txt` und `src` – **nicht** `alembic.ini` bzw.
-`migrations/`, und `migrations/versions/` ist leer. `docker compose run --rm api alembic
-upgrade head` scheitert daher („No config file 'alembic.ini' found"). Nutze stattdessen
-die **SQL-Migrationen** unter `migrations/sql/`:
+Die Migrationen laufen über den Compose-Dienst `db`. Das `Dockerfile` kopiert nur
+`pyproject.toml`, `requirements.txt` und `src` – **nicht** `migrations/`. Nutze
+daher das mitgelieferte Skript vom Projektwurzelverzeichnis aus:
 
 ```bash
 docker compose build
@@ -200,9 +198,7 @@ docker compose up -d          # startet DB + API (Basisschema per create_all)
 docker compose ps
 
 # SQL-Migrationen in Reihenfolge anwenden (idempotent, inkl. 0008_published_entries.sql)
-for f in migrations/sql/000*.sql; do
-  docker compose exec -T db psql -U ifs -d ifs < "$f"
-done
+bash deploy/apply-migrations.sh
 ```
 
 Die Migrationen sind idempotent (`IF NOT EXISTS`) und können wiederholt angewendet werden.

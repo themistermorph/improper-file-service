@@ -1,6 +1,6 @@
 -- Ausbaustufe 2, M3 – Rollenmanagement
 -- Für bestehende Installationen (idempotent). Neue Installationen erhalten die
--- Tabellen automatisch über create_all bzw. Alembic. Die eingebauten Rollen
+-- Tabellen automatisch über create_all. Die eingebauten Rollen
 -- werden beim Start der API angelegt (ensure_builtin_roles).
 --
 -- Anwenden:

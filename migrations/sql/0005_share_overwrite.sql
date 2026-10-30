@@ -5,7 +5,6 @@
 -- Anwenden:
 --   docker compose exec -T db psql -U ifs -d ifs < migrations/sql/0005_share_overwrite.sql
 --
--- Hinweis: Neue Installationen erhalten die Spalte automatisch über create_all
--- bzw. Alembic.
+-- Hinweis: Neue Installationen erhalten die Spalte automatisch über create_all.
 
 ALTER TABLE shares ADD COLUMN IF NOT EXISTS overwrite boolean NOT NULL DEFAULT false;

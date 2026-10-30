@@ -78,7 +78,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "localhost:8000/api/audit?limit=20" | 
 | Symptom | Ursache | Lösung |
 |---|---|---|
 | Startfehler „connection refused“ | DB nicht bereit | `depends_on`/Healthcheck abwarten, `docker compose logs db` |
-| „relation does not exist“ | Schema fehlt | `IFS_AUTO_CREATE_SCHEMA=true` (Dev) oder `alembic upgrade head` |
+| „relation does not exist“ | Schema fehlt | `IFS_AUTO_CREATE_SCHEMA=true` (Dev) oder `bash deploy/apply-migrations.sh` |
 | Migration schlägt fehl | Schema veraltet/inkonsistent | Backup, dann Migration prüfen |
 
 ```bash

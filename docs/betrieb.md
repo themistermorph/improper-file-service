@@ -160,23 +160,19 @@ die Papierkorb-Frist steuert `IFS_TRASH_RETENTION_DAYS` (Standard 30 Tage).
 git pull
 docker compose build
 
-# 3. SQL-Migrationen anwenden (migrations/sql/, in Reihenfolge)
-for f in migrations/sql/000*.sql; do
-  docker compose exec -T db psql -U ifs -d ifs < "$f"
-done
+# 3. SQL-Migrationen anwenden (idempotent, in Dateinamen-Reihenfolge)
+bash deploy/apply-migrations.sh
 #    Vor 0006_per_user_roots.sql muss für jeden Benutzer eine Wurzel existieren.
 #    Enthält u. a. 0007_performance_indexes.sql, 0008_published_entries.sql,
 #    0009_published_public_name.sql und 0010_published_public_path.sql.
 
-# 4. Alembic nur für eigene Schema-Änderungen: Das mitgelieferte Docker-Image
-#    enthält alembic.ini/migrations nicht; Standard-Upgrades laufen über Schritt 3.
-
-# 5. Rollen neu starten
+# 4. Rollen neu starten
 docker compose up -d
 ```
 
 - `IFS_AUTO_CREATE_SCHEMA` in Produktion **niemals** aktiv lassen.
-- Schemaänderungen immer als Alembic-Revision versionieren.
+- Schemaänderungen immer als idempotente SQL-Migration unter `migrations/sql/`
+  versionieren (siehe [`migrations/README.md`](../migrations/README.md)).
 
 ---
 

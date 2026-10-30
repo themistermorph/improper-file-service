@@ -258,7 +258,7 @@ Jede Stufe wird vollständig umgesetzt: **Modell/Migration → API → UI → Te
 
 Für **jede** Stufe verbindlich:
 
-- **Migration:** Alembic-Revision, abwärtskompatibel.
+- **Migration:** idempotente SQL-Migration, abwärtskompatibel.
 - **Autorisierung:** zentraler PDP (`core/authz.py`); Rechte serverseitig geprüft.
 - **Audit:** jede Mutation erzeugt einen Audit-Eintrag (Akteur, Aktion, Ziel, Ergebnis).
 - **API:** Pydantic-Schemas, einheitliche Fehler, `problem+json`, OpenAPI aktuell.
