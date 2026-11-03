@@ -1,7 +1,7 @@
-﻿"""Sicherheitsmatrix der Berechtigungs-Umstellung.
+"""Sicherheitsmatrix der Berechtigungs-Umstellung.
 
-PrÃ¼ft die Trennung von Eintrags- und Systemrechten sowie die Isolation des
-Systemadmins (kein Dateizugriff auf fremde BÃ¤ume).
+Prüft die Trennung von Eintrags- und Systemrechten sowie die Isolation des
+Systemadmins (kein Dateizugriff auf fremde Bäume).
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def test_systemrechte_erlauben_keine_mutationen():
         assert client.post(
             "/api/roles", headers=user, json={"name": "x", "permissions": []}
         ).status_code == 403
-        # System-Grant gewÃ¤hrt keinen Dateizugriff.
+        # System-Grant gewährt keinen Dateizugriff.
         _alice_id, alice = _user(client, admin, "sec-owner")
         folder = client.post("/api/folders", headers=alice, json={"name": "privat"}).json()
         assert client.get(f"/api/entries/{folder['id']}", headers=user).status_code == 403
@@ -111,12 +111,12 @@ def test_share_publish_admin_sind_getrennte_rechte():
             },
         ).status_code == 403
 
-        # publish hinzufÃ¼gen: Galerie erlaubt, Zugriff weiterhin nicht.
+        # publish hinzufügen: Galerie erlaubt, Zugriff weiterhin nicht.
         assert _grant(client, alice, folder["id"], bob_id, ["read", "share", "publish"]).status_code == 200
         assert client.post(f"/api/published/{folder['id']}", headers=bob).status_code == 201
         assert client.get(f"/api/entries/{folder['id']}/acl", headers=bob).status_code == 403
 
-        # admin hinzufÃ¼gen: Zugriff erlaubt, aber weiterhin kein Systemadmin.
+        # admin hinzufügen: Zugriff erlaubt, aber weiterhin kein Systemadmin.
         assert _grant(client, alice, folder["id"], bob_id, ["read", "share", "publish", "admin"]).status_code == 200
         assert client.get(f"/api/entries/{folder['id']}/acl", headers=bob).status_code == 200
         assert client.get("/api/users", headers=bob).status_code == 403
