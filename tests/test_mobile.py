@@ -33,11 +33,29 @@ def test_mobile_seite_nutzt_dieselben_api_endpunkte():
         "/api/root",
         "/api/entries",
         "/api/shared",
+        "/api/shared/outgoing",
+        "/api/shares",
+        "/api/published/mine",
         "/api/folders",
         "/api/uploads/simple",
         "/download-token",
     ):
         assert endpoint in page, f"Mobile Seite nutzt {endpoint} nicht"
+    for function in (
+        "renderGeteilt", "renderShares", "renderPublished",
+        "openShareSheet", "openPublishedSheet",
+    ):
+        assert f"function {function}" in page
+
+
+def test_mobile_navigation_enthaelt_geteilt_freigaben_und_veroeffentlichungen():
+    page = _page()
+    for element_id in ("tab-geteilt", "tab-shares", "tab-published"):
+        assert f'id="{element_id}"' in page
+    for label in ("Geteilt", "Freigaben", "Meine Veröffentlichungen"):
+        assert label in page
+    # „Mit mir geteilt“ bleibt über das Konto-Menü erreichbar.
+    assert "Mit mir geteilt" in page
 
 
 def test_mobile_seite_ist_offline_faehig_und_touch_freundlich():
@@ -51,7 +69,7 @@ def test_mobile_seite_ist_offline_faehig_und_touch_freundlich():
     assert "min-height: 44px" in page or "min-height: 48px" in page
     assert "env(safe-area-inset-bottom)" in page
     # Navigation und Kernaktionen vorhanden.
-    for element_id in ("tab-files", "tab-shared", "file-input", "login-form", "search"):
+    for element_id in ("tab-files", "tab-geteilt", "file-input", "login-form", "search"):
         assert f'id="{element_id}"' in page
 
 

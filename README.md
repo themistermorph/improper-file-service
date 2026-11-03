@@ -63,8 +63,9 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
   Freigabelinks, **Veröffentlichungen** (öffentliche Galerie unter `/published`),
   **Vorschau** für Text/Code, HTML, PDF, Bilder, Video und Audio)
 - **Mobile Oberfläche**: unter `/mobile` eine touch-optimierte Ansicht für
-  Dateien, „Mit mir geteilt“, Download, Upload, neue Ordner, Umbenennen und
-  Löschen; dieselbe Anmeldung wie die Desktop-UI
+  Dateien, „Geteilt“ (ACL-Grants), „Freigaben“, „Meine Veröffentlichungen“,
+  „Mit mir geteilt“ im Konto-Menü, Download, Upload, neue Ordner, Umbenennen
+  und Löschen; dieselbe Anmeldung wie die Desktop-UI
 
 ---
 

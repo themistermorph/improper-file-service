@@ -77,8 +77,10 @@ Erwartete Antwort:
 (Benutzer `admin`, das Passwort aus `.env`).
 
 > **Mobil:** Unter <http://localhost:8000/mobile> steht eine touch-optimierte
-> Ansicht für Dateien, „Mit mir geteilt“, Download/Upload und einfache
-> Dateiaktionen bereit. Die Anmeldung ist dieselbe wie in der Desktop-UI.
+> Ansicht für Dateien, „Geteilt“ (ACL-Grants), „Freigaben“,
+> „Meine Veröffentlichungen“ und „Mit mir geteilt“ (Konto-Menü) bereit.
+> Download/Upload und einfache Dateiaktionen sind enthalten; die Anmeldung ist
+> dieselbe wie in der Desktop-UI.
 
 ---
 

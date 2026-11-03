@@ -102,17 +102,18 @@
     .empty { padding: 36px 16px; text-align: center; color: var(--muted); }
     .bottomnav {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 12;
-      display: grid; grid-template-columns: repeat(3, 1fr);
+      display: grid; grid-template-columns: repeat(4, 1fr);
       background: rgba(18, 23, 33, .98); border-top: 1px solid var(--border);
       padding-bottom: env(safe-area-inset-bottom);
       backdrop-filter: blur(8px);
     }
     .bottomnav button, .bottomnav a {
-      min-height: 58px; border: 0; background: transparent; color: var(--muted);
+      min-height: 62px; border: 0; background: transparent; color: var(--muted);
       text-decoration: none; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 2px; font-size: 11px;
+      align-items: center; justify-content: center; gap: 2px;
+      font-size: 10px; line-height: 1.1; text-align: center; padding: 6px 2px;
     }
-    .bottomnav .navicon { font-size: 20px; line-height: 1; }
+    .bottomnav .navicon { font-size: 19px; line-height: 1; }
     .bottomnav .active { color: var(--accent2); }
     .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 19; }
     .sheet {
@@ -190,12 +191,15 @@
       <button id="tab-files" class="active" type="button">
         <span class="navicon">📁</span>Dateien
       </button>
-      <button id="tab-shared" type="button">
-        <span class="navicon">📥</span>Geteilt
+      <button id="tab-geteilt" type="button">
+        <span class="navicon">🤝</span>Geteilt
       </button>
-      <a href="/published" target="_blank" rel="noopener">
-        <span class="navicon">🌐</span>Galerie
-      </a>
+      <button id="tab-shares" type="button">
+        <span class="navicon">🔗</span>Freigaben
+      </button>
+      <button id="tab-published" type="button">
+        <span class="navicon">📤</span>Meine Veröffentlichungen
+      </button>
     </nav>
 
     <div id="backdrop" class="backdrop hidden"></div>
@@ -221,6 +225,9 @@
       filesStack: [],
       sharedStack: [],
       entries: [],
+      geteilt: [],
+      shares: [],
+      published: [],
       tab: "files",
       filter: "",
       loading: false,
@@ -228,6 +235,14 @@
 
     const $ = (id) => document.getElementById(id);
     let toastTimer = null;
+    const ENTRY_PERM_LABEL = {
+      read: "lesen",
+      write: "schreiben",
+      delete: "löschen",
+      share: "teilen",
+      publish: "veröffentlichen",
+      admin: "Zugriff verwalten",
+    };
 
     function esc(value) {
       return String(value ?? "").replace(/[&<>"]/g, (c) => ({
@@ -287,6 +302,9 @@
       state.filesStack = [];
       state.sharedStack = [];
       state.entries = [];
+      state.geteilt = [];
+      state.shares = [];
+      state.published = [];
       sessionStorage.removeItem(TOKEN_KEY);
       $("app").classList.add("hidden");
       $("login").classList.remove("hidden");
@@ -348,15 +366,23 @@
           state.entries = await api(
             "GET", "/api/entries?parent_id=" + encodeURIComponent(state.filesCwd.id),
           );
-        } else if (state.sharedStack.length) {
-          const current = state.sharedStack[state.sharedStack.length - 1];
-          state.entries = await api(
-            "GET", "/api/entries?parent_id=" + encodeURIComponent(current.id),
-          );
-        } else {
-          state.entries = await api("GET", "/api/shared");
+        } else if (state.tab === "shared") {
+          if (state.sharedStack.length) {
+            const current = state.sharedStack[state.sharedStack.length - 1];
+            state.entries = await api(
+              "GET", "/api/entries?parent_id=" + encodeURIComponent(current.id),
+            );
+          } else {
+            state.entries = await api("GET", "/api/shared");
+          }
+        } else if (state.tab === "geteilt") {
+          state.geteilt = await api("GET", "/api/shared/outgoing");
+        } else if (state.tab === "shares") {
+          state.shares = await api("GET", "/api/shares");
+        } else if (state.tab === "published") {
+          state.published = await api("GET", "/api/published/mine");
         }
-        render();
+        renderCurrent();
       } catch (e) {
         toast("Laden fehlgeschlagen: " + e.message, "err");
       } finally {
@@ -364,15 +390,54 @@
       }
     }
 
-    function currentPath() {
-      if (state.tab === "files") return state.filesCwd?.path || "/";
-      if (state.sharedStack.length) {
-        return state.sharedStack.map((entry) => entry.name).join(" / ");
+    function currentTitle() {
+      if (state.tab === "files") {
+        return state.filesStack.length ? state.filesCwd.name : "Dateien";
       }
-      return "Mit mir geteilte Einträge";
+      if (state.tab === "shared") {
+        return state.sharedStack.length
+          ? state.sharedStack[state.sharedStack.length - 1].name
+          : "Mit mir geteilt";
+      }
+      if (state.tab === "geteilt") return "Geteilt";
+      if (state.tab === "shares") return "Freigaben";
+      return "Meine Veröffentlichungen";
     }
 
-    function render() {
+    function currentPath() {
+      if (state.tab === "files") return state.filesCwd?.path || "/";
+      if (state.tab === "shared") {
+        return state.sharedStack.length
+          ? state.sharedStack.map((entry) => entry.name).join(" / ")
+          : "Mit mir geteilte Einträge";
+      }
+      if (state.tab === "geteilt") return "Berechtigungen auf meinen Einträgen";
+      if (state.tab === "shares") return "Erstellte Freigabelinks";
+      return "Öffentlich bereitgestellte Einträge";
+    }
+
+    function updateHeader() {
+      $("title").textContent = currentTitle();
+      $("path").textContent = currentPath();
+      if (state.tab === "files") {
+        $("back").disabled = state.filesStack.length === 0;
+      } else if (state.tab === "shared") {
+        $("back").disabled = state.sharedStack.length === 0;
+      } else {
+        $("back").disabled = true;
+      }
+      $("refresh").classList.remove("hidden");
+      $("menu").classList.remove("hidden");
+      $("search").placeholder = state.tab === "files"
+        ? "Im aktuellen Ordner filtern…"
+        : "Filtern…";
+      $("tab-files").classList.toggle("active", state.tab === "files");
+      $("tab-geteilt").classList.toggle("active", state.tab === "geteilt");
+      $("tab-shares").classList.toggle("active", state.tab === "shares");
+      $("tab-published").classList.toggle("active", state.tab === "published");
+    }
+
+    function renderEntries() {
       const list = $("list");
       const frag = document.createDocumentFragment();
       const needle = state.filter.trim().toLowerCase();
@@ -424,18 +489,196 @@
         ? "Keine Treffer."
         : (state.tab === "files" ? "Dieser Ordner ist leer." : "Keine Freigaben für dich.");
       empty.classList.toggle("hidden", items.length > 0);
+    }
 
-      $("title").textContent = state.tab === "files"
-        ? (state.filesStack.length ? state.filesCwd.name : "Dateien")
-        : (state.sharedStack.length ? state.sharedStack[state.sharedStack.length - 1].name : "Mit mir geteilt");
-      $("path").textContent = currentPath();
-      $("back").disabled = state.tab === "files"
-        ? state.filesStack.length === 0
-        : state.sharedStack.length === 0;
-      $("refresh").classList.remove("hidden");
-      $("menu").classList.remove("hidden");
-      $("tab-files").classList.toggle("active", state.tab === "files");
-      $("tab-shared").classList.toggle("active", state.tab === "shared");
+    function renderShares() {
+      const list = $("list");
+      const frag = document.createDocumentFragment();
+      const needle = state.filter.trim().toLowerCase();
+      const items = state.shares.filter((share) => {
+        const haystack = [
+          share.entry_path, share.entry_name, share.created_by_username,
+          share.created_by_display_name,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return !needle || haystack.includes(needle);
+      });
+
+      for (const share of items) {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const icon = document.createElement("div");
+        icon.className = "ficon";
+        icon.textContent = "🔗";
+        row.appendChild(icon);
+
+        const info = document.createElement("div");
+        info.className = "info";
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = share.entry_path || share.entry_name || share.entry_id;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const parts = [
+          "von " + (share.created_by_display_name || share.created_by_username || "–"),
+          share.max_downloads !== null
+            ? `${share.downloads}/${share.max_downloads} Downloads`
+            : `${share.downloads} Downloads`,
+        ];
+        if (share.expires_at) parts.push("bis " + fmtDate(share.expires_at));
+        if (share.has_password) parts.push("Passwort");
+        meta.textContent = parts.join(" · ");
+        info.appendChild(name);
+        info.appendChild(meta);
+        row.appendChild(info);
+
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "more";
+        more.textContent = "⋯";
+        more.setAttribute("aria-label", "Aktionen für Freigabe");
+        more.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openShareSheet(share);
+        });
+        row.appendChild(more);
+
+        row.addEventListener("click", () => openShare(share));
+        frag.appendChild(row);
+      }
+
+      list.replaceChildren(frag);
+      const empty = $("empty");
+      empty.textContent = needle ? "Keine Treffer." : "Keine Freigaben vorhanden.";
+      empty.classList.toggle("hidden", items.length > 0);
+    }
+
+    function renderGeteilt() {
+      const list = $("list");
+      const frag = document.createDocumentFragment();
+      const needle = state.filter.trim().toLowerCase();
+      const items = state.geteilt.filter((grant) => {
+        const haystack = [
+          grant.entry_path, grant.entry_name, grant.principal_name,
+          grant.principal_display_name, (grant.permission_names || []).join(" "),
+        ].filter(Boolean).join(" ").toLowerCase();
+        return !needle || haystack.includes(needle);
+      });
+
+      for (const grant of items) {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const icon = document.createElement("div");
+        icon.className = "ficon";
+        icon.textContent = grant.entry_type === "folder" ? "📁" : "📄";
+        row.appendChild(icon);
+
+        const info = document.createElement("div");
+        info.className = "info";
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = grant.entry_path || grant.entry_name;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const kind = grant.principal_type === "group" ? "Gruppe" : "Benutzer";
+        const principal = grant.principal_display_name
+          ? `${grant.principal_display_name} (${grant.principal_name})`
+          : (grant.principal_name || grant.principal_id);
+        const perms = (grant.permission_names || [])
+          .map((p) => ENTRY_PERM_LABEL[p] || p).join(", ");
+        meta.textContent = `${kind}: ${principal} · ${perms}`;
+        info.appendChild(name);
+        info.appendChild(meta);
+        row.appendChild(info);
+
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "more";
+        more.textContent = "⋯";
+        more.setAttribute("aria-label", "Details zur Berechtigung");
+        more.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openSheet(grant.entry_path || grant.entry_name || "Berechtigung", [
+            { label: "Empfänger: " + principal, action: () => {} },
+            { label: "Rechte: " + perms, action: () => {} },
+          ]);
+        });
+        row.appendChild(more);
+
+        frag.appendChild(row);
+      }
+
+      list.replaceChildren(frag);
+      const empty = $("empty");
+      empty.textContent = needle
+        ? "Keine Treffer."
+        : "Du hast noch keine Berechtigungen vergeben.";
+      empty.classList.toggle("hidden", items.length > 0);
+    }
+
+    function renderPublished() {
+      const list = $("list");
+      const frag = document.createDocumentFragment();
+      const needle = state.filter.trim().toLowerCase();
+      const items = state.published.filter((item) => {
+        const haystack = [item.name, item.public_name, item.public_path, item.path]
+          .filter(Boolean).join(" ").toLowerCase();
+        return !needle || haystack.includes(needle);
+      });
+
+      for (const item of items) {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const icon = document.createElement("div");
+        icon.className = "ficon";
+        icon.textContent = item.type === "folder" ? "📁" : "📄";
+        row.appendChild(icon);
+
+        const info = document.createElement("div");
+        info.className = "info";
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = item.public_name || item.name;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const parts = [
+          item.public_path ? "/published/" + item.public_path : "ohne eigenen Link",
+          fmtDate(item.published_at),
+        ].filter(Boolean);
+        meta.textContent = parts.join(" · ");
+        info.appendChild(name);
+        info.appendChild(meta);
+        row.appendChild(info);
+
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "more";
+        more.textContent = "⋯";
+        more.setAttribute("aria-label", "Aktionen für Veröffentlichung");
+        more.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openPublishedSheet(item);
+        });
+        row.appendChild(more);
+
+        row.addEventListener("click", () => openPublished(item));
+        frag.appendChild(row);
+      }
+
+      list.replaceChildren(frag);
+      const empty = $("empty");
+      empty.textContent = needle ? "Keine Treffer." : "Keine Veröffentlichungen.";
+      empty.classList.toggle("hidden", items.length > 0);
+    }
+
+    function renderCurrent() {
+      if (state.tab === "geteilt") renderGeteilt();
+      else if (state.tab === "shares") renderShares();
+      else if (state.tab === "published") renderPublished();
+      else renderEntries();
+      updateHeader();
     }
 
     function activate(entry) {
@@ -519,6 +762,10 @@
         buttons.push({ label: "＋ Neuer Ordner", action: newFolder });
         buttons.push({ label: "⬆ Datei hochladen", action: () => $("file-input").click() });
       }
+      buttons.push({ label: "🌐 Öffentliche Galerie", action: () => {
+        window.open("/published", "_blank", "noopener");
+      } });
+      buttons.push({ label: "📥 Mit mir geteilt", action: () => openTab("shared") });
       buttons.push({ label: "🖥 Desktop-Ansicht", action: () => { window.location.href = "/"; } });
       buttons.push({ label: "Abmelden", danger: true, action: logout });
       openSheet(state.me ? (state.me.display_name || state.me.username) : "Menü", buttons);
@@ -540,6 +787,99 @@
         });
       }
       openSheet(entry.name, buttons);
+    }
+
+    function shareUrl(share) {
+      const base = location.origin + "/api/shares/" + share.token + "/content";
+      const name = share.entry_name || "";
+      if (!name) return base;
+      const filename = share.entry_type === "folder" ? name + ".zip" : name;
+      return base + "/" + encodeURIComponent(filename);
+    }
+
+    function publishedUrl(item) {
+      if (item.public_path) return location.origin + "/published/" + item.public_path;
+      return location.origin + "/api/published/" + item.entry_id + "/content";
+    }
+
+    async function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.top = "-1000px";
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      if (!ok) throw new Error("Kopieren nicht möglich");
+    }
+
+    function openShare(share) {
+      window.open(shareUrl(share), "_blank", "noopener");
+    }
+
+    function openShareSheet(share) {
+      openSheet(share.entry_path || share.entry_name || "Freigabe", [
+        { label: "🌐 Öffnen", action: () => openShare(share) },
+        {
+          label: "🔗 Link kopieren",
+          action: () => copyText(shareUrl(share))
+            .then(() => toast("Link kopiert.", "ok"))
+            .catch((e) => toast("Kopieren fehlgeschlagen: " + e.message, "err")),
+        },
+        {
+          label: "🗑 Widerrufen", danger: true, action: () => revokeShareAction(share),
+        },
+      ]);
+    }
+
+    async function revokeShareAction(share) {
+      if (!confirm("Diese Freigabe wirklich widerrufen?")) return;
+      try {
+        await api("DELETE", "/api/shares/" + encodeURIComponent(share.token));
+        toast("Freigabe widerrufen.", "ok");
+        await load();
+      } catch (e) {
+        toast("Widerrufen fehlgeschlagen: " + e.message, "err");
+      }
+    }
+
+    function openPublished(item) {
+      window.open(publishedUrl(item), "_blank", "noopener");
+    }
+
+    function openPublishedSheet(item) {
+      const name = item.public_name || item.name || "Veröffentlichung";
+      openSheet(name, [
+        { label: "🌐 Öffnen", action: () => openPublished(item) },
+        {
+          label: "🔗 Link kopieren",
+          action: () => copyText(publishedUrl(item))
+            .then(() => toast("Link kopiert.", "ok"))
+            .catch((e) => toast("Kopieren fehlgeschlagen: " + e.message, "err")),
+        },
+        {
+          label: "🚫 Nicht mehr veröffentlichen",
+          danger: true,
+          action: () => unpublishAction(item),
+        },
+      ]);
+    }
+
+    async function unpublishAction(item) {
+      if (!confirm("Veröffentlichung wirklich zurückziehen?")) return;
+      try {
+        await api("DELETE", "/api/published/" + encodeURIComponent(item.entry_id));
+        toast("Veröffentlichung zurückgezogen.", "ok");
+        await load();
+      } catch (e) {
+        toast("Zurückziehen fehlgeschlagen: " + e.message, "err");
+      }
     }
 
     async function newFolder() {
@@ -620,10 +960,12 @@
     $("sheet-cancel").addEventListener("click", closeSheet);
     $("backdrop").addEventListener("click", closeSheet);
     $("tab-files").addEventListener("click", () => openTab("files"));
-    $("tab-shared").addEventListener("click", () => openTab("shared"));
+    $("tab-geteilt").addEventListener("click", () => openTab("geteilt"));
+    $("tab-shares").addEventListener("click", () => openTab("shares"));
+    $("tab-published").addEventListener("click", () => openTab("published"));
     $("search").addEventListener("input", (event) => {
       state.filter = event.target.value;
-      render();
+      renderCurrent();
     });
     $("file-input").addEventListener("change", async (event) => {
       const files = Array.from(event.target.files || []);
