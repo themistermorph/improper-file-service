@@ -232,6 +232,12 @@ def test_independent_fetches_run_in_parallel():
 
 # --- Stabilität: IDs/Funktionen der bestehenden Tests bleiben erhalten ---
 
+def test_cards_scroll_horizontal():
+    source = _html()
+    assert "overflow-x: auto" in source, "Boxen schneiden breite Tabellen ab"
+    assert ".card table { min-width: 700px; }" in source
+
+
 def test_key_dom_ids_are_preserved():
     source = _html()
     for element_id in ("entries", "trash-entries", "user-rows", "share-rows",

@@ -79,7 +79,11 @@
     .state.off { background: #3a1d1d; color: #fca5a5; }
 
     .card { background: var(--panel); border: 1px solid var(--border);
-            border-radius: var(--radius); overflow: hidden; }
+            border-radius: var(--radius);
+            /* Breite Tabellen duerfen die Box horizontal scrollen statt Spalten
+               abzuschneiden; vertikal bleibt der Rand sauber geklippt. */
+            overflow-x: auto; overflow-y: hidden; }
+    .card table { min-width: 700px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 12px; }
     .card.stat { padding: 14px 16px; }

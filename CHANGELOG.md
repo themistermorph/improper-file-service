@@ -16,6 +16,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   direkt den Zugriff-Dialog. Grundlage ist `GET /api/shared/outgoing`; die
   Ansicht zeigt bewusst keine fremden Bäume.
 
+### Changed
+- **Horizontales Scrollen:** Tabellenboxen scrollen bei breiten Tabellen
+  horizontal, statt Spalten abzuschneiden (`.card { overflow-x: auto; }`).
+
 ## [0.1.8] – 2026-11-03
 
 ### Performance
