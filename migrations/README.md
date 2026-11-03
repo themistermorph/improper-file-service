@@ -13,7 +13,7 @@ Installationen.
 
 ## Neue Migration
 
-1. Nächste freie Nummer wählen: `sql/0011_kurzer_name.sql`.
+1. Nächste freie Nummer wählen: `sql/0014_kurzer_name.sql`.
 2. Nur idempotente Statements verwenden (`CREATE ... IF NOT EXISTS`,
    `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`).
 3. Gegen eine Testdatenbank anwenden: `bash deploy/apply-migrations.sh`.
@@ -21,6 +21,9 @@ Installationen.
    und im [`CHANGELOG.md`](../CHANGELOG.md) erwähnen.
 5. Wenn die Migration bestehende Daten voraussetzt (z. B. genau eine Wurzel je
    Benutzer vor `0006`), die Voraussetzung im Dateikopf dokumentieren.
+6. **Destruktive Migrationen** (z. B. `0013_permissions_cleanup.sql`) nicht in
+   den normalen Upgrade-Pfad legen, sondern hinter einer expliziten Freigabe
+   (`IFS_PERMISSIONS_CLEANUP=1`) bzw. ein separates Skript kapseln.
 
 Alembic wird bewusst nicht verwendet: `migrations/versions/` war leer, und das
 Deployment hat schon immer die SQL-Dateien angewendet.
