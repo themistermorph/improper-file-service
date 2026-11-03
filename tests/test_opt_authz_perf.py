@@ -142,7 +142,7 @@ def test_besitz_gewaehrt_alle_rechte_und_wirkt_live(db):
     other = make_user(db, "other-besitz")
     _root, leaf = _deep_chain(db, owner, depth=3)
 
-    assert authz.effective_perms(db, owner, leaf) == authz.ALL
+    assert authz.effective_perms(db, owner, leaf) == authz.ALL_RESOURCE
     assert authz.can(db, owner, "delete", leaf)
 
     # Besitzerwechsel ist nach dem Flush sofort sichtbar.
@@ -150,7 +150,7 @@ def test_besitz_gewaehrt_alle_rechte_und_wirkt_live(db):
     db.flush()
     assert authz.effective_perms(db, owner, leaf) == 0
     assert not authz.can(db, owner, "read", leaf)
-    assert authz.effective_perms(db, other, leaf) == authz.ALL
+    assert authz.effective_perms(db, other, leaf) == authz.ALL_RESOURCE
 
 
 def test_gruppen_acl_und_rollen_vererbung(db):

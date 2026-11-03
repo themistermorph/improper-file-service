@@ -92,6 +92,9 @@ class Permission(str, enum.Enum):
     delete = "delete"
     share = "share"
     admin = "admin"
+    publish = "publish"
+    audit = "audit"
+    monitor = "monitor"
 
 
 group_members = Table(
@@ -300,6 +303,35 @@ class RoleAssignment(Base):
             "principal_type",
             "principal_id",
             "entry_id",
+        ),
+    )
+
+
+class SystemPermission(Base):
+    """Direkt an einen Principal vergebenes Systemrecht (``audit``/``monitor``).
+
+    Getrennt von ``acl``: Systemrechte gelten global und werden nicht entlang
+    des Namespace-Pfades vererbt. ``ADMIN`` ist hier bewusst nicht erlaubt –
+    Systemverwaltung kommt ausschließlich über die Adminrolle oder das
+    Bootstrap-Flag ``users.is_admin``.
+    """
+
+    __tablename__ = "system_permissions"
+
+    id: Mapped[UUID] = _uuid_pk()
+    principal_type: Mapped[PrincipalType] = mapped_column(_enum(PrincipalType), nullable=False)
+    principal_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    permissions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+    __table_args__ = (
+        # Ein Datensatz je Principal; wiederholte Vergaben werden per OR
+        # zusammengeführt (Upsert in ``core.permissions``).
+        Index(
+            "uq_system_permissions_principal",
+            "principal_type",
+            "principal_id",
+            unique=True,
         ),
     )
 

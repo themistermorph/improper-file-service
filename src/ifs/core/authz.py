@@ -5,9 +5,12 @@ Rechte werden additiv entlang des Pfades vererbt: ein Recht auf einem Ordner
 gilt auch für alle Nachfahren.
 
 Quellen effektiver Rechte:
-- Besitz (Owner erhält alle Rechte),
-- systemweite Rollen (global, `entry_id IS NULL`),
-- Ressourcenrollen und ACLs entlang des Pfades.
+- Besitz (Owner erhält alle *Eintrags*rechte),
+- ACLs entlang des Pfades,
+- übergangsweise Ressourcenrollen (nach der Migration nur noch ACLs).
+
+Systemweite Rollen/Grants gewähren **keinen** Dateizugriff; Systemrechte
+(``audit``/``monitor``) werden getrennt über ``system_perms`` geprüft.
 
 Performance: Die Vorfahrenkette wird in einer Query über eine rekursive CTE
 bestimmt; ACLs und Ressourcenrollen werden jeweils für die *gesamte* Kette in
@@ -27,8 +30,41 @@ READ = 1
 WRITE = 2
 DELETE = 4
 SHARE = 8
+# `ADMIN` ist absichtlich doppelt belegt, aber namensraumgetrennt:
+# - systemweiter ADMIN-Grant/Rolle -> Systemverwaltung,
+# - Eintrags-ADMIN-ACL -> Zugriff auf diesen Eintrag verwalten.
 ADMIN = 16
-ALL = READ | WRITE | DELETE | SHARE | ADMIN
+PUBLISH = 32
+AUDIT = 64
+MONITOR = 128
+
+# Eintragsrechte (ACL) und Systemrechte (system_permissions) sind getrennte
+# Namensräume; `ALL` bleibt die Summe beider für die Adminrolle.
+ALL_RESOURCE = READ | WRITE | DELETE | SHARE | PUBLISH | ADMIN
+ALL_SYSTEM = ADMIN | AUDIT | MONITOR
+ALL = ALL_RESOURCE | ALL_SYSTEM
+
+# Nur diese Bits dürfen direkt als System-Grant vergeben werden. ADMIN kommt
+# ausschließlich über die Adminrolle bzw. das Bootstrap-Flag `users.is_admin`.
+SYSTEM_ASSIGNABLE = AUDIT | MONITOR
+
+ENTRY_PERM_NAMES: dict[str, int] = {
+    "read": READ,
+    "write": WRITE,
+    "delete": DELETE,
+    "share": SHARE,
+    "admin": ADMIN,
+    "publish": PUBLISH,
+}
+
+SYSTEM_PERM_NAMES: dict[str, int] = {
+    "admin": ADMIN,
+    "audit": AUDIT,
+    "monitor": MONITOR,
+}
+
+# Vereinigung beider Namensräume für Anzeigezwecke (z. B. Adminrolle).
+PERM_NAMES: dict[str, int] = {**ENTRY_PERM_NAMES, **SYSTEM_PERM_NAMES}
 
 ACTION_PERM: dict[str, int] = {
     "read": READ,
@@ -36,14 +72,11 @@ ACTION_PERM: dict[str, int] = {
     "delete": DELETE,
     "share": SHARE,
     "admin": ADMIN,
-}
-
-PERM_NAMES: dict[str, int] = {
-    "read": READ,
-    "write": WRITE,
-    "delete": DELETE,
-    "share": SHARE,
-    "admin": ADMIN,
+    "publish": PUBLISH,
+    # Systemrechte werden nicht über `can()` geprüft; die Einträge bleiben für
+    # `ACTION_PERM`-Konsistenz und Fehlermeldungen erhalten.
+    "audit": AUDIT,
+    "monitor": MONITOR,
 }
 
 # Begrenzter Memo-Cache je Session (siehe Modul-Docstring).
@@ -112,17 +145,55 @@ def _cache_put(session: Session, key, value) -> None:
     cache[key] = value
 
 
-def perms_from_names(names: list[str]) -> int:
+def perms_from_names(names: list[str], *, namespace: str = "entry") -> int:
+    """Wandelt Rechte-Namen in eine Bitmaske um.
+
+    ``namespace`` trennt Eintrags- und Systemrechte: Ein System-Bit in einer
+    ACL oder ein Eintrags-Bit in einem System-Grant ist ein Programmierfehler
+    und wird abgelehnt. ``namespace="all"`` erlaubt beide (nur für Rollen).
+    """
+    allowed = PERM_NAMES
+    if namespace == "entry":
+        allowed = ENTRY_PERM_NAMES
+    elif namespace == "system":
+        allowed = SYSTEM_PERM_NAMES
+    elif namespace != "all":
+        raise ValueError(f"Unbekannter Rechte-Namensraum: {namespace}")
     perms = 0
     for name in names:
         if name not in PERM_NAMES:
             raise ValueError(f"Unbekanntes Recht: {name}")
+        if name not in allowed:
+            raise ValueError(f"Recht '{name}' ist im Namensraum '{namespace}' nicht erlaubt")
         perms |= PERM_NAMES[name]
     return perms
 
 
-def names_from_perms(perms: int) -> list[str]:
-    return [name for name, bit in PERM_NAMES.items() if perms & bit]
+def names_from_perms(perms: int, *, namespace: str | None = None) -> list[str]:
+    if namespace is None:
+        mapping = PERM_NAMES
+    elif namespace == "entry":
+        mapping = ENTRY_PERM_NAMES
+    elif namespace == "system":
+        mapping = SYSTEM_PERM_NAMES
+    elif namespace == "all":
+        mapping = PERM_NAMES
+    else:
+        raise ValueError(f"Unbekannter Rechte-Namensraum: {namespace}")
+    return [name for name, bit in mapping.items() if perms & bit]
+
+
+def validate_entry_perms(perms: int) -> None:
+    """Stellt sicher, dass eine ACL nur Eintragsrechte enthält."""
+    if perms & ~ALL_RESOURCE:
+        raise ValueError("Systemrechte dürfen nicht in einer ACL gespeichert werden")
+
+
+def validate_system_grant_perms(perms: int) -> None:
+    """System-Grants dürfen nur ``audit``/``monitor`` enthalten (kein ADMIN)."""
+    if perms & ~SYSTEM_ASSIGNABLE:
+        raise ValueError("System-Grants erlauben nur 'audit' und 'monitor'")
+
 
 
 def _group_ids(db: Session, user: User) -> frozenset:
@@ -256,7 +327,7 @@ def effective_perms(db: Session, user: User | None, entry: Entry | None) -> int:
     # Besitz wird live am Objekt geprüft (In-Memory-Änderungen wirken sofort);
     # gecacht werden nur die aus ACLs/Ressourcenrollen abgeleiteten Rechte.
     if entry.owner_id == user.id:
-        return ALL
+        return ALL_RESOURCE
 
     key = ("perms", user.id, entry.id)
     cached = _cache_get(db, key)
