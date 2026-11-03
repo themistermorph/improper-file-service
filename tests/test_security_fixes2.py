@@ -404,7 +404,7 @@ def test_h4_permission_lists_are_bounded():
             json={
                 "principal_type": "user",
                 "principal_id": str(UUID(int=1)),
-                "perms": ["read"] * 6,
+                "perms": ["read"] * 7,
             },
         )
         assert too_many.status_code == 422

@@ -5,21 +5,26 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..core import audit, authz, permissions
-from ..models import Group, PrincipalType, User
+from ..core import accounts, audit, authz, namespace, permissions
+from ..models import ACL, Group, PrincipalType, User
 from .deps import (
     client_ip,
+    get_current_user,
     get_db,
     require_admin,
     require_audit,
 )
 from .schemas import (
+    AclCreate,
+    AclOut,
+    AclUpsert,
     GroupCreate,
     GroupOut,
     MemberAdd,
+    PrincipalOut,
     SystemPermissionOut,
     SystemPermissionUpdate,
 )
@@ -63,6 +68,163 @@ def add_member(
     if user not in group.members:
         group.members.append(user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _acl_out(acl: ACL) -> AclOut:
+    return AclOut(
+        id=acl.id,
+        entry_id=acl.entry_id,
+        principal_type=acl.principal_type,
+        principal_id=acl.principal_id,
+        perms=acl.perms,
+        permission_names=authz.names_from_perms(acl.perms, namespace="entry"),
+        inherited=acl.inherited,
+    )
+
+
+def _validate_principal(
+    db: Session, principal_type, principal_id: UUID
+) -> None:
+    if not accounts.principal_exists(db, principal_type, principal_id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Principal (Benutzer/Gruppe) nicht gefunden"
+        )
+
+
+@router.get("/entries/{entry_id}/acl", response_model=list[AclOut])
+def list_acl(
+    entry_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AclOut]:
+    entry = namespace.get_entry(db, entry_id)
+    authz.authorize(db, user, "admin", entry)
+    return [_acl_out(acl) for acl in permissions.list_entry_acls(db, entry.id)]
+
+
+@router.post("/entries/{entry_id}/acl", response_model=AclOut, status_code=status.HTTP_201_CREATED)
+def set_acl(
+    entry_id: UUID,
+    payload: AclCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AclOut:
+    """Kompatibler POST: Bits werden mit einem bestehenden Grant vereinigt."""
+    entry = namespace.get_entry(db, entry_id)
+    # Wer `admin` auf dem Eintrag hat (Besitzer/Manager), darf Rechte vergeben.
+    authz.authorize(db, user, "admin", entry)
+    _validate_principal(db, payload.principal_type, payload.principal_id)
+    perms = authz.perms_from_names(payload.perms, namespace="entry")
+    acl = permissions.upsert_acl(
+        db,
+        entry_id=entry.id,
+        principal_type=payload.principal_type,
+        principal_id=payload.principal_id,
+        perms=perms,
+        merge=True,
+    )
+    audit.record(
+        db, "acl.set", actor_id=user.id, target_entry=entry.id, protocol="http",
+        ip=client_ip(request),
+        details={"principal": str(payload.principal_id), "perms": payload.perms},
+    )
+    return _acl_out(acl)
+
+
+@router.put("/entries/{entry_id}/acl", response_model=AclOut)
+def put_acl(
+    entry_id: UUID,
+    payload: AclUpsert,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AclOut:
+    """Setzt die Eintragsrechte eines Principals exakt (Upsert)."""
+    entry = namespace.get_entry(db, entry_id)
+    authz.authorize(db, user, "admin", entry)
+    _validate_principal(db, payload.principal_type, payload.principal_id)
+    perms = authz.perms_from_names(payload.permissions, namespace="entry")
+    acl = permissions.upsert_acl(
+        db,
+        entry_id=entry.id,
+        principal_type=payload.principal_type,
+        principal_id=payload.principal_id,
+        perms=perms,
+        merge=False,
+    )
+    audit.record(
+        db, "acl.set", actor_id=user.id, target_entry=entry.id, protocol="http",
+        ip=client_ip(request),
+        details={
+            "principal": str(payload.principal_id),
+            "perms": payload.permissions,
+        },
+    )
+    return _acl_out(acl)
+
+
+@router.delete(
+    "/entries/{entry_id}/acl/{acl_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_acl(
+    entry_id: UUID,
+    acl_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    entry = namespace.get_entry(db, entry_id)
+    authz.authorize(db, user, "admin", entry)
+    acl = permissions.get_acl(db, acl_id)
+    if acl.entry_id != entry.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ACL gehört nicht zu diesem Eintrag")
+    principal_id = acl.principal_id
+    permissions.delete_acl(db, acl)
+    audit.record(
+        db, "acl.delete", actor_id=user.id, target_entry=entry.id, protocol="http",
+        ip=client_ip(request), details={"principal": str(principal_id)},
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/principals", response_model=list[PrincipalOut])
+def list_principals(
+    entry_id: UUID,
+    q: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[PrincipalOut]:
+    """Minimierter Benutzer-/Gruppen-Picker für den Zugriff-Dialog.
+
+    Autorisierung über `admin` am Eintrag – bewusst kein Systemadmin-Zwang.
+    E-Mail-Adressen und Adminflags werden nicht ausgegeben.
+    """
+    entry = namespace.get_entry(db, entry_id)
+    authz.authorize(db, user, "admin", entry)
+    bounded = min(max(limit, 1), 100)
+    users, _total = accounts.list_users(
+        db, q=q, active=True, limit=bounded, offset=0
+    )
+    result = [
+        PrincipalOut(
+            id=u.id,
+            type=PrincipalType.user,
+            name=u.username,
+            display_name=u.display_name,
+        )
+        for u in users
+    ]
+    stmt = select(Group).order_by(Group.name).limit(bounded)
+    if q:
+        stmt = stmt.where(func.lower(Group.name).like(f"%{q.lower()}%"))
+    result.extend(
+        PrincipalOut(id=g.id, type=PrincipalType.group, name=g.name)
+        for g in db.execute(stmt).scalars().all()
+    )
+    return result
+
 
 
 @router.get("/audit")
