@@ -24,7 +24,16 @@ from sqlalchemy import and_, event, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from ..errors import PermissionDenied
-from ..models import ACL, Entry, PrincipalType, Role, RoleAssignment, User
+from ..models import (
+    ACL,
+    Entry,
+    PrincipalType,
+    Role,
+    RoleAssignment,
+    RoleScope,
+    SystemPermission,
+    User,
+)
 
 READ = 1
 WRITE = 2
@@ -208,16 +217,21 @@ def _group_ids(db: Session, user: User) -> frozenset:
 
 
 def _principal_conditions(user: User, group_ids: frozenset):
+    """OR-Bedingungen für Rollen-/System-Grant-Zeilen des Benutzers."""
+    return _model_principal_conditions(RoleAssignment, user, group_ids)
+
+
+def _model_principal_conditions(model, user: User, group_ids: frozenset):
     conditions = [
         and_(
-            RoleAssignment.principal_type == PrincipalType.user,
-            RoleAssignment.principal_id == user.id,
+            model.principal_type == PrincipalType.user,
+            model.principal_id == user.id,
         )
     ]
     conditions.extend(
         and_(
-            RoleAssignment.principal_type == PrincipalType.group,
-            RoleAssignment.principal_id == group_id,
+            model.principal_type == PrincipalType.group,
+            model.principal_id == group_id,
         )
         for group_id in group_ids
     )
@@ -225,6 +239,7 @@ def _principal_conditions(user: User, group_ids: frozenset):
 
 
 def _role_perms(db: Session, conditions, entry_id) -> int:
+    """Systemweite Rollenrechte (nur für den Adminstatus, nicht für Dateien)."""
     scope = (
         RoleAssignment.entry_id.is_(None)
         if entry_id is None
@@ -233,12 +248,33 @@ def _role_perms(db: Session, conditions, entry_id) -> int:
     rows = db.execute(
         select(Role.permissions)
         .join(RoleAssignment, RoleAssignment.role_id == Role.id)
-        .where(scope, or_(*conditions))
+        .where(scope, Role.scope == RoleScope.system, or_(*conditions))
     ).scalars().all()
     perms = 0
     for value in rows:
         perms |= int(value or 0)
     return perms
+
+
+def _resource_role_perms(db: Session, conditions, entry_id) -> int:
+    """Übergangsweise Ressourcenrollen, strikt auf Eintragsbits begrenzt.
+
+    Nach der Migration existieren keine Ressourcenrollen mehr; der Lesepfad
+    bleibt für Rollback-Szenarien und den Dual-Read während des Rollouts aktiv.
+    """
+    rows = db.execute(
+        select(Role.permissions)
+        .join(RoleAssignment, RoleAssignment.role_id == Role.id)
+        .where(
+            RoleAssignment.entry_id == entry_id,
+            Role.scope == RoleScope.resource,
+            or_(*conditions),
+        )
+    ).scalars().all()
+    perms = 0
+    for value in rows:
+        perms |= int(value or 0)
+    return perms & ALL_RESOURCE
 
 
 def _acl_applies(acl: ACL, user: User, group_ids: frozenset) -> bool:
@@ -286,7 +322,7 @@ def _effective_perms_walk(db: Session, user: User, entry: Entry, group_ids: froz
         for acl in acls:
             if _acl_applies(acl, user, group_ids):
                 perms |= acl.perms
-        perms |= _role_perms(db, conditions, node.id)
+        perms |= _resource_role_perms(db, conditions, node.id)
         node = node.parent
     return perms
 
@@ -308,11 +344,15 @@ def _compute_perms(db: Session, user: User, entry: Entry) -> int:
     role_rows = db.execute(
         select(Role.permissions)
         .join(RoleAssignment, RoleAssignment.role_id == Role.id)
-        .where(RoleAssignment.entry_id.in_(ids), or_(*conditions))
+        .where(
+            RoleAssignment.entry_id.in_(ids),
+            Role.scope == RoleScope.resource,
+            or_(*conditions),
+        )
     ).scalars().all()
     for value in role_rows:
         perms |= int(value or 0)
-    return perms
+    return perms & ALL_RESOURCE
 
 
 def effective_perms(db: Session, user: User | None, entry: Entry | None) -> int:
@@ -372,3 +412,42 @@ def is_system_admin(db: Session, user: User | None) -> bool:
 def require_admin(db: Session, user: User | None) -> None:
     if not is_system_admin(db, user):
         raise PermissionDenied("Administratorrechte erforderlich")
+
+
+def system_perms(db: Session, user: User | None) -> int:
+    """Systemweite Rechte (``admin``/``audit``/``monitor``) eines Benutzers.
+
+    Liest ausschließlich ``users.is_admin``, die systemweite Adminrolle und
+    ``system_permissions``. ACLs und Eintragsrechte werden bewusst **nicht**
+    eingemischt; umgekehrt gelangen diese Bits nie in ``effective_perms``.
+    """
+    if user is None:
+        return 0
+    key = ("system_perms", user.id)
+    cached = _cache_get(db, key)
+    if cached is not None:
+        return cached
+
+    perms = ADMIN if is_system_admin(db, user) else 0
+    conditions = _model_principal_conditions(
+        SystemPermission, user, _group_ids(db, user)
+    )
+    rows = db.execute(
+        select(SystemPermission.permissions).where(or_(*conditions))
+    ).scalars().all()
+    for value in rows:
+        perms |= int(value or 0)
+    perms &= ALL_SYSTEM
+    _cache_put(db, key, perms)
+    return perms
+
+
+def has_system_perm(db: Session, user: User | None, bit: int) -> bool:
+    return bool(system_perms(db, user) & bit)
+
+
+def require_system_perm(db: Session, user: User | None, bit: int) -> None:
+    if not has_system_perm(db, user, bit):
+        name = names_from_perms(bit, namespace="system")
+        label = ", ".join(name) if name else str(bit)
+        raise PermissionDenied(f"Systemrecht '{label}' erforderlich")

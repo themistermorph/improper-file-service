@@ -117,3 +117,88 @@ def test_admin_does_not_bypass_acl(db):
     assert not authz.can(db, admin, "read", folder)
     # Systemadmin bleibt Systemadmin (Benutzer/Rollen/Audit).
     assert authz.is_system_admin(db, admin)
+
+
+def test_systemrechte_und_eintragsrechte_sind_getrennt(db):
+    from ifs.core import permissions
+    from ifs.models import Group, SystemPermission
+
+    owner = make_user(db, "owner-trennung")
+    auditor = make_user(db, "auditor-trennung")
+    member = make_user(db, "member-trennung")
+    group = Group(name="audit-trennung")
+    group.members.append(member)
+    db.add(group)
+    db.flush()
+
+    root = namespace.ensure_root(db, owner.id)
+    folder = namespace.create_folder(db, root, "docs", owner.id)
+
+    # Eintrags-ACL mit allen Eintragsrechten -> keine Systemrechte.
+    permissions.upsert_acl(
+        db,
+        entry_id=folder.id,
+        principal_type=PrincipalType.user,
+        principal_id=auditor.id,
+        perms=authz.ALL_RESOURCE,
+    )
+    assert authz.effective_perms(db, auditor, folder) == authz.ALL_RESOURCE
+    assert authz.system_perms(db, auditor) == 0
+
+    # System-Grant (auch über Gruppe) -> keine Eintragsrechte.
+    db.add(
+        SystemPermission(
+            principal_type=PrincipalType.user,
+            principal_id=auditor.id,
+            permissions=authz.AUDIT,
+        )
+    )
+    db.add(
+        SystemPermission(
+            principal_type=PrincipalType.group,
+            principal_id=group.id,
+            permissions=authz.MONITOR,
+        )
+    )
+    db.flush()
+
+    assert authz.system_perms(db, auditor) == authz.AUDIT
+    assert authz.has_system_perm(db, auditor, authz.AUDIT)
+    assert not authz.has_system_perm(db, auditor, authz.MONITOR)
+    assert authz.system_perms(db, member) == authz.MONITOR
+    assert authz.effective_perms(db, member, folder) == 0
+    assert not authz.can(db, member, "read", folder)
+
+    # Eigentümer: nur Eintragsrechte, keine Systemrechte.
+    assert authz.system_perms(db, owner) == 0
+
+
+def test_systemadmin_hat_admin_aber_kein_dateirecht(db):
+    admin = make_user(db, "sysadmin-bits", is_admin=True)
+    owner = make_user(db, "owner-bits")
+    root = namespace.ensure_root(db, owner.id)
+
+    assert authz.system_perms(db, admin) & authz.ADMIN
+    assert not (authz.system_perms(db, admin) & (authz.AUDIT | authz.MONITOR))
+    assert authz.effective_perms(db, admin, root) == 0
+
+
+def test_require_system_perm_und_cache_invalidierung(db):
+    from ifs.core import permissions
+    from ifs.errors import PermissionDenied
+    from ifs.models import PrincipalType
+
+    user = make_user(db, "grant-cache")
+    with pytest.raises(PermissionDenied):
+        authz.require_system_perm(db, user, authz.AUDIT)
+
+    permissions.merge_system_permissions(
+        db,
+        principal_type=PrincipalType.user,
+        principal_id=user.id,
+        perms=authz.AUDIT,
+    )
+    # Flush invalidiert den Memo-Cache; das neue Recht ist sofort sichtbar.
+    authz.require_system_perm(db, user, authz.AUDIT)
+    assert not authz.has_system_perm(db, user, authz.MONITOR)
+
