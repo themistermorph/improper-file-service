@@ -21,6 +21,7 @@ from ..models import (
     Role,
     RoleAssignment,
     Share,
+    SystemPermission,
     User,
 )
 from ..security import hash_password, verify_password
@@ -266,6 +267,16 @@ def _delete_user_role_assignments(db: Session, user: User) -> None:
     )
 
 
+def _delete_user_system_permissions(db: Session, user: User) -> None:
+    """Entfernt System-Grants (audit/monitor) eines gelöschten Benutzers."""
+    db.execute(
+        delete(SystemPermission).where(
+            SystemPermission.principal_type == PrincipalType.user,
+            SystemPermission.principal_id == user.id,
+        )
+    )
+
+
 def delete_user(db: Session, user: User, transfer_to: User | None = None) -> None:
     _ensure_not_last_active_admin(db, user)
 
@@ -306,6 +317,7 @@ def delete_user(db: Session, user: User, transfer_to: User | None = None) -> Non
 
     _delete_user_acls(db, user)
     _delete_user_role_assignments(db, user)
+    _delete_user_system_permissions(db, user)
     _delete_credentials(db, user)
     _clear_group_memberships(db, user)
     _revoke_created_shares(db, user)

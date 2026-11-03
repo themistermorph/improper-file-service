@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from ifs import main
 from ifs.db import session_scope
-from ifs.models import Role, RoleAssignment
+from ifs.models import Role, RoleAssignment, SystemPermission
 
 from .helpers import login
 
@@ -144,3 +144,29 @@ def test_adminflag_synchronisiert_adminrolle():
             f"/api/users/{user_id}", headers=admin, json={"is_admin": True}
         ).status_code == 200
         assert len(admin_assignments()) == 1
+
+
+def test_benutzer_loeschen_entfernt_system_grant():
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client)}"}
+        user_id = client.post(
+            "/api/users",
+            headers=admin,
+            json={"username": "grant-delete", "password": "geheim123"},
+        ).json()["id"]
+        assert _set_permissions(client, admin, user_id, ["audit", "monitor"]) == 200
+
+        with session_scope() as db:
+            assert db.execute(
+                select(SystemPermission).where(
+                    SystemPermission.principal_id == UUID(user_id)
+                )
+            ).scalars().first() is not None
+
+        assert client.delete(f"/api/users/{user_id}", headers=admin).status_code == 204
+        with session_scope() as db:
+            assert db.execute(
+                select(SystemPermission).where(
+                    SystemPermission.principal_id == UUID(user_id)
+                )
+            ).scalars().first() is None
