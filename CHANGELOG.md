@@ -25,6 +25,9 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 ### Changed
 - **Horizontales Scrollen:** Tabellenboxen scrollen bei breiten Tabellen
   horizontal, statt Spalten abzuschneiden (`.card { overflow-x: auto; }`).
+- **Geteilt-Markierung:** Einträge mit aktivem Freigabelink oder ACL-Grant
+  zeigen im Dateimanager (Desktop und Mobil) – analog zu „veröffentlicht“ –
+  den Chip **„🤝 geteilt“**.
 
 ## [0.1.8] – 2026-11-03
 

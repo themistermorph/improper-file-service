@@ -94,6 +94,11 @@
                  white-space: nowrap; }
     .row .meta { color: var(--muted); font-size: 12px; margin-top: 2px;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .row .badge {
+      font-size: 10px; color: var(--muted); border: 1px solid var(--border);
+      background: var(--panel2); border-radius: 999px; padding: 2px 8px;
+    }
     .row .more {
       width: 44px; height: 44px; min-height: 44px; border-radius: 10px;
       border: 1px solid var(--border); background: transparent;
@@ -228,6 +233,8 @@
       geteilt: [],
       shares: [],
       published: [],
+      publishedIds: new Set(),
+      sharedIds: new Set(),
       tab: "files",
       filter: "",
       loading: false,
@@ -305,6 +312,8 @@
       state.geteilt = [];
       state.shares = [];
       state.published = [];
+      state.publishedIds = new Set();
+      state.sharedIds = new Set();
       sessionStorage.removeItem(TOKEN_KEY);
       $("app").classList.add("hidden");
       $("login").classList.remove("hidden");
@@ -354,7 +363,23 @@
       state.sharedStack = [];
       $("login").classList.add("hidden");
       $("app").classList.remove("hidden");
+      await refreshMarkers();
       await load();
+    }
+
+    async function refreshMarkers() {
+      try {
+        const [published, shares, outgoing] = await Promise.all([
+          api("GET", "/api/published/mine"),
+          api("GET", "/api/shares"),
+          api("GET", "/api/shared/outgoing"),
+        ]);
+        state.publishedIds = new Set((published || []).map((item) => item.entry_id));
+        const ids = new Set();
+        for (const share of shares || []) ids.add(share.entry_id);
+        for (const grant of outgoing || []) ids.add(grant.entry_id);
+        state.sharedIds = ids;
+      } catch (e) { /* Markierungen sind optional */ }
     }
 
     async function load() {
@@ -466,6 +491,21 @@
           : fmtSize(entry.size) + " · " + fmtDate(entry.updated_at);
         info.appendChild(name);
         info.appendChild(meta);
+        const badges = document.createElement("div");
+        badges.className = "badges";
+        if (state.publishedIds.has(entry.id)) {
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = "🌐 veröffentlicht";
+          badges.appendChild(badge);
+        }
+        if (state.sharedIds.has(entry.id)) {
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = "🤝 geteilt";
+          badges.appendChild(badge);
+        }
+        if (badges.childElementCount) info.appendChild(badges);
         row.appendChild(info);
 
         const more = document.createElement("button");
@@ -843,6 +883,7 @@
       try {
         await api("DELETE", "/api/shares/" + encodeURIComponent(share.token));
         toast("Freigabe widerrufen.", "ok");
+        await refreshMarkers();
         await load();
       } catch (e) {
         toast("Widerrufen fehlgeschlagen: " + e.message, "err");
@@ -876,6 +917,7 @@
       try {
         await api("DELETE", "/api/published/" + encodeURIComponent(item.entry_id));
         toast("Veröffentlichung zurückgezogen.", "ok");
+        await refreshMarkers();
         await load();
       } catch (e) {
         toast("Zurückziehen fehlgeschlagen: " + e.message, "err");
@@ -955,7 +997,10 @@
     // --- Events ---
     $("login-form").addEventListener("submit", login);
     $("back").addEventListener("click", goBack);
-    $("refresh").addEventListener("click", load);
+    $("refresh").addEventListener("click", async () => {
+      await refreshMarkers();
+      await load();
+    });
     $("menu").addEventListener("click", openMenu);
     $("sheet-cancel").addEventListener("click", closeSheet);
     $("backdrop").addEventListener("click", closeSheet);

@@ -478,6 +478,7 @@
       sharedOut: [],
       published: [],
       publishedIds: new Set(),
+      sharedIds: new Set(),
       audit: [],
       system: null,
       systemTimer: null,
@@ -738,7 +739,8 @@
         document.getElementById("app").classList.remove("hidden");
         document.getElementById("btn-refresh").classList.remove("hidden");
         showView("files");
-        await Promise.all([refreshTrashBadge(), refreshPublishedIds()]);
+        await Promise.all([refreshTrashBadge(), refreshPublishedIds(), refreshSharedIds()]);
+        if (state.view === "files") render();
       } catch (e) { toast(e.message, "err"); }
     }
 
@@ -817,6 +819,14 @@
           chip.className = "chip";
           chip.style.marginLeft = "6px";
           chip.textContent = "🌐 veröffentlicht";
+          tdName.appendChild(chip);
+        }
+        if (state.sharedIds.has(e.id)) {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.style.marginLeft = "6px";
+          chip.textContent = "🤝 geteilt";
+          chip.title = "Für andere freigegeben (Link oder Berechtigung)";
           tdName.appendChild(chip);
         }
         tdName.title = e.path;
@@ -1520,6 +1530,8 @@
           if (max) body.max_downloads = max;
           if (days) body.expires_at = new Date(Date.now() + days * 864e5).toISOString();
           const share = await apiJson("POST", "/api/shares", body);
+          await refreshSharedIds();
+          if (state.view === "files") load();
           const filename = entry.type === "folder" ? entry.name + ".zip" : entry.name;
           const link = location.origin + "/api/shares/" + share.token + "/content/" +
             encodeURIComponent(filename);
@@ -1642,8 +1654,9 @@
       else load();
     }
 
-    function refreshCurrent() {
+    async function refreshCurrent() {
       bustJsonCache(); // manueller Refresh: immer frisch laden
+      await Promise.all([refreshPublishedIds(), refreshSharedIds()]);
       if (state.view === "trash") loadTrash();
       else if (state.view === "users") loadUsers();
       else if (state.view === "shares") loadShares();
@@ -2381,7 +2394,7 @@
           principal_type: type, principal_id: principal, permissions: perms,
         });
         toast("Berechtigung gespeichert.", "ok");
-        await Promise.all([entryAccessDialog(accessEntry), refreshMe()]);
+        await Promise.all([entryAccessDialog(accessEntry), refreshMe(), refreshSharedIds()]);
         if (state.view === "files") load();
         else if (state.view === "shared-out") loadSharedOut();
       } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
@@ -2391,7 +2404,7 @@
       try {
         await api("DELETE", "/api/entries/" + accessEntry.id + "/acl/" + aclId);
         toast("Entfernt.", "ok");
-        await Promise.all([entryAccessDialog(accessEntry), refreshMe()]);
+        await Promise.all([entryAccessDialog(accessEntry), refreshMe(), refreshSharedIds()]);
         if (state.view === "files") load();
         else if (state.view === "shared-out") loadSharedOut();
       } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
@@ -2740,6 +2753,8 @@
           `Widerrufen: ${result.ok}` + (failed.length ? `, fehlgeschlagen: ${failed.length}` : "") + ".",
           failed.length ? "err" : "ok",
         );
+        await refreshSharedIds();
+        if (state.view === "files") load();
         await loadShares();
       } catch (e) { toast("Widerrufen fehlgeschlagen: " + e.message, "err"); }
     }
@@ -2755,6 +2770,8 @@
       try {
         await api("DELETE", "/api/shares/" + share.token);
         toast("Freigabe widerrufen.", "ok");
+        await refreshSharedIds();
+        if (state.view === "files") load();
         if (after) after(); else loadShares();
       } catch (e) { toast("Widerrufen fehlgeschlagen: " + e.message, "err"); }
     }
@@ -2850,6 +2867,20 @@
       try {
         state.published = await apiJson("GET", "/api/published/mine");
         state.publishedIds = new Set((state.published || []).map(item => item.entry_id));
+      } catch (e) { /* Markierung ist optional */ }
+    }
+
+    // Einträge markieren, die per Link oder ACL für andere freigegeben sind.
+    async function refreshSharedIds() {
+      try {
+        const [shares, outgoing] = await Promise.all([
+          apiJson("GET", "/api/shares"),
+          apiJson("GET", "/api/shared/outgoing"),
+        ]);
+        const ids = new Set();
+        for (const share of shares || []) ids.add(share.entry_id);
+        for (const grant of outgoing || []) ids.add(grant.entry_id);
+        state.sharedIds = ids;
       } catch (e) { /* Markierung ist optional */ }
     }
 

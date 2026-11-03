@@ -108,6 +108,16 @@ def test_geteilt_ansicht_zeigt_ausgehende_acls():
     assert 'view === "shared-out"' in show
 
 
+def test_dateimanager_markiert_geteilte_eintraege():
+    source = _html()
+    render = _function_block(source, "render")
+    assert "state.sharedIds.has(e.id)" in render
+    assert '"🤝 geteilt"' in render
+    refresh = _function_block(source, "refreshSharedIds")
+    assert '"/api/shares"' in refresh
+    assert '"/api/shared/outgoing"' in refresh
+
+
 def test_geteilt_menue_verwaltet_bestehende_links():
     render = _function_block(_html(), "render")
     label = render.index('label: "Geteilt"')

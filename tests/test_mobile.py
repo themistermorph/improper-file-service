@@ -43,9 +43,15 @@ def test_mobile_seite_nutzt_dieselben_api_endpunkte():
         assert endpoint in page, f"Mobile Seite nutzt {endpoint} nicht"
     for function in (
         "renderGeteilt", "renderShares", "renderPublished",
-        "openShareSheet", "openPublishedSheet",
+        "openShareSheet", "openPublishedSheet", "refreshMarkers",
     ):
         assert f"function {function}" in page
+
+    # Geteilt-/Veröffentlicht-Hinweise im mobilen Dateimanager.
+    assert "state.sharedIds.has(entry.id)" in page
+    assert "state.publishedIds.has(entry.id)" in page
+    assert "🤝 geteilt" in page
+    assert "🌐 veröffentlicht" in page
 
 
 def test_mobile_navigation_enthaelt_geteilt_freigaben_und_veroeffentlichungen():
