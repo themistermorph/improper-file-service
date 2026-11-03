@@ -6,6 +6,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+Keine Änderungen seit v0.1.9.
+
+## [0.1.9] – 2026-11-03
+
 ### Added
 - **„Geteilt“-Menü:** Im Zeilenmenü (`…`) zeigt ein neuer Eintrag „Geteilt“ die
   bestehenden Freigabelinks eines Eintrags und erlaubt Kopieren, Bearbeiten,
