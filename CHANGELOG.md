@@ -6,6 +6,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+Keine Änderungen seit v0.1.8.
+
+## [0.1.8] – 2026-11-03
+
 ### Performance
 - **HTTP-Download (Web-UI):** Große Dateien werden nicht mehr per
   `fetch().blob()` vollständig in den Browser-RAM geladen, sondern über ein

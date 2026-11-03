@@ -4,7 +4,7 @@
 # Aufruf:
 #   bash deploy/verify-permissions.sh
 set -euo pipefail
-cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${IFS_PROJECT_DIR:-/home/ifs/ifs}"
 
 SERVICE="${IFS_DB_SERVICE:-db}"
 DB_USER="${IFS_DB_USER:-ifs}"
