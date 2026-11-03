@@ -70,15 +70,67 @@ def add_member(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _acl_out(acl: ACL) -> AclOut:
+def _acl_out(
+    acl: ACL,
+    *,
+    principal_name: str | None = None,
+    principal_display_name: str | None = None,
+) -> AclOut:
     return AclOut(
         id=acl.id,
         entry_id=acl.entry_id,
         principal_type=acl.principal_type,
         principal_id=acl.principal_id,
+        principal_name=principal_name,
+        principal_display_name=principal_display_name,
         perms=acl.perms,
         permission_names=authz.names_from_perms(acl.perms, namespace="entry"),
         inherited=acl.inherited,
+    )
+
+
+def _principal_labels(
+    db: Session, principal_type, principal_id: UUID
+) -> tuple[str | None, str | None]:
+    if principal_type == PrincipalType.user:
+        user = db.get(User, principal_id)
+        return (user.username, user.display_name) if user is not None else (None, None)
+    group = db.get(Group, principal_id)
+    return (group.name, None) if group is not None else (None, None)
+
+
+def _principal_maps(db: Session, acls: list[ACL]) -> tuple[dict, dict]:
+    user_ids = {
+        acl.principal_id for acl in acls if acl.principal_type == PrincipalType.user
+    }
+    group_ids = {
+        acl.principal_id for acl in acls if acl.principal_type == PrincipalType.group
+    }
+    users = {
+        user.id: user
+        for user in (
+            db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
+            if user_ids
+            else []
+        )
+    }
+    groups = {
+        group.id: group
+        for group in (
+            db.execute(select(Group).where(Group.id.in_(group_ids))).scalars().all()
+            if group_ids
+            else []
+        )
+    }
+    return users, groups
+
+
+def _acl_out_with_names(db: Session, acl: ACL) -> AclOut:
+    name, display_name = _principal_labels(
+        db, acl.principal_type, acl.principal_id
+    )
+    return _acl_out(
+        acl, principal_name=name, principal_display_name=display_name
     )
 
 
@@ -99,7 +151,24 @@ def list_acl(
 ) -> list[AclOut]:
     entry = namespace.get_entry(db, entry_id)
     authz.authorize(db, user, "admin", entry)
-    return [_acl_out(acl) for acl in permissions.list_entry_acls(db, entry.id)]
+    acls = permissions.list_entry_acls(db, entry.id)
+    users, groups = _principal_maps(db, acls)
+    result: list[AclOut] = []
+    for acl in acls:
+        if acl.principal_type == PrincipalType.user:
+            principal = users.get(acl.principal_id)
+            name = principal.username if principal is not None else None
+            display_name = principal.display_name if principal is not None else None
+        else:
+            principal = groups.get(acl.principal_id)
+            name = principal.name if principal is not None else None
+            display_name = None
+        result.append(
+            _acl_out(
+                acl, principal_name=name, principal_display_name=display_name
+            )
+        )
+    return result
 
 
 @router.post("/entries/{entry_id}/acl", response_model=AclOut, status_code=status.HTTP_201_CREATED)
@@ -129,7 +198,7 @@ def set_acl(
         ip=client_ip(request),
         details={"principal": str(payload.principal_id), "perms": payload.perms},
     )
-    return _acl_out(acl)
+    return _acl_out_with_names(db, acl)
 
 
 @router.put("/entries/{entry_id}/acl", response_model=AclOut)
@@ -161,7 +230,7 @@ def put_acl(
             "perms": payload.permissions,
         },
     )
-    return _acl_out(acl)
+    return _acl_out_with_names(db, acl)
 
 
 @router.delete(

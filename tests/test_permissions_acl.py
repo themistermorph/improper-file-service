@@ -53,6 +53,7 @@ def test_eigentuemer_verwaltet_acls_ohne_systemadmin():
 
         listed = client.get(f"/api/entries/{folder['id']}/acl", headers=alice).json()
         assert [item["id"] for item in listed] == [acl["id"]]
+        assert listed[0]["principal_name"] == "acl-bob"
 
         # Bob sieht die Datei/den Ordner und exakt diese Rechte.
         entry = client.get(f"/api/entries/{folder['id']}", headers=bob).json()

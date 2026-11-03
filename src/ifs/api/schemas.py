@@ -279,6 +279,8 @@ class AclOut(BaseModel):
     entry_id: UUID
     principal_type: PrincipalType
     principal_id: UUID
+    principal_name: str | None = None
+    principal_display_name: str | None = None
     perms: int
     permission_names: list[str] = []
     inherited: bool
