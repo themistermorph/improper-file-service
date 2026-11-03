@@ -120,8 +120,10 @@ def test_remove_entry_clears_selection():
     assert "state.selected.delete(entry.id)" in block
 
 
-# --- 9) Rollen-Zuweisungen: Liste nach dem Entfernen neu laden ---
+# --- 9) Rollen-UI wurde durch Berechtigungen ersetzt ---
 
-def test_remove_role_assignment_reloads_dialog():
-    block = _function_block(_html(), "removeRoleAssignment")
-    assert "roleAssignmentsDialog(" in block, "Dialog wird nach dem Entfernen nicht neu geladen"
+def test_role_ui_is_removed():
+    source = _html()
+    assert "removeRoleAssignment" not in source
+    assert "loadRoles" not in source
+    assert "/api/roles" not in source

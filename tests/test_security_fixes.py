@@ -382,13 +382,10 @@ def test_n7_delete_user_removes_role_assignments(monkeypatch):
         user_id = client.post(
             "/api/users", headers=admin, json={"username": "roll", "password": "geheim123"}
         ).json()["id"]
-        role_id = next(
-            role["id"]
-            for role in client.get("/api/roles?scope=system", headers=admin).json()
-            if role["name"] == "user"
-        )
-        assigned = client.post(f"/api/users/{user_id}/roles/{role_id}", headers=admin)
-        assert assigned.status_code == 201, assigned.text
+        # Adminflag setzt die Adminrolle (einzige verbliebene Rolle).
+        assert client.patch(
+            f"/api/users/{user_id}", headers=admin, json={"is_admin": True}
+        ).status_code == 200
 
         with session_scope() as db:
             remaining = db.execute(

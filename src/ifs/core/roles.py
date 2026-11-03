@@ -1,8 +1,9 @@
-"""Rollen: benannte Rechtebündel (system- oder ressourcenweit) und Zuweisungen.
+"""Rollen: nach der Umstellung bleibt nur die systemweite Adminrolle.
 
-- **Systemrollen** gelten global (z. B. `admin`).
-- **Ressourcenrollen** werden auf einen Eintrag zugewiesen und vererben sich.
-- Das bestehende ACL-Modell bleibt unverändert nutzbar; Rollen kommen additiv dazu.
+Fachliche Rechte werden direkt als ACL-Grants (Einträge) bzw.
+``system_permissions`` (audit/monitor) vergeben. ``role_assignments`` enthält
+nur noch Admin-Zuweisungen; die Adminrolle gewährt weiterhin **keinen**
+Dateizugriff auf fremde Bäume.
 """
 
 from __future__ import annotations
@@ -19,39 +20,39 @@ from . import accounts, authz
 # (name, scope, permissions, beschreibung)
 BUILTIN_ROLES: list[tuple[str, RoleScope, int, str]] = [
     ("admin", RoleScope.system, authz.ALL, "Vollzugriff (systemweit)"),
-    ("auditor", RoleScope.system, 0, "Audit-Einblick (reserviert)"),
-    ("user", RoleScope.system, 0, "Standardbenutzer"),
-    ("viewer", RoleScope.resource, authz.READ, "Nur lesen"),
-    ("collaborator", RoleScope.resource, authz.READ | authz.WRITE, "Lesen und schreiben"),
-    (
-        "editor",
-        RoleScope.resource,
-        authz.READ | authz.WRITE | authz.DELETE,
-        "Lesen, schreiben, löschen",
-    ),
-    ("sharer", RoleScope.resource, authz.READ | authz.SHARE, "Lesen und teilen"),
-    ("manager", RoleScope.resource, authz.ALL, "Vollzugriff auf den Eintrag"),
 ]
 
 
 def ensure_builtin_roles(db: Session) -> None:
-    # Eine Sammelabfrage statt einer Einzelabfrage je eingebauter Rolle.
-    names = [name for name, _, _, _ in BUILTIN_ROLES]
-    existing = set(
-        db.execute(select(Role.name).where(Role.name.in_(names))).scalars().all()
-    )
+    """Legt die Adminrolle an bzw. aktualisiert sie auf ``ALL``.
+
+    Neue Bits (publish/audit/monitor) müssen auch in bestehenden Installationen
+    ankommen. Andere Rollen werden hier bewusst weder angelegt noch gelöscht –
+    das erledigt die Cleanup-Migration 0013 nach verifiziertem Backfill.
+    """
+    existing = {
+        role.name: role
+        for role in db.execute(
+            select(Role).where(Role.name.in_([name for name, _, _, _ in BUILTIN_ROLES]))
+        ).scalars().all()
+    }
     for name, scope, permissions, description in BUILTIN_ROLES:
-        if name in existing:
-            continue
-        db.add(
-            Role(
-                name=name,
-                scope=scope,
-                permissions=permissions,
-                description=description,
-                is_builtin=True,
+        role = existing.get(name)
+        if role is None:
+            db.add(
+                Role(
+                    name=name,
+                    scope=scope,
+                    permissions=permissions,
+                    description=description,
+                    is_builtin=True,
+                )
             )
-        )
+            continue
+        role.scope = scope
+        role.permissions = permissions
+        role.description = description
+        role.is_builtin = True
     db.flush()
 
 

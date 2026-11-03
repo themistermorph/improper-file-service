@@ -8,15 +8,13 @@ Antwortformat, Rechtebündel und Schutzregeln unverändert geprüft.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from fastapi.testclient import TestClient
-from sqlalchemy import event, select
+from sqlalchemy import event
 
 from ifs import main
 from ifs.core import authz, namespace, roles
 from ifs.db import get_engine, session_scope
-from ifs.models import Group, PrincipalType, RoleAssignment
+from ifs.models import ACL, Group, PrincipalType, RoleScope
 
 from .conftest import make_user
 from .helpers import login
@@ -157,8 +155,8 @@ def test_benutzerdetail_gruppen_wachsen_nicht_linear():
         assert second_count == first_count  # eine Sammelabfrage, keine je Gruppe
 
 
-def test_systemrollenliste_filtert_ressourcenzuweisungen():
-    """GET /users/{id}/roles liefert nur systemweite Zuweisungen, konstant."""
+def test_systemrollenliste_zeigt_nur_adminzuweisung():
+    """GET /users/{id}/roles liefert nur noch Admin-Zuweisungen, konstant."""
     with TestClient(main.app) as client:
         admin = {"Authorization": f"Bearer {login(client)}"}
         user_id = _create_user(client, admin, "opt-rollen-user")
@@ -166,114 +164,63 @@ def test_systemrollenliste_filtert_ressourcenzuweisungen():
             "/api/folders", headers=admin, json={"name": "opt-rollen-folder"}
         ).json()["id"]
 
-        created = client.post(
-            "/api/roles",
-            headers=admin,
-            json={"name": "opt-reviewer", "scope": "system", "permissions": ["read"]},
-        )
-        assert created.status_code == 201, created.text
-        body = created.json()
-        assert body["permissions"] == authz.READ
-        assert body["permission_names"] == ["read"]
-        role_id = body["id"]
+        assert client.get(f"/api/users/{user_id}/roles", headers=admin).json() == []
 
-        first = client.post(f"/api/users/{user_id}/roles/{role_id}", headers=admin)
-        assert first.status_code == 201, first.text
-        # Doppelte Zuweisung liefert dieselbe Zuweisung (kein Duplikat).
-        again = client.post(f"/api/users/{user_id}/roles/{role_id}", headers=admin)
-        assert again.status_code == 201
-        assert again.json()["id"] == first.json()["id"]
-
+        assert client.patch(
+            f"/api/users/{user_id}", headers=admin, json={"is_admin": True}
+        ).status_code == 200
         before, before_count = _count_queries(
             lambda: client.get(f"/api/users/{user_id}/roles", headers=admin)
         )
-        assert [item["id"] for item in before.json()] == [first.json()["id"]]
+        items = before.json()
+        assert len(items) == 1
+        assert items[0]["role_name"] == "admin"
+        assert items[0]["entry_id"] is None
 
-        # Ressourcenzuweisungen desselben Benutzers dürfen die Systemliste weder
-        # inhaltlich noch in der Abfragezahl verändern.
-        viewer = next(
-            role
-            for role in client.get("/api/roles?scope=resource", headers=admin).json()
-            if role["name"] == "viewer"
+        # Eintrags-ACLs dürfen die Systemliste weder ändern noch zusätzliche
+        # Abfragen pro Zeile auslösen.
+        client.post(
+            f"/api/entries/{folder_id}/acl",
+            headers=admin,
+            json={
+                "principal_type": "user",
+                "principal_id": user_id,
+                "perms": ["read", "write"],
+            },
         )
-        for _ in range(3):
-            assigned = client.post(
-                f"/api/entries/{folder_id}/roles",
-                headers=admin,
-                json={
-                    "role_id": viewer["id"],
-                    "principal_type": "user",
-                    "principal_id": user_id,
-                },
-            )
-            assert assigned.status_code == 201, assigned.text
-
         after, after_count = _count_queries(
             lambda: client.get(f"/api/users/{user_id}/roles", headers=admin)
         )
-        items = after.json()
-        assert [item["id"] for item in items] == [first.json()["id"]]
-        assert all(item["entry_id"] is None for item in items)
+        assert [item["id"] for item in after.json()] == [items[0]["id"]]
         assert after_count == before_count
 
 
-def test_rollen_loeschen_entfernt_zuweisungen_ohne_n_plus_1():
-    """DELETE /roles/{id} räumt Zuweisungen mit einer Sammelabfrage auf."""
+def test_rollen_endpunkte_nach_cleanup():
+    """POST /roles ist entfernt; die Cleanup-Funktion lässt nur admin übrig."""
+    from ifs.core import permissions
+
     with TestClient(main.app) as client:
         admin = {"Authorization": f"Bearer {login(client)}"}
-        role_ids: dict[str, str] = {}
-        for name in ("opt-role-klein", "opt-role-gross"):
-            response = client.post(
-                "/api/roles", headers=admin, json={"name": name, "scope": "system"}
-            )
-            assert response.status_code == 201, response.text
-            role_ids[name] = response.json()["id"]
-
+        assert client.post(
+            "/api/roles", headers=admin, json={"name": "opt-alt", "scope": "system"}
+        ).status_code == 410
         with session_scope() as db:
-            users = [make_user(db, f"opt-del-{index}") for index in range(4)]
-            small = roles.get_role(db, UUID(role_ids["opt-role-klein"]))
-            large = roles.get_role(db, UUID(role_ids["opt-role-gross"]))
+            legacy = roles.create_role(
+                db, name="opt-alt", scope=RoleScope.system, permissions=authz.READ
+            )
+            user = make_user(db, "opt-cleanup-user")
             roles.assign_role(
                 db,
-                role=small,
+                role=legacy,
                 principal_type=PrincipalType.user,
-                principal_id=users[0].id,
+                principal_id=user.id,
             )
-            for user in users:
-                roles.assign_role(
-                    db,
-                    role=large,
-                    principal_type=PrincipalType.user,
-                    principal_id=user.id,
-                )
-
-        _, small_count = _count_queries(
-            lambda: client.delete(f"/api/roles/{role_ids['opt-role-klein']}", headers=admin)
-        )
-        _, large_count = _count_queries(
-            lambda: client.delete(f"/api/roles/{role_ids['opt-role-gross']}", headers=admin)
-        )
-        # Eine Abfrage unabhängig von der Anzahl der Zuweisungen.
-        assert small_count == large_count
-
-        with session_scope() as db:
-            remaining = (
-                db.execute(
-                    select(RoleAssignment).where(
-                        RoleAssignment.role_id.in_(
-                            [UUID(value) for value in role_ids.values()]
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            assert remaining == []
+            permissions.cleanup_roles(db)
+            assert [role.name for role in roles.list_roles(db)] == ["admin"]
 
 
-def test_rechtebuendel_und_gruppenzuordnung_unveraendert(db):
-    """Gruppen-Rollenzuweisung gewährt exakt die Rechte des Bündels."""
-    roles.ensure_builtin_roles(db)
+def test_gruppen_acl_gewaehrt_rechte(db):
+    """Gruppen-Grant über ACL (statt Ressourcenrolle)."""
     owner = make_user(db, "opt-owner")
     member = make_user(db, "opt-member")
     group = Group(name="opt-team")
@@ -283,19 +230,20 @@ def test_rechtebuendel_und_gruppenzuordnung_unveraendert(db):
 
     root = namespace.ensure_root(db, owner.id)
     folder = namespace.create_folder(db, root, "opt-share", owner.id)
-    viewer = roles.find_by_name(db, "viewer")
-    assert viewer is not None
-    roles.assign_role(
-        db,
-        role=viewer,
-        principal_type=PrincipalType.group,
-        principal_id=group.id,
-        entry_id=folder.id,
+    db.add(
+        ACL(
+            entry_id=folder.id,
+            principal_type=PrincipalType.group,
+            principal_id=group.id,
+            perms=authz.READ,
+            inherited=True,
+        )
     )
+    db.flush()
 
     assert authz.can(db, member, "read", folder)
     assert not authz.can(db, member, "write", folder)
-    # Ressourcengebundene Zuweisung erscheint nicht in der Systemliste.
+    # ACL-Grants erscheinen nicht in der (Admin-)Systemliste.
     assert roles.list_system_assignments(db, member.id) == []
 
 

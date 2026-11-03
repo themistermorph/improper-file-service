@@ -146,7 +146,7 @@ def test_debounced_handlers_are_wired():
 def test_row_renderers_use_document_fragment():
     source = _html()
     assert source.count("createDocumentFragment()") >= 6
-    for name in ("render", "renderTrash", "renderUsers", "renderRoles",
+    for name in ("render", "renderTrash", "renderUsers",
                  "renderShared", "renderShares"):
         block = _function_block(source, name)
         assert "createDocumentFragment()" in block, f"{name} nutzt kein DocumentFragment"
@@ -234,7 +234,7 @@ def test_independent_fetches_run_in_parallel():
 
 def test_key_dom_ids_are_preserved():
     source = _html()
-    for element_id in ("entries", "trash-entries", "user-rows", "role-rows", "share-rows",
+    for element_id in ("entries", "trash-entries", "user-rows", "share-rows",
                        "shared-rows", "audit-rows", "system-cards", "search", "user-q",
                        "audit-q", "bulkbar", "toasts", "modal-root"):
         assert f'id="{element_id}"' in source, f"ID {element_id} fehlt"

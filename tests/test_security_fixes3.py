@@ -80,7 +80,7 @@ def test_s1_share_requires_read(monkeypatch):
 # --- S2: Admin kann die Per-User-Isolation nicht per API aushebeln -------------
 
 
-def test_s2_admin_cannot_self_assign_resource_role():
+def test_s2_admin_cannot_self_assign_foreign_entry_admin():
     with TestClient(main.app) as client:
         admin = {"Authorization": f"Bearer {login(client)}"}
         admin_id = client.get("/api/me", headers=admin).json()["id"]
@@ -90,29 +90,33 @@ def test_s2_admin_cannot_self_assign_resource_role():
             "/api/folders", headers=alice, json={"name": "private"}
         ).json()["id"]
         alice_root = client.get("/api/root", headers=alice).json()["id"]
-        manager = next(
-            role["id"]
-            for role in client.get("/api/roles?scope=resource", headers=admin).json()
-            if role["name"] == "manager"
-        )
 
-        denied = client.post(
-            f"/api/roles/{manager}/assignments",
+        # Systemadmin ohne Entry-Admin darf sich auf fremden Einträgen kein
+        # Zugriffsrecht verschaffen.
+        denied = client.put(
+            f"/api/entries/{alice_root}/acl",
             headers=admin,
-            json={"principal_type": "user", "principal_id": admin_id, "entry_id": alice_root},
+            json={
+                "principal_type": "user",
+                "principal_id": admin_id,
+                "permissions": ["admin"],
+            },
         )
         assert denied.status_code == 403, denied.text
-        # Isolation bleibt bestehen.
         assert client.get(f"/api/entries/{alice_folder}", headers=admin).status_code == 403
 
-        # Auf eigenen Einträgen darf der Admin weiterhin Ressourcenrollen vergeben.
+        # Auf eigenen Einträgen darf der Admin (hier Eigentümer) Grants setzen.
         own_folder = client.post("/api/folders", headers=admin, json={"name": "own"}).json()["id"]
-        allowed = client.post(
-            f"/api/roles/{manager}/assignments",
+        allowed = client.put(
+            f"/api/entries/{own_folder}/acl",
             headers=admin,
-            json={"principal_type": "user", "principal_id": admin_id, "entry_id": own_folder},
+            json={
+                "principal_type": "user",
+                "principal_id": admin_id,
+                "permissions": ["read"],
+            },
         )
-        assert allowed.status_code == 201, allowed.text
+        assert allowed.status_code == 200, allowed.text
 
 
 def test_s2_admin_can_only_revoke_foreign_share(monkeypatch):

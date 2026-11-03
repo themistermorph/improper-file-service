@@ -319,27 +319,6 @@
         <p class="muted" id="user-status" style="font-size:13px"></p>
       </div>
 
-      <div id="roles-view" class="hidden">
-        <div class="toolbar">
-          <select id="role-scope" onchange="loadRoles()">
-            <option value="">Alle Rollen</option>
-            <option value="system">Systemrollen</option>
-            <option value="resource">Ressourcenrollen</option>
-          </select>
-          <button class="btn" onclick="roleCreateDialog()">＋ Neue Rolle</button>
-        </div>
-        <div class="card">
-          <table>
-            <thead>
-              <tr><th>Name</th><th>Scope</th><th>Rechte</th><th>Eingebaut</th><th></th></tr>
-            </thead>
-            <tbody id="role-rows"></tbody>
-          </table>
-          <div class="empty hidden" id="role-empty">Keine Rollen.</div>
-        </div>
-        <p class="muted" style="font-size:13px">Ressourcenrollen werden im Dateimanager über „Zugriff“ auf Ordner/Dateien vergeben; Systemrollen gelten global.</p>
-      </div>
-
       <div id="shares-view" class="hidden">
         <div class="toolbar">
           <button class="btn secondary" onclick="loadShares()">Aktualisieren</button>
@@ -470,7 +449,6 @@
       users: [],
       usersSelected: new Set(),
       userTotal: 0,
-      roles: [],
       shares: [],
       sharesSelected: new Set(),
       shared: [],
@@ -1554,7 +1532,6 @@
       document.getElementById("files-view").classList.toggle("hidden", view !== "files");
       document.getElementById("trash-view").classList.toggle("hidden", view !== "trash");
       document.getElementById("users-view").classList.toggle("hidden", view !== "users");
-      document.getElementById("roles-view").classList.toggle("hidden", view !== "roles");
       document.getElementById("shares-view").classList.toggle("hidden", view !== "shares");
       document.getElementById("shared-view").classList.toggle("hidden", view !== "shared");
       document.getElementById("published-view").classList.toggle("hidden", view !== "published");
@@ -1574,7 +1551,6 @@
       if (view !== "system") clearSystemTimer();
       if (view === "trash") loadTrash();
       else if (view === "users") loadUsers();
-      else if (view === "roles") loadRoles();
       else if (view === "shares") loadShares();
       else if (view === "shared") loadShared();
       else if (view === "published") loadPublished();
@@ -1588,7 +1564,6 @@
       bustJsonCache(); // manueller Refresh: immer frisch laden
       if (state.view === "trash") loadTrash();
       else if (state.view === "users") loadUsers();
-      else if (state.view === "roles") loadRoles();
       else if (state.view === "shares") loadShares();
       else if (state.view === "shared") loadShared();
       else if (state.view === "published") loadPublished();
@@ -1878,7 +1853,6 @@
           { label: "Bearbeiten", handler: () => userEditDialog(u) },
           { label: "Passwort", handler: () => userPasswordDialog(u) },
           { label: "Gruppen", handler: () => userGroupsDialog(u) },
-          { label: "Rollen", handler: () => userRolesDialog(u) },
         ];
         const more = document.createElement("button");
         more.className = "btn small secondary";
@@ -2199,202 +2173,7 @@
       } catch (e) { toast("Passwort ändern fehlgeschlagen: " + e.message, "err"); }
     }
 
-    // ---------- Rollen ----------
-    const PERM_LABELS = {
-      read: "lesen", write: "schreiben", delete: "löschen", share: "teilen", admin: "admin",
-    };
-    const ALL_PERMS = ["read", "write", "delete", "share", "admin"];
     let accessEntry = null;
-
-    async function loadRoles() {
-      const scope = document.getElementById("role-scope").value;
-      const query = scope ? "?scope=" + scope : "";
-      try {
-        state.roles = await apiJson("GET", "/api/roles" + query);
-        renderRoles();
-      } catch (e) { toast("Rollen laden fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    function renderRoles() {
-      const tbody = document.getElementById("role-rows");
-      const frag = document.createDocumentFragment();
-      const items = state.roles || [];
-      document.getElementById("role-empty").classList.toggle("hidden", items.length > 0);
-      for (const role of items) {
-        const tr = document.createElement("tr");
-
-        const tdName = document.createElement("td");
-        tdName.textContent = role.name;
-        tr.appendChild(tdName);
-
-        const tdScope = document.createElement("td");
-        tdScope.textContent = role.scope === "system" ? "System" : "Ressource";
-        tr.appendChild(tdScope);
-
-        const tdPerms = document.createElement("td");
-        tdPerms.innerHTML = role.permission_names.length
-          ? role.permission_names.map(p => `<span class="chip">${PERM_LABELS[p] || p}</span>`).join("")
-          : '<span class="muted">–</span>';
-        tr.appendChild(tdPerms);
-
-        const tdBuiltin = document.createElement("td");
-        tdBuiltin.textContent = role.is_builtin ? "✓" : "–";
-        tr.appendChild(tdBuiltin);
-
-        const tdActions = document.createElement("td");
-        const wrap = document.createElement("div");
-        wrap.className = "row-actions";
-        wrap.appendChild(action("Zuweisungen", "secondary", () => roleAssignmentsDialog(role)));
-        if (!role.is_builtin) {
-          wrap.appendChild(action("Bearbeiten", "secondary", () => roleEditDialog(role)));
-          wrap.appendChild(action("Löschen", "danger", () => roleDelete(role)));
-        }
-        tdActions.appendChild(wrap);
-        tr.appendChild(tdActions);
-        frag.appendChild(tr);
-      }
-      tbody.replaceChildren(frag);
-    }
-
-    function permsCheckboxes(selected) {
-      const chosen = new Set(selected || []);
-      return ALL_PERMS.map(p =>
-        `<label class="checkline"><input type="checkbox" class="perm" value="${p}" ${chosen.has(p) ? "checked" : ""} /> ${PERM_LABELS[p]}</label>`
-      ).join("");
-    }
-
-    function selectedPerms() {
-      return [...document.querySelectorAll("input.perm:checked")].map(el => el.value);
-    }
-
-    function roleCreateDialog() {
-      openModal(`
-        <h2>Neue Rolle</h2>
-        <div class="field"><label>Name</label><input id="nr-name" /></div>
-        <div class="field"><label>Beschreibung</label><input id="nr-desc" /></div>
-        <div class="field"><label>Scope</label>
-          <select id="nr-scope">
-            <option value="resource">Ressource (auf Einträge)</option>
-            <option value="system">System (global)</option>
-          </select></div>
-        <div class="field"><label>Rechte</label>${permsCheckboxes([])}</div>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn" onclick="submitRoleCreate()">Anlegen</button></div>`);
-    }
-
-    async function submitRoleCreate() {
-      try {
-        await apiJson("POST", "/api/roles", {
-          name: document.getElementById("nr-name").value.trim(),
-          description: document.getElementById("nr-desc").value.trim() || null,
-          scope: document.getElementById("nr-scope").value,
-          permissions: selectedPerms(),
-        });
-        closeModal();
-        toast("Rolle angelegt.", "ok");
-        loadRoles();
-      } catch (e) { toast("Anlegen fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    function roleEditDialog(role) {
-      openModal(`
-        <h2>Rolle bearbeiten – ${esc(role.name)}</h2>
-        <div class="field"><label>Beschreibung</label><input id="er-desc" value="${esc(role.description || "")}" /></div>
-        <div class="field"><label>Rechte</label>${permsCheckboxes(role.permission_names)}</div>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn" onclick="submitRoleEdit('${role.id}')">Speichern</button></div>`);
-    }
-
-    async function submitRoleEdit(id) {
-      try {
-        await apiJson("PATCH", "/api/roles/" + id, {
-          description: document.getElementById("er-desc").value.trim(),
-          permissions: selectedPerms(),
-        });
-        closeModal();
-        toast("Gespeichert.", "ok");
-        loadRoles();
-      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    async function roleDelete(role) {
-      if (!confirm(`Rolle '${role.name}' löschen? Zuweisungen werden entfernt.`)) return;
-      try {
-        await api("DELETE", "/api/roles/" + role.id);
-        toast("Rolle gelöscht.", "ok");
-        loadRoles();
-      } catch (e) { toast("Löschen fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    function principalLabel(assignment) {
-      const kind = assignment.principal_type === "group" ? "Gruppe" : "Benutzer";
-      return `${kind}: ${assignment.principal_id}` + (assignment.entry_id ? ` @ ${assignment.entry_id}` : " (global)");
-    }
-
-    async function fillPrincipals(selectId, typeId) {
-      const type = document.getElementById(typeId).value;
-      const select = document.getElementById(selectId);
-      select.innerHTML = "";
-      try {
-        if (type === "user") {
-          const data = await apiJson("GET", "/api/users?limit=200");
-          for (const u of data.items) select.appendChild(new Option(personName(u.display_name, u.username), u.id));
-        } else {
-          const groups = await apiJson("GET", "/api/groups");
-          for (const g of groups) select.appendChild(new Option(g.name, g.id));
-        }
-      } catch (e) { /* z. B. wenn keine Adminrechte bestehen */ }
-    }
-
-    let roleAssignmentsRole = null; // zuletzt betrachtete Rolle (Neu-Laden nach Entfernen)
-
-    async function roleAssignmentsDialog(role) {
-      roleAssignmentsRole = role;
-      try {
-        const assignments = await apiJson("GET", "/api/roles/" + role.id + "/assignments");
-        const list = assignments.length
-          ? assignments.map(a =>
-              `<div class="checkline"><span class="grow">${esc(principalLabel(a))}</span>` +
-              `<button class="btn small danger" onclick="removeRoleAssignment('${a.id}')">Entfernen</button></div>`
-            ).join("")
-          : '<p class="muted">Keine Zuweisungen.</p>';
-        const addForm = role.scope === "system"
-          ? `<hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
-             <h3 style="margin:0 0 8px">Zuweisen</h3>
-             <div class="field"><label>Typ</label>
-               <select id="ra-type" onchange="fillPrincipals('ra-principal','ra-type')">
-                 <option value="user">Benutzer</option><option value="group">Gruppe</option>
-               </select></div>
-             <div class="field"><label>Empfänger</label><select id="ra-principal"></select></div>
-             <button class="btn" onclick="submitRoleAssignment('${role.id}')">Zuweisen</button>`
-          : '<p class="muted">Ressourcenrollen werden im Dateimanager über „Zugriff“ vergeben.</p>';
-        openModal(`<h2>Zuweisungen – ${esc(role.name)}</h2>${list}${addForm}
-          <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
-        if (role.scope === "system") fillPrincipals("ra-principal", "ra-type");
-      } catch (e) { toast("Zuweisungen laden fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    async function submitRoleAssignment(roleId) {
-      const type = document.getElementById("ra-type").value;
-      const principal = document.getElementById("ra-principal").value;
-      if (!principal) { toast("Kein Empfänger ausgewählt.", "err"); return; }
-      try {
-        await apiJson("POST", "/api/roles/" + roleId + "/assignments", {
-          principal_type: type, principal_id: principal,
-        });
-        toast("Zugewiesen.", "ok");
-        closeModal();
-      } catch (e) { toast("Zuweisen fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    async function removeRoleAssignment(assignmentId) {
-      try {
-        await api("DELETE", "/api/roles/assignments/" + assignmentId);
-        toast("Entfernt.", "ok");
-        // Liste neu laden, damit die entfernte Zuweisung verschwindet.
-        if (roleAssignmentsRole) roleAssignmentsDialog(roleAssignmentsRole);
-      } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
-    }
 
     // --- Zugriff auf einen Eintrag (ACL-Grants) ---
     const ENTRY_PERM_LABELS = {
@@ -2531,47 +2310,6 @@
         await Promise.all([entryAccessDialog(accessEntry), refreshMe()]);
         if (state.view === "files") load();
       } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    // --- Systemrollen je Benutzer ---
-    async function userRolesDialog(u) {
-      try {
-        const [systemRoles, mine] = await Promise.all([
-          apiJson("GET", "/api/roles?scope=system"),
-          apiJson("GET", "/api/users/" + u.id + "/roles"),
-        ]);
-        const mineIds = new Set(mine.map(a => a.role_id));
-        const rows = systemRoles.map(role =>
-          `<label class="checkline"><input type="checkbox" class="srole" value="${role.id}" ${mineIds.has(role.id) ? "checked" : ""} /> ${esc(role.name)} <span class="muted">${esc(role.description || "")}</span></label>`
-        ).join("");
-        openModal(`
-          <h2>Systemrollen – ${esc(personName(u.display_name, u.username))}</h2>
-          ${rows}
-          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-          <button class="btn" onclick="submitUserRoles('${u.id}')">Speichern</button></div>`);
-      } catch (e) { toast("Rollen laden fehlgeschlagen: " + e.message, "err"); }
-    }
-
-    async function submitUserRoles(userId) {
-      try {
-        const [systemRoles, mine] = await Promise.all([
-          apiJson("GET", "/api/roles?scope=system"),
-          apiJson("GET", "/api/users/" + userId + "/roles"),
-        ]);
-        const mineByRole = new Map(mine.map(a => [a.role_id, a.id]));
-        const checked = new Set(
-          [...document.querySelectorAll("input.srole:checked")].map(el => el.value)
-        );
-        for (const role of systemRoles) {
-          if (checked.has(role.id) && !mineByRole.has(role.id)) {
-            await api("POST", "/api/users/" + userId + "/roles/" + role.id);
-          } else if (!checked.has(role.id) && mineByRole.has(role.id)) {
-            await api("DELETE", "/api/users/" + userId + "/roles/" + mineByRole.get(role.id));
-          }
-        }
-        closeModal();
-        toast("Rollen aktualisiert.", "ok");
-      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
     }
 
     // ---------- Datei-Vorschau ----------

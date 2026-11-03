@@ -13,7 +13,7 @@ from sqlalchemy import inspect, select
 from ifs import main
 from ifs.core import authz, namespace, permissions, roles
 from ifs.db import get_engine, session_scope
-from ifs.models import Group, PrincipalType
+from ifs.models import Group, PrincipalType, RoleScope
 
 from .conftest import make_user
 from .helpers import login
@@ -171,23 +171,35 @@ def test_backfill_migriert_ressourcen_und_systemrollen(db):
     root = namespace.ensure_root(db, owner.id)
     folder = namespace.create_folder(db, root, "shared", owner.id)
 
+    viewer_role = roles.create_role(
+        db, name="viewer", scope=RoleScope.resource, permissions=authz.READ
+    )
+    sharer_role = roles.create_role(
+        db,
+        name="sharer",
+        scope=RoleScope.resource,
+        permissions=authz.READ | authz.SHARE,
+    )
+    auditor_role = roles.create_role(
+        db, name="auditor", scope=RoleScope.system, permissions=0
+    )
     roles.assign_role(
         db,
-        role=roles.find_by_name(db, "viewer"),
+        role=viewer_role,
         principal_type=PrincipalType.user,
         principal_id=reader.id,
         entry_id=folder.id,
     )
     roles.assign_role(
         db,
-        role=roles.find_by_name(db, "sharer"),
+        role=sharer_role,
         principal_type=PrincipalType.user,
         principal_id=sharer.id,
         entry_id=folder.id,
     )
     roles.assign_role(
         db,
-        role=roles.find_by_name(db, "auditor"),
+        role=auditor_role,
         principal_type=PrincipalType.user,
         principal_id=auditor.id,
     )
@@ -283,6 +295,9 @@ def test_cleanup_laesst_nur_adminrolle_uebrig(db):
 
     roles.ensure_builtin_roles(db)
     user = make_user(db, "cleanup-admin", is_admin=True)
+    roles.create_role(
+        db, name="legacy-viewer", scope=RoleScope.resource, permissions=authz.READ
+    )
     permissions.backfill_roles(db)
 
     result = permissions.cleanup_roles(db)

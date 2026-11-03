@@ -163,7 +163,12 @@ def test_gruppen_acl_und_rollen_vererbung(db):
     db.flush()
 
     root, leaf = _deep_chain(db, owner, depth=5)
-    collaborator = roles.find_by_name(db, "collaborator")
+    collaborator = roles.create_role(
+        db,
+        name="collaborator",
+        scope=RoleScope.resource,
+        permissions=authz.READ | authz.WRITE,
+    )
     roles.assign_role(
         db,
         role=collaborator,
@@ -230,7 +235,9 @@ def test_rollen_entzug_nach_flush_sofort_sichtbar(db):
     owner = make_user(db, "owner-rollenentzug")
     reader = make_user(db, "reader-rollenentzug")
     root, leaf = _deep_chain(db, owner, depth=3)
-    viewer = roles.find_by_name(db, "viewer")
+    viewer = roles.create_role(
+        db, name="viewer", scope=RoleScope.resource, permissions=authz.READ
+    )
     assignment = roles.assign_role(
         db,
         role=viewer,

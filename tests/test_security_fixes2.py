@@ -43,19 +43,18 @@ def test_f1_sharer_cannot_create_drop_link(monkeypatch):
         folder = client.post(
             "/api/folders", headers=admin, json={"name": "dropzone"}
         ).json()["id"]
-        sharer_id = next(
-            role["id"]
-            for role in client.get("/api/roles?scope=resource", headers=admin).json()
-            if role["name"] == "sharer"
-        )
-        assigned = client.post(
-            f"/api/entries/{folder}/roles",
+        granted = client.post(
+            f"/api/entries/{folder}/acl",
             headers=admin,
-            json={"role_id": sharer_id, "principal_type": "user", "principal_id": bob_id},
+            json={
+                "principal_type": "user",
+                "principal_id": bob_id,
+                "perms": ["read", "share"],
+            },
         )
-        assert assigned.status_code == 201, assigned.text
+        assert granted.status_code == 201, granted.text
 
-        # Kontrolle: Die Rolle `sharer` umfasst kein `write`.
+        # Kontrolle: lesen+teilen umfasst kein `write`.
         denied_folder = client.post(
             "/api/folders", headers=bob, json={"parent_id": folder, "name": "x"}
         )
@@ -412,17 +411,19 @@ def test_h4_permission_lists_are_bounded():
         role = client.post(
             "/api/roles",
             headers=admin,
-            json={"name": "toomany", "permissions": ["read"] * 6},
+            json={"name": "toomany", "permissions": ["read"]},
         )
-        assert role.status_code == 422
+        assert role.status_code == 410
 
-        # Fünf (alle bekannten) Rechte bleiben erlaubt.
+        # Alle sechs Eintragsrechte bleiben erlaubt.
+        admin_id = client.get("/api/me", headers=admin).json()["id"]
         ok = client.post(
-            "/api/roles",
+            f"/api/entries/{folder}/acl",
             headers=admin,
             json={
-                "name": "allfive",
-                "permissions": ["read", "write", "delete", "share", "admin"],
+                "principal_type": "user",
+                "principal_id": admin_id,
+                "perms": ["read", "write", "delete", "share", "publish", "admin"],
             },
         )
         assert ok.status_code == 201, ok.text

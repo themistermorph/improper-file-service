@@ -36,57 +36,36 @@ def _create_user(client, admin, username: str) -> str:
     return response.json()["id"]
 
 
-# --- Finding 1: DELETE /api/roles/assignments/{id} prüft den Eintrag ----------
+# --- Finding 1: Systemadmin kann fremde Entry-ACLs nicht löschen -------------
 
 
-def test_system_admin_cannot_delete_foreign_entry_assignment():
+def test_system_admin_cannot_delete_foreign_entry_acl():
     with TestClient(main.app) as client:
         admin = {"Authorization": f"Bearer {login(client)}"}
         _create_user(client, admin, "alice-r5")
         bob_id = _create_user(client, admin, "bob-r5")
-        carol_id = _create_user(client, admin, "carol-r5")
         alice = _auth(client, "alice-r5")
 
         folder = client.post(
             "/api/folders", headers=alice, json={"name": "team-r5"}
         ).json()["id"]
-        viewer = next(
-            role
-            for role in client.get("/api/roles?scope=resource", headers=admin).json()
-            if role["name"] == "viewer"
-        )
-        assigned = client.post(
-            f"/api/entries/{folder}/roles",
+        granted = client.post(
+            f"/api/entries/{folder}/acl",
             headers=alice,
-            json={"role_id": viewer["id"], "principal_type": "user", "principal_id": bob_id},
+            json={"principal_type": "user", "principal_id": bob_id, "perms": ["read"]},
         )
-        assert assigned.status_code == 201, assigned.text
-        assignment_id = assigned.json()["id"]
+        assert granted.status_code == 201, granted.text
+        acl_id = granted.json()["id"]
 
-        # Systemadmin ohne `admin` am Eintrag darf die fremde Zuweisung nicht löschen.
-        denied = client.delete(f"/api/roles/assignments/{assignment_id}", headers=admin)
+        # Systemadmin ohne `admin` am Eintrag darf den fremden Grant nicht löschen.
+        denied = client.delete(f"/api/entries/{folder}/acl/{acl_id}", headers=admin)
         assert denied.status_code == 403, denied.text
 
-        # Der Eintrags-Admin (Besitzer) kann sie weiterhin entfernen.
+        # Der Eintrags-Admin (Besitzer) kann ihn weiterhin entfernen.
         removed = client.delete(
-            f"/api/entries/{folder}/roles/{assignment_id}", headers=alice
+            f"/api/entries/{folder}/acl/{acl_id}", headers=alice
         )
         assert removed.status_code == 204, removed.text
-
-        # Systemweite Zuweisung (`entry_id` None) bleibt für den Systemadmin löschbar.
-        admin_role = next(
-            role
-            for role in client.get("/api/roles?scope=system", headers=admin).json()
-            if role["name"] == "admin"
-        )
-        system_assignment = client.post(
-            f"/api/users/{carol_id}/roles/{admin_role['id']}", headers=admin
-        )
-        assert system_assignment.status_code == 201, system_assignment.text
-        assert system_assignment.json()["entry_id"] is None
-        assert client.delete(
-            f"/api/roles/assignments/{system_assignment.json()['id']}", headers=admin
-        ).status_code == 204
 
 
 # --- Finding 2: abgebrochener Job darf keine ZIP-Datei zurücklassen -----------

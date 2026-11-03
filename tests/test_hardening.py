@@ -105,14 +105,6 @@ def test_principal_and_copy_plausibility(monkeypatch):
         )
         assert acl.status_code == 400
 
-        role = client.get("/api/roles?scope=resource", headers=auth).json()[0]["id"]
-        assign = client.post(
-            f"/api/entries/{parent}/roles",
-            headers={**auth, "Content-Type": "application/json"},
-            json={"role_id": role, "principal_type": "user", "principal_id": bogus},
-        )
-        assert assign.status_code == 400
-
         # Ordner in sich selbst kopieren -> 400
         copy = client.post(
             f"/api/entries/{parent}/copy",
