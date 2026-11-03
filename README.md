@@ -21,7 +21,7 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
   Installation, Konfiguration, API-Referenz, FTPS, Datenmodell, Sicherheit, Betrieb,
   Entwicklung.
 - **Featurebeschreibung Ausbaustufe 2** – [`FEATURES.md`](FEATURES.md):
-  Account-Manager, Papierkorb, Rollenmanagement und weitere Vorschläge.
+  Account-Manager, Papierkorb, Berechtigungsverwaltung (ACL/Systemrechte) und weitere Vorschläge.
 - **Tutorials** – Schritt-für-Schritt ab [`tutorials/01-schnellstart.md`](tutorials/01-schnellstart.md):
   Schnellstart, HTTP-Dateien, FTPS, resumable Uploads, Rechte, Freigaben,
   Veröffentlichungen (öffentliche Galerie), Backup, API-Anbindung,

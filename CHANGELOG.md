@@ -148,8 +148,9 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Token-Segmente erscheinen nicht mehr im Access-Log.
 
 ### Tests
-- Volle Suite: **366 Tests grün**; `ruff check src tests` sauber; keine
-  Datenbankmigration erforderlich.
+- Volle Suite grün; `ruff check src tests` sauber; Doku-Link-Check 0 tote
+  Links. Die Berechtigungs-Migrationen 0011–0013 sind durch Dedupe-/Backfill-/
+  Cleanup-Tests abgedeckt.
 
 ## [0.1.7.1] – 27.10.2026
 

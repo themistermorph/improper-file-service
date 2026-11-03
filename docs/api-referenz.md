@@ -780,7 +780,10 @@ Jeder Eintrag hat `protocol` (`http` oder `ftps`) und `result` (`ok`, `denied`,
 `entry.delete`, `entry.rename`, `entry.move`, `upload.ftp`, `upload.aborted`,
 `transfer.download`, `entry.update`; abgelehnte Mutationen erscheinen mit
 `result="denied"`.
-| `GET /api/system/stats` | Admin-Monitoring: CPU, RAM, Speicherplatz, Netzwerk-Raten (↑/↓), Laufzeit, IFS-Zähler und SeaweedFS-Volumes |
+
+`GET /api/system/stats` liefert mit `monitor` (oder Systemadmin) CPU, RAM,
+Speicherplatz, Netzwerk-Raten (↑/↓), Laufzeit, IFS-Zähler und
+SeaweedFS-Volumes.
 
 `GET /api/system/stats` liefert nur mit `monitor` (oder Systemadmin) Werte. CPU- und Netzwerk-Raten werden
 aus der Differenz zweier Aufrufe gebildet (der erste Aufruf liefert `null`).
