@@ -8,10 +8,21 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core import accounts, audit, authz, namespace, permissions
-from ..models import ACL, Group, User
-from .deps import client_ip, get_current_user, get_db, require_admin
-from .schemas import AclCreate, AclOut, GroupCreate, GroupOut, MemberAdd
+from ..core import audit, authz, permissions
+from ..models import Group, PrincipalType, User
+from .deps import (
+    client_ip,
+    get_db,
+    require_admin,
+    require_audit,
+)
+from .schemas import (
+    GroupCreate,
+    GroupOut,
+    MemberAdd,
+    SystemPermissionOut,
+    SystemPermissionUpdate,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -54,45 +65,13 @@ def add_member(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/entries/{entry_id}/acl", response_model=AclOut, status_code=status.HTTP_201_CREATED)
-def set_acl(
-    entry_id: UUID,
-    payload: AclCreate,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> ACL:
-    entry = namespace.get_entry(db, entry_id)
-    # Wer `admin` auf dem Eintrag hat (Besitzer/Manager), darf Rechte vergeben.
-    authz.authorize(db, user, "admin", entry)
-    if not accounts.principal_exists(db, payload.principal_type, payload.principal_id):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Principal (Benutzer/Gruppe) nicht gefunden"
-        )
-    perms = authz.perms_from_names(payload.perms, namespace="entry")
-    acl = permissions.upsert_acl(
-        db,
-        entry_id=entry.id,
-        principal_type=payload.principal_type,
-        principal_id=payload.principal_id,
-        perms=perms,
-        merge=True,
-    )
-    audit.record(
-        db, "acl.set", actor_id=user.id, target_entry=entry.id, protocol="http",
-        ip=client_ip(request),
-        details={"principal": str(payload.principal_id), "perms": payload.perms},
-    )
-    return acl
-
-
 @router.get("/audit")
 def list_audit(
     limit: int = 100,
     offset: int = 0,
     action: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_audit),
 ) -> list[dict]:
     rows = audit.list_recent(db, limit=limit, offset=offset, action=action)
     return [
@@ -111,3 +90,66 @@ def list_audit(
         }
         for row, username, display_name in rows
     ]
+
+
+# --- Systemberechtigungen (audit/monitor) ---------------------------------
+
+
+def _system_permission_out(
+    principal_type: PrincipalType, principal_id: UUID, row
+) -> SystemPermissionOut:
+    perms = int(row.permissions or 0) if row is not None else 0
+    return SystemPermissionOut(
+        principal_type=principal_type,
+        principal_id=principal_id,
+        permissions=perms,
+        permission_names=authz.names_from_perms(perms, namespace="system"),
+    )
+
+
+def _parse_system_permissions(names: list[str]) -> int:
+    try:
+        perms = authz.perms_from_names(names, namespace="system")
+        authz.validate_system_grant_perms(perms)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    return perms
+
+
+@router.get("/groups/{group_id}/permissions", response_model=SystemPermissionOut)
+def get_group_permissions(
+    group_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> SystemPermissionOut:
+    group = _get_or_404(db, Group, group_id, "Gruppe")
+    row = permissions.get_system_permission(db, PrincipalType.group, group.id)
+    return _system_permission_out(PrincipalType.group, group.id, row)
+
+
+@router.put("/groups/{group_id}/permissions", response_model=SystemPermissionOut)
+def set_group_permissions(
+    group_id: UUID,
+    payload: SystemPermissionUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_admin),
+) -> SystemPermissionOut:
+    group = _get_or_404(db, Group, group_id, "Gruppe")
+    perms = _parse_system_permissions(payload.permissions)
+    row = permissions.set_system_permissions(
+        db,
+        principal_type=PrincipalType.group,
+        principal_id=group.id,
+        perms=perms,
+    )
+    audit.record(
+        db, "system_permission.set", actor_id=actor.id, protocol="http",
+        ip=client_ip(request),
+        details={
+            "principal_type": "group",
+            "principal_id": str(group.id),
+            "permissions": payload.permissions,
+        },
+    )
+    return _system_permission_out(PrincipalType.group, group.id, row)

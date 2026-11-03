@@ -36,13 +36,18 @@ def metrics(
     db: Session = Depends(get_db),
     user: User | None = Depends(get_current_user_optional),
 ) -> str:
-    """Prometheus-Metriken. Standardmäßig nur für Admins; per Setting öffentlich."""
+    """Prometheus-Metriken. Standardmäßig nur mit `monitor`; per Setting öffentlich."""
     settings = get_settings()
     if not settings.metrics_public:
         if user is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Nicht authentifiziert")
-        if not authz.is_system_admin(db, user):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Administratorrechte erforderlich")
+        if not (
+            authz.has_system_perm(db, user, authz.MONITOR)
+            or authz.is_system_admin(db, user)
+        ):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Systemrecht 'monitor' erforderlich"
+            )
 
     ifs = system_stats.ifs_metrics(db)
     lines = [

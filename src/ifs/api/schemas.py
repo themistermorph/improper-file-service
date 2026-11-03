@@ -96,6 +96,18 @@ class MemberAdd(BaseModel):
     user_id: UUID
 
 
+class SystemPermissionOut(BaseModel):
+    principal_type: PrincipalType
+    principal_id: UUID
+    permissions: int
+    permission_names: list[str] = []
+
+
+class SystemPermissionUpdate(BaseModel):
+    # Nur audit/monitor; Admin kommt ausschließlich über die Adminrolle.
+    permissions: list[str] = Field(default_factory=list, max_length=2)
+
+
 class EntryOut(BaseModel):
     id: UUID
     parent_id: UUID | None
@@ -251,8 +263,15 @@ class PublishedInput(BaseModel):
 class AclCreate(BaseModel):
     principal_type: PrincipalType
     principal_id: UUID
-    # Höchstens so viele Einträge wie es Rechte gibt (Body-/CPU-Schutz).
-    perms: list[str] = Field(max_length=5)
+    # Höchstens so viele Einträge wie es Eintragsrechte gibt (Body-/CPU-Schutz).
+    perms: list[str] = Field(max_length=6)
+
+
+class AclUpsert(BaseModel):
+    principal_type: PrincipalType
+    principal_id: UUID
+    # Neuer Endpunkt: `permissions` ersetzt die Rechte exakt (PUT).
+    permissions: list[str] = Field(max_length=6)
 
 
 class AclOut(BaseModel):
@@ -261,7 +280,17 @@ class AclOut(BaseModel):
     principal_type: PrincipalType
     principal_id: UUID
     perms: int
+    permission_names: list[str] = []
     inherited: bool
+
+
+class PrincipalOut(BaseModel):
+    """Minimierte Principal-Daten für den Zugriff-Dialog (keine E-Mails/Flags)."""
+
+    id: UUID
+    type: PrincipalType
+    name: str
+    display_name: str | None = None
 
 
 class TrashEntryOut(BaseModel):

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, lazyload
 
-from ..core import accounts, audit
+from ..core import accounts, audit, authz, permissions
 from ..errors import NotFound
-from ..models import Group, User
+from ..models import Group, PrincipalType, User
 from .deps import client_ip, get_current_user, get_db, require_admin
 from .schemas import (
     BulkResult,
@@ -19,6 +19,8 @@ from .schemas import (
     PasswordChange,
     PasswordReset,
     ProfileUpdate,
+    SystemPermissionOut,
+    SystemPermissionUpdate,
     UserCreate,
     UserDetailOut,
     UserListOut,
@@ -286,6 +288,67 @@ def remove_user_group(
         details={"user": user.username, "group": group.name},
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Systemberechtigungen (audit/monitor) ---------------------------------
+
+
+def _system_permission_out(user_id: UUID, row) -> SystemPermissionOut:
+    perms = int(row.permissions or 0) if row is not None else 0
+    return SystemPermissionOut(
+        principal_type=PrincipalType.user,
+        principal_id=user_id,
+        permissions=perms,
+        permission_names=authz.names_from_perms(perms, namespace="system"),
+    )
+
+
+def _parse_system_permissions(names: list[str]) -> int:
+    try:
+        perms = authz.perms_from_names(names, namespace="system")
+        authz.validate_system_grant_perms(perms)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    return perms
+
+
+@router.get("/users/{user_id}/permissions", response_model=SystemPermissionOut)
+def get_user_permissions(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> SystemPermissionOut:
+    user = accounts.get_user(db, user_id)
+    row = permissions.get_system_permission(db, PrincipalType.user, user.id)
+    return _system_permission_out(user.id, row)
+
+
+@router.put("/users/{user_id}/permissions", response_model=SystemPermissionOut)
+def set_user_permissions(
+    user_id: UUID,
+    payload: SystemPermissionUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_admin),
+) -> SystemPermissionOut:
+    user = accounts.get_user(db, user_id)
+    perms = _parse_system_permissions(payload.permissions)
+    row = permissions.set_system_permissions(
+        db,
+        principal_type=PrincipalType.user,
+        principal_id=user.id,
+        perms=perms,
+    )
+    audit.record(
+        db, "system_permission.set", actor_id=actor.id, protocol="http",
+        ip=client_ip(request),
+        details={
+            "principal_type": "user",
+            "principal_id": str(user.id),
+            "permissions": payload.permissions,
+        },
+    )
+    return _system_permission_out(user.id, row)
 
 
 # --- Selbstbedienung -------------------------------------------------------

@@ -77,6 +77,30 @@ def require_admin(
     return user
 
 
+def _require_system_permission(db: Session, user: User, bit: int) -> User:
+    """Systemrecht oder Systemadmin (Audit/Monitor sind auch fuer Admins da)."""
+    if authz.has_system_perm(db, user, bit) or authz.is_system_admin(db, user):
+        return user
+    name = ", ".join(authz.names_from_perms(bit, namespace="system"))
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN, f"Systemrecht '{name}' erforderlich"
+    )
+
+
+def require_audit(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    return _require_system_permission(db, user, authz.AUDIT)
+
+
+def require_monitor(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    return _require_system_permission(db, user, authz.MONITOR)
+
+
 def _trusted_networks() -> list:
     networks = []
     for part in (get_settings().trusted_proxies or "").split(","):
