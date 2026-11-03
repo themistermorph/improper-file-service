@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 
 from ifs.core import authz, namespace, permissions
 from ifs.db import get_engine
@@ -149,3 +149,147 @@ def test_system_grant_lehnt_admin_und_eintragsrechte_ab(db):
                 principal_id=user.id,
                 perms=bad,
             )
+
+
+# --- Backfill aus dem Rollenmodell -----------------------------------------
+
+
+def test_backfill_migriert_ressourcen_und_systemrollen(db):
+    from ifs.core import roles
+    from ifs.models import Role, RoleAssignment, RoleScope
+
+    roles.ensure_builtin_roles(db)
+    owner = make_user(db, "backfill-owner")
+    reader = make_user(db, "backfill-reader")
+    sharer = make_user(db, "backfill-sharer")
+    auditor = make_user(db, "backfill-auditor")
+    operator = make_user(db, "backfill-operator")
+    root = namespace.ensure_root(db, owner.id)
+    folder = namespace.create_folder(db, root, "shared", owner.id)
+
+    roles.assign_role(
+        db,
+        role=roles.find_by_name(db, "viewer"),
+        principal_type=PrincipalType.user,
+        principal_id=reader.id,
+        entry_id=folder.id,
+    )
+    roles.assign_role(
+        db,
+        role=roles.find_by_name(db, "sharer"),
+        principal_type=PrincipalType.user,
+        principal_id=sharer.id,
+        entry_id=folder.id,
+    )
+    roles.assign_role(
+        db,
+        role=roles.find_by_name(db, "auditor"),
+        principal_type=PrincipalType.user,
+        principal_id=auditor.id,
+    )
+    admin_role = roles.create_role(
+        db, name="ops-admin", scope=RoleScope.system, permissions=authz.ADMIN
+    )
+    roles.assign_role(
+        db,
+        role=admin_role,
+        principal_type=PrincipalType.user,
+        principal_id=operator.id,
+    )
+
+    stats = permissions.backfill_roles(db)
+    assert stats["acl_grants"] >= 2
+    assert stats["system_grants"] == 1
+    assert stats["admin_assignments"] == 1
+
+    acls = {
+        acl.principal_id: acl.perms
+        for acl in permissions.list_entry_acls(db, folder.id)
+    }
+    assert acls[reader.id] == authz.READ
+    # Alter sharer hatte read+share; publish kommt additiv hinzu.
+    assert acls[sharer.id] == authz.READ | authz.SHARE | authz.PUBLISH
+
+    grant = permissions.get_system_permission(db, PrincipalType.user, auditor.id)
+    assert grant is not None and grant.permissions == authz.AUDIT
+    # Eintragsrechte entstehen aus System-Grants nicht.
+    assert authz.effective_perms(db, auditor, folder) == 0
+
+    admin_assignments = db.execute(
+        select(RoleAssignment)
+        .join(Role, Role.id == RoleAssignment.role_id)
+        .where(
+            Role.name == "admin",
+            RoleAssignment.principal_type == PrincipalType.user,
+            RoleAssignment.principal_id == operator.id,
+        )
+    ).scalars().all()
+    assert len(admin_assignments) == 1
+    assert authz.is_system_admin(db, operator)
+
+    # idempotent: ein zweiter Lauf ändert nichts mehr.
+    assert permissions.backfill_roles(db) == {
+        "acl_grants": 0,
+        "system_grants": 0,
+        "admin_assignments": 0,
+        "publish_from_share": 0,
+    }
+
+
+def test_backfill_publish_fuer_bestehende_share_acls_und_is_admin(db):
+    from ifs.models import Role, RoleAssignment
+
+    user = make_user(db, "bootstrap-admin", is_admin=True)
+    owner = make_user(db, "share-owner")
+    reader = make_user(db, "share-reader")
+    root = namespace.ensure_root(db, owner.id)
+    folder = namespace.create_folder(db, root, "alt", owner.id)
+    permissions.upsert_acl(
+        db,
+        entry_id=folder.id,
+        principal_type=PrincipalType.user,
+        principal_id=reader.id,
+        perms=authz.READ | authz.SHARE,
+    )
+
+    stats = permissions.backfill_roles(db)
+    # Bestehende ACL erhält publish, ohne dass share verloren geht.
+    acl = permissions.list_entry_acls(db, folder.id)[0]
+    assert acl.perms == authz.READ | authz.SHARE | authz.PUBLISH
+    assert stats["publish_from_share"] == 1
+
+    assignment = db.execute(
+        select(RoleAssignment)
+        .join(Role, Role.id == RoleAssignment.role_id)
+        .where(
+            Role.name == "admin",
+            RoleAssignment.principal_type == PrincipalType.user,
+            RoleAssignment.principal_id == user.id,
+            RoleAssignment.entry_id.is_(None),
+        )
+    ).scalars().first()
+    assert assignment is not None
+    # Flag und Adminrolle ergeben denselben effektiven Adminstatus.
+    assert authz.is_system_admin(db, user)
+
+
+def test_cleanup_laesst_nur_adminrolle_uebrig(db):
+    from ifs.core import roles
+    from ifs.models import Role, RoleAssignment
+
+    roles.ensure_builtin_roles(db)
+    user = make_user(db, "cleanup-admin", is_admin=True)
+    permissions.backfill_roles(db)
+
+    result = permissions.cleanup_roles(db)
+    assert result["roles_removed"] >= 1
+
+    names = set(db.execute(select(Role.name)).scalars().all())
+    assert names == {"admin"}
+    assignments = db.execute(select(RoleAssignment)).scalars().all()
+    assert all(a.entry_id is None for a in assignments)
+    assert authz.is_system_admin(db, user)
+
+    # Idempotent.
+    assert permissions.cleanup_roles(db)["roles_removed"] == 0
+
