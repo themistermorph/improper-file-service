@@ -18,6 +18,7 @@ from ..models import (
     Group,
     PrincipalType,
     PublishedEntry,
+    Role,
     RoleAssignment,
     Share,
     User,
@@ -83,6 +84,43 @@ def list_users(
     return list(rows), int(total)
 
 
+def _sync_admin_role_assignment(db: Session, user: User, enabled: bool) -> None:
+    """Hält die Adminrolle synchron zum Bootstrap-Flag.
+
+    Die Adminrolle ist nach der Umstellung die einzige systemweite Rolle. Das
+    Flag bleibt für Bootstrap/Abwärtskompatibilität bestehen; UI und API lesen
+    effektiv beides. Fehlt die Rolle (z. B. in einem Unit-Test ohne Startup),
+    bleibt nur das Flag – die Autorisierung funktioniert weiterhin.
+    """
+    role = db.execute(select(Role).where(Role.name == "admin")).scalars().first()
+    if role is None:
+        return
+    assignments = db.execute(
+        select(RoleAssignment).where(
+            RoleAssignment.role_id == role.id,
+            RoleAssignment.principal_type == PrincipalType.user,
+            RoleAssignment.principal_id == user.id,
+            RoleAssignment.entry_id.is_(None),
+        )
+    ).scalars().all()
+    if enabled:
+        if not assignments:
+            db.add(
+                RoleAssignment(
+                    role_id=role.id,
+                    principal_type=PrincipalType.user,
+                    principal_id=user.id,
+                    entry_id=None,
+                )
+            )
+            db.flush()
+        return
+    for assignment in assignments:
+        db.delete(assignment)
+    if assignments:
+        db.flush()
+
+
 def create_user(
     db: Session,
     *,
@@ -107,6 +145,8 @@ def create_user(
     )
     db.add(user)
     db.flush()
+    if is_admin:
+        _sync_admin_role_assignment(db, user, True)
     namespace.ensure_root(db, user.id)
     return user
 
@@ -143,6 +183,7 @@ def update_user(
             _ensure_not_last_active_admin(db, user)
         user.is_admin = is_admin
         user.token_version += 1
+        _sync_admin_role_assignment(db, user, is_admin)
     db.flush()
     return user
 

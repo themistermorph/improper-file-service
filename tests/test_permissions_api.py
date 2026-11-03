@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from ifs import main
+from ifs.db import session_scope
+from ifs.models import Role, RoleAssignment
 
 from .helpers import login
 
@@ -105,3 +110,37 @@ def test_systemrechte_nur_audit_monitor_und_gruppen_werden_unterstuetzt():
         # Entzug wirkt sofort (Flush invalidiert den Authz-Cache).
         assert _set_permissions(client, admin, group_id, [], group=True) == 200
         assert client.get("/api/audit", headers=user).status_code == 403
+
+
+def test_adminflag_synchronisiert_adminrolle():
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client)}"}
+        created = client.post(
+            "/api/users",
+            headers=admin,
+            json={"username": "flag-admin", "password": "geheim123", "is_admin": True},
+        )
+        assert created.status_code == 201, created.text
+        user_id = created.json()["id"]
+
+        def admin_assignments():
+            with session_scope() as db:
+                return db.execute(
+                    select(RoleAssignment)
+                    .join(Role, Role.id == RoleAssignment.role_id)
+                    .where(
+                        Role.name == "admin",
+                        RoleAssignment.principal_id == UUID(user_id),
+                        RoleAssignment.entry_id.is_(None),
+                    )
+                ).scalars().all()
+
+        assert len(admin_assignments()) == 1
+        assert client.patch(
+            f"/api/users/{user_id}", headers=admin, json={"is_admin": False}
+        ).status_code == 200
+        assert admin_assignments() == []
+        assert client.patch(
+            f"/api/users/{user_id}", headers=admin, json={"is_admin": True}
+        ).status_code == 200
+        assert len(admin_assignments()) == 1
