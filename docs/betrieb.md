@@ -167,7 +167,8 @@ bash deploy/apply-migrations.sh
 #    Enthält u. a. 0007_performance_indexes.sql, 0008_published_entries.sql,
 #    0009_published_public_name.sql, 0010_published_public_path.sql,
 #    0011_permissions_schema.sql, 0012_permissions_backfill.sql und
-#    0013_permissions_cleanup.sql.
+#    0013_permissions_cleanup.sql. 0013 ist destruktiv und wird von
+#    apply-migrations.sh nur mit IFS_PERMISSIONS_CLEANUP=1 angewendet.
 
 # 4. Rollen neu starten
 docker compose up -d

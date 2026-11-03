@@ -22,7 +22,15 @@ if [ "${#files[@]}" -eq 0 ]; then
 fi
 
 for file in "${files[@]}"; do
-  echo "== $(basename "$file") =="
+  base="$(basename "$file")"
+  # Destruktiver Cleanup nur nach ausdruecklicher Freigabe. Die additiven
+  # Schritte 0011/0012 laufen normal mit.
+  if [ "$base" = "0013_permissions_cleanup.sql" ] \
+     && [ "${IFS_PERMISSIONS_CLEANUP:-0}" != "1" ]; then
+    echo "== $base uebersprungen (Cleanup: IFS_PERMISSIONS_CLEANUP=1) =="
+    continue
+  fi
+  echo "== $base =="
   docker compose exec -T "$SERVICE" \
     psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 < "$file"
 done

@@ -21,7 +21,7 @@ Diese Skripte werden unterstützt und in der Dokumentation referenziert.
 | `prepare.sh` | Projekt im Home-Verzeichnis entpacken, `.env` und FTPS-Zertifikat erzeugen |
 | `setup-seaweedfs.sh` | S3-Zugangsdaten und Storage-UI-Login erzeugen |
 | `preflight-s3.sh` | S3-Endpoint, Zugriff, Range und Multipart prüfen (ohne Eingriff) |
-| `apply-migrations.sh` | Alle SQL-Migrationen aus `migrations/sql/` anwenden |
+| `apply-migrations.sh` | Alle SQL-Migrationen aus `migrations/sql/` anwenden (Cleanup 0013 nur mit `IFS_PERMISSIONS_CLEANUP=1`) |
 | `apply-permissions.sh` | Rollen→Berechtigungen phasenweise (0011+0012; Cleanup nur mit `IFS_PERMISSIONS_CLEANUP=1`) |
 | `verify-permissions.sh` | Read-only-Invarianten nach der Berechtigungs-Migration prüfen |
 | `verify.sh` | End-to-End-Smoke-Test gegen die laufende API |
