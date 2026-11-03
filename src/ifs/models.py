@@ -262,6 +262,15 @@ class ACL(Base):
     __table_args__ = (
         # Rechteprüfung je Eintrag (``ACL.entry_id = ?``), Principal als Filter.
         Index("ix_acl_entry_principal", "entry_id", "principal_type", "principal_id"),
+        # Seit der Rollen-Umstellung ist genau ein Grant je Principal/Eintrag
+        # erlaubt; wiederholte Vergaben werden per Upsert zusammengeführt.
+        Index(
+            "uq_acl_entry_principal",
+            "entry_id",
+            "principal_type",
+            "principal_id",
+            unique=True,
+        ),
     )
 
 

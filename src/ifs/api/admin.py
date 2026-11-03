@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core import accounts, audit, authz, namespace
+from ..core import accounts, audit, authz, namespace, permissions
 from ..models import ACL, Group, User
 from .deps import client_ip, get_current_user, get_db, require_admin
 from .schemas import AclCreate, AclOut, GroupCreate, GroupOut, MemberAdd
@@ -69,16 +69,15 @@ def set_acl(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Principal (Benutzer/Gruppe) nicht gefunden"
         )
-    perms = authz.perms_from_names(payload.perms)
-    acl = ACL(
+    perms = authz.perms_from_names(payload.perms, namespace="entry")
+    acl = permissions.upsert_acl(
+        db,
         entry_id=entry.id,
         principal_type=payload.principal_type,
         principal_id=payload.principal_id,
         perms=perms,
-        inherited=False,
+        merge=True,
     )
-    db.add(acl)
-    db.flush()
     audit.record(
         db, "acl.set", actor_id=user.id, target_entry=entry.id, protocol="http",
         ip=client_ip(request),

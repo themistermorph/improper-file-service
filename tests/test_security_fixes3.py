@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from ifs import main
 from ifs.core import authz, content, namespace
@@ -198,15 +199,14 @@ def test_s3_ftp_append_requires_read(monkeypatch):
 
     # Mit read+write bleibt APPE funktionsfähig.
     with session_scope() as db:
-        db.add(
-            ACL(
-                entry_id=docs_id,
-                principal_type=PrincipalType.user,
-                principal_id=writer_user.id,
-                perms=authz.READ | authz.WRITE,
-                inherited=False,
+        acl = db.execute(
+            select(ACL).where(
+                ACL.entry_id == docs_id,
+                ACL.principal_type == PrincipalType.user,
+                ACL.principal_id == writer_user.id,
             )
-        )
+        ).scalars().one()
+        acl.perms = authz.READ | authz.WRITE
         db.flush()
 
     writer = fs._open_writer("/docs/file.txt", "a")
