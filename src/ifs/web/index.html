@@ -287,7 +287,7 @@
             <option value="false">Inaktiv</option>
           </select>
           <select id="user-admin" onchange="loadUsers()">
-            <option value="">Alle Rollen</option>
+            <option value="">Alle Konten</option>
             <option value="true">Administratoren</option>
             <option value="false">Benutzer</option>
           </select>
@@ -350,7 +350,7 @@
         <div class="toolbar">
           <button class="btn secondary hidden" id="shared-back" onclick="sharedBack()">← Zurück</button>
           <button class="btn secondary" onclick="loadShared()">Aktualisieren</button>
-          <span class="muted" id="shared-crumbs" style="font-size:13px">Einträge, die dir per Recht/Rolle freigegeben wurden.</span>
+          <span class="muted" id="shared-crumbs" style="font-size:13px">Einträge, die dir per Recht freigegeben wurden.</span>
         </div>
         <div class="card">
           <table>
@@ -2439,7 +2439,7 @@
       document.getElementById("shared-back").classList.toggle("hidden", !inFolder);
       document.getElementById("shared-crumbs").textContent = inFolder
         ? "Mit mir geteilt / " + state.sharedPath.map(entry => entry.name).join(" / ")
-        : "Einträge, die dir per Recht/Rolle freigegeben wurden.";
+        : "Einträge, die dir per Recht freigegeben wurden.";
       const empty = document.getElementById("shared-empty");
       empty.textContent = inFolder ? "Dieser Ordner ist leer." : "Keine Freigaben für dich.";
       empty.classList.toggle("hidden", items.length > 0);
