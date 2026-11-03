@@ -90,3 +90,20 @@ def test_benutzerdialog_verwaltet_audit_und_monitor():
     assert 'systemPerms.push("monitor")' in submit
     assert "refreshMe()" in submit
 
+
+def test_geteilt_menue_verwaltet_bestehende_links():
+    render = _function_block(_html(), "render")
+    label = render.index('label: "Geteilt"')
+    guard = render.index('if (can("share"))', max(0, label - 200))
+    assert 0 < label - guard < 200
+
+    dialog = _function_block(_html(), "entryShareDialog")
+    assert '"/api/shares?entry_id=" + entry.id' in dialog
+    assert "shareDialog(entryShareEntry)" in dialog
+    assert "copyEntryShare" in dialog
+    assert "editEntryShare" in dialog
+    assert "revokeEntryShare" in dialog
+
+    for function in ("copyEntryShare", "editEntryShare", "revokeEntryShare"):
+        assert _function_block(_html(), function)
+

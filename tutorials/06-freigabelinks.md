@@ -11,6 +11,10 @@ Eintrag (der Besitzer hat es implizit).
 > Benutzer-/Gruppen-ACLs und braucht `admin` am Eintrag. **Veröffentlichen**
 > stellt einen Eintrag in die öffentliche Galerie und braucht `read`+`publish`.
 > Die drei Rechte sind unabhängig voneinander.
+>
+> **Bestehende Links verwalten:** Im Zeilenmenü (`…`) → **„Geteilt“** siehst du
+> alle aktiven Links eines Eintrags und kannst sie kopieren, bearbeiten oder
+> widerrufen – ohne den Umweg über „Zugriff“.
 
 ---
 

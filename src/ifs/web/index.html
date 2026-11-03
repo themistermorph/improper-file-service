@@ -837,6 +837,7 @@
         }
         if (can("share")) {
           menuItems.push({ label: "Link", handler: () => shareDialog(e) });
+          menuItems.push({ label: "Geteilt", handler: () => entryShareDialog(e) });
         }
         if (can("admin")) {
           menuItems.push({ label: "Zugriff", handler: () => entryAccessDialog(e) });
@@ -1509,6 +1510,59 @@
           };
         } catch (e) { toast("Freigabe fehlgeschlagen: " + e.message, "err"); }
       };
+    }
+
+    // ---------- Geteilt (bestehende Links eines Eintrags) ----------
+    let entryShareEntry = null;
+    let entryShareList = [];
+
+    async function entryShareDialog(entry) {
+      entryShareEntry = entry;
+      try {
+        const shares = await apiJson(
+          "GET", "/api/shares?entry_id=" + entry.id, undefined, { noCache: true },
+        );
+        entryShareList = shares;
+        const list = shares.length
+          ? shares.map(s => {
+              const chips = [
+                s.has_password ? '<span class="chip">Passwort</span>' : "",
+                s.allow_upload ? '<span class="chip">Upload</span>' : "",
+                s.expires_at ? `<span class="chip">bis ${fmtDate(s.expires_at)}</span>` : "",
+                s.max_downloads !== null
+                  ? `<span class="chip">${s.downloads}/${s.max_downloads} Downloads</span>`
+                  : "",
+              ].join("");
+              return `<div class="checkline"><span class="grow">${shareLink(s)} ${chips}</span>` +
+                `<button class="btn small secondary" onclick="copyEntryShare('${s.token}')">Kopieren</button>` +
+                `<button class="btn small secondary" onclick="editEntryShare('${s.token}')">Bearbeiten</button>` +
+                `<button class="btn small danger" onclick="revokeEntryShare('${s.token}')">Widerrufen</button></div>`;
+            }).join("")
+          : '<p class="muted">Dieser Eintrag ist noch nicht geteilt.</p>';
+        openModal(`
+          <h2>Geteilt – ${esc(entry.name)}</h2>
+          ${list}
+          <div class="actions" style="justify-content:flex-start;margin-top:14px">
+            <button class="btn" onclick="shareDialog(entryShareEntry)">＋ Neuer Link</button>
+            <button class="btn secondary" onclick="entryShareDialog(entryShareEntry)">Aktualisieren</button>
+            <button class="btn secondary" onclick="closeModal()">Schließen</button>
+          </div>`);
+      } catch (e) { toast("Geteilt laden fehlgeschlagen: " + e.message, "err"); }
+    }
+
+    function copyEntryShare(token) {
+      const share = entryShareList.find(s => s.token === token);
+      if (share) copyShareLink(share);
+    }
+
+    function editEntryShare(token) {
+      const share = entryShareList.find(s => s.token === token);
+      if (share) shareEditDialog(share, () => entryShareDialog(entryShareEntry));
+    }
+
+    async function revokeEntryShare(token) {
+      const share = entryShareList.find(s => s.token === token);
+      if (share) await revokeShare(share, () => entryShareDialog(entryShareEntry));
     }
 
     // ---------- Details ----------
