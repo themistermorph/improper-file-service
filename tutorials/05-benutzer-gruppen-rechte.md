@@ -9,15 +9,21 @@ sowohl über HTTP als auch über FTPS.
 
 ## 1. Modell in Kürze
 
-- Jeder Eintrag hat einen **Besitzer** (implizit alle Rechte).
-- **ACLs** vergeben Rechte an Benutzer oder Gruppen.
+- Jeder Eintrag hat einen **Besitzer** (implizit alle Eintragsrechte).
+- **ACLs** vergeben Eintragsrechte an Benutzer oder Gruppen; **Systemrechte**
+  (`audit`, `monitor`) werden separat je Benutzer/Gruppe vergeben.
 - Rechte **vererben** sich: ein Recht auf einem Ordner gilt für alle Nachfahren.
-- Rechte-Bitmaske: `read`, `write`, `delete`, `share`, `admin`.
-- **ACLs/Rollen setzen** darf, wer `admin` am Eintrag hat (Eigentümer bzw. Manager);
+- Eintrags-Bitmaske: `read`, `write`, `delete`, `share`, `publish`, `admin`.
+  Systemrechte: `audit`, `monitor`; `admin` kommt ausschließlich über die
+  Adminrolle bzw. das Administrator-Flag.
+- **ACLs setzen** darf, wer `admin` am Eintrag hat (Eigentümer bzw. Eintrags-Admin);
   Systemadmins haben **keinen** Dateizugriff auf fremde Wurzeln.
 - **Per-User-Wurzel:** Jeder Benutzer hat ein eigenes Home. Freigegebene Einträge findest
   du als Empfänger unter **GET `/api/shared`** bzw. in der Web-UI „Mit mir geteilt".
-- **Externe Freigaben** (`share`) darf der Besitzer bzw. wer `read`+`share` hat.
+- **Externe Freigaben** (`share`) darf der Besitzer bzw. wer `read`+`share` hat;
+  **Veröffentlichen** verlangt `read`+`publish`.
+- **Rollen** gibt es nur noch als systemweite `admin`-Rolle; fachliche Rollen
+  wurden migriert und entfernt.
 
 ---
 
@@ -127,13 +133,26 @@ wie HTTP.
 
 ## 6. Rechte entziehen / Freigabe widerrufen
 
-Es gibt aktuell keinen API-Endpunkt zum Löschen einzelner ACL-Einträge. Zum Entzug:
+Einzelne Grants lassen sich jetzt gezielt entfernen:
 
-- den Benutzer aus der Gruppe entfernen (DB-seitig/Adminaufgabe), oder
-- eine restriktivere Struktur verwenden, oder
-- den Eintrag in den Papierkorb verschieben.
+```bash
+# ACLs eines Eintrags auflisten (Eintrags-Admin)
+curl -s -H "$AUTH" "$HOST/api/entries/$SHARED/acl" | python -m json.tool
 
-> Ein `DELETE /api/entries/{id}/acl/{acl_id}` ist als Erweiterung vorgesehen.
+# Grant exakt ersetzen (PUT) bzw. entfernen (DELETE)
+curl -s -X PUT -H "$AUTH" -H "$JSON" \
+  -d '{"principal_type":"group","principal_id":"'"$GROUP"'","permissions":["read"]}' \
+  "$HOST/api/entries/$SHARED/acl"
+curl -s -X DELETE -H "$AUTH" "$HOST/api/entries/$SHARED/acl/<acl-id>"
+```
+
+Alternativ: Benutzer aus der Gruppe entfernen oder den Eintrag in den
+Papierkorb verschieben. Systemrechte entziehst du über
+`PUT /api/users/{id}/permissions` bzw. `PUT /api/groups/{id}/permissions` mit
+einer leeren Liste.
+
+> `POST /api/entries/{id}/acl` bleibt kompatibel und vereinigt Bits; `PUT`
+> ersetzt sie exakt.
 
 ---
 

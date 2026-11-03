@@ -159,7 +159,13 @@ entries          (id uuid, parent_id uuid NULL, name, type[folder|file], owner_i
 versions         (id, entry_id, blob_id, seq, size, mime, sha256, created_by, created_at)
 blobs            (id, storage_key, size, sha256, status, created_at)
 acl              (id, entry_id, principal_type[user|group], principal_id,
-                  perms bitmask, inherited)
+                  perms bitmask, inherited,
+                  UNIQUE(entry_id, principal_type, principal_id))
+system_permissions (id, principal_type[user|group], principal_id, permissions,
+                  created_at, UNIQUE(principal_type, principal_id))
+roles            (id, name, description, permissions, scope[system|resource],
+                  is_builtin, created_at) – nach Cleanup nur noch `admin`
+role_assignments (id, role_id, principal_type, principal_id, entry_id NULL, created_at)
 shares           (token, entry_id, created_by, password_hash, expires_at,
                   max_downloads, downloads, allow_upload, overwrite, created_at)
 upload_sessions  (id, entry_id, owner_id, protocol, offset, s3_upload_id,
@@ -173,7 +179,11 @@ outbox           (id, event_type, payload, published_at)
 
 - **UUIDv7** als IDs (zeitlich sortierbar, indexfreundlich).
 - Eindeutigkeit von Namen case-insensitiv pro Parent.
-- `perm`-Bitmaske: `read | write | delete | share | admin`.
+- **Eintrags-Bits:** `read | write | delete | share | publish | admin`
+  (`ALL_RESOURCE=63`); **System-Bits:** `audit | monitor` (`ADMIN` nur über die
+  Adminrolle/`users.is_admin`). Beide Namensräume werden getrennt geprüft.
+- **PDP:** `effective_perms()` (Besitz + ACLs) und `system_perms()` (Flag,
+  Adminrolle, `system_permissions`) liefern nie gemischte Bits.
 - Papierkorb = `trashed_at` (soft delete); GC/endgültiges Löschen asynchron.
 - Audit **append-only**, Schreibzugriff nur über Core.
 - Events über **Outbox-Pattern** → konsistent mit der jeweiligen Transaktion.

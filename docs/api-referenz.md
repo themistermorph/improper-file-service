@@ -127,7 +127,7 @@ curl -s -H "Authorization: Bearer $TOKEN" localhost:8000/api/me
 > **Per-User-Wurzel:** Jeder Benutzer besitzt ein eigenes Home (`parent_id IS NULL`,
 > `owner_id = Benutzer`). Alle Endpunkte ohne `parent_id` beziehen sich auf die **eigene**
 > Wurzel. Systemadmins haben **keinen Dateizugriff** auf fremde Wurzeln – Zugriff nur über
-> Besitz, ACLs und Ressourcenrollen. Freigegebene Einträge listet `GET /api/shared`.
+> Besitz und ACLs. Freigegebene Einträge listet `GET /api/shared`.
 
 ### `GET /api/entries`
 
@@ -150,7 +150,7 @@ Web-UI, um die Wurzel-ID zu ermitteln (z. B. für Uploads in die Wurzel).
 
 ### `GET /api/shared`
 
-Listet Einträge, die dem Benutzer per ACL oder Ressourcenrolle freigegeben sind
+Listet Einträge, die dem Benutzer per ACL freigegeben sind
 (oberste Einstiegspunkte, ohne eigene Einträge) – Grundlage der UI-Ansicht
 „Mit mir geteilt".
 
@@ -716,13 +716,18 @@ Ausführlich: [Tutorial 11](../tutorials/11-veroeffentlichungen.md).
 
 | Methode & Pfad | Beschreibung |
 |---|---|
-| `GET /api/me` | Eigenes Profil (`UserOut`) |
+| `GET /api/me` | Eigenes Profil (`MeOut`) mit effektivem `is_admin` und Systemrechten |
 | `PATCH /api/me` | Profil ändern (`display_name?`, `email?`) |
 | `POST /api/me/password` | Eigenes Passwort ändern (`current_password`, `new_password`) → `204` |
 | `GET /api/quota` | Eigene Quota: `{ limit_bytes, usage_bytes }` |
 
-`UserOut` enthält `id`, `username`, `display_name`, `email`, `is_admin`, `is_active`,
-`last_login_at`, `created_at`.
+`MeOut` enthält `id`, `username`, `display_name`, `email`, `is_admin`, `is_active`,
+`last_login_at`, `created_at` und `permissions` (Liste aus `audit`/`monitor`).
+`is_admin` ist **effektiv**: Adminrolle oder `users.is_admin`.
+
+`EntryOut` (alle Eintrags-Antworten) enthält zusätzlich `permissions` mit den
+effektiven Eintragsrechten des anfragenden Benutzers (`read`, `write`, `delete`,
+`share`, `publish`, `admin`). Die Web-UI koppelt ihre Menüs daran.
 
 > **Anzeigename:** Ist `display_name` gesetzt, wird in der Weboberfläche überall
 > der Anzeigename statt des Benutzernamens angezeigt (Kopfzeile, Freigaben,
@@ -748,6 +753,8 @@ Ausführlich: [Tutorial 11](../tutorials/11-veroeffentlichungen.md).
 | `DELETE /api/users/{id}?transfer_to={uuid}` | Endgültig löschen; Besitzübertragung nötig, falls der Benutzer Dateien besitzt |
 | `GET /api/users/{id}/groups` | Gruppen des Benutzers |
 | `POST /api/users/{id}/groups/{group_id}` · `DELETE …` | Gruppe zuweisen/entfernen → `204` |
+| `GET /api/users/{id}/permissions` | Systemrechte (`permissions`, `permission_names`) |
+| `PUT /api/users/{id}/permissions` | Systemrechte exakt setzen (`permissions: ["audit"\|"monitor"]`) |
 
 **Regeln:** Der **letzte aktive Administrator** kann nicht deaktiviert oder gelöscht
 werden (`409`). Deaktivieren invalidiert alle Tokens des Benutzers. Besitzt der Benutzer
@@ -759,8 +766,13 @@ Dateien, verlangt das Löschen `transfer_to` (`409` sonst).
 |---|---|
 | `GET /api/groups` · `POST /api/groups` | Gruppen auflisten/anlegen (`name`) |
 | `POST /api/groups/{group_id}/members` | Mitglied hinzufügen (`user_id`) → `204` |
-| `POST /api/entries/{entry_id}/acl` | ACL-Eintrag setzen (`principal_type`, `principal_id`, `perms[]`) → `201` |
-| `GET /api/audit?limit=&offset=&action=` | Audit-Log (neueste zuerst, max. 500); enthält `actor_username` und `actor_display_name` |
+| `GET /api/groups/{id}/permissions` · `PUT …` | Systemrechte der Gruppe (`audit`/`monitor`) |
+| `GET /api/entries/{id}/acl` | ACL-Grants des Eintrags (Recht `admin` am Eintrag) |
+| `POST /api/entries/{id}/acl` | Kompatibler Upsert (`principal_type`, `principal_id`, `perms[]`) → `201`; Bits werden vereinigt |
+| `PUT /api/entries/{id}/acl` | Upsert, ersetzt Rechte exakt (`principal_type`, `principal_id`, `permissions[]`) |
+| `DELETE /api/entries/{id}/acl/{acl_id}` | Grant entfernen → `204` |
+| `GET /api/principals?entry_id=&q=` | Minimierter Benutzer-/Gruppen-Picker (`id`, `type`, `name`, `display_name`); Recht `admin` am Eintrag |
+| `GET /api/audit?limit=&offset=&action=` | Audit-Log (neueste zuerst, max. 500); Recht `audit` oder Systemadmin |
 
 Jeder Eintrag hat `protocol` (`http` oder `ftps`) und `result` (`ok`, `denied`,
 `locked`, `aborted`, `ignored`). FTPS-Aktionen (Protokoll `ftps`) sind u. a.
@@ -770,7 +782,7 @@ Jeder Eintrag hat `protocol` (`http` oder `ftps`) und `result` (`ok`, `denied`,
 `result="denied"`.
 | `GET /api/system/stats` | Admin-Monitoring: CPU, RAM, Speicherplatz, Netzwerk-Raten (↑/↓), Laufzeit, IFS-Zähler und SeaweedFS-Volumes |
 
-`GET /api/system/stats` liefert nur für Admins Werte. CPU- und Netzwerk-Raten werden
+`GET /api/system/stats` liefert nur mit `monitor` (oder Systemadmin) Werte. CPU- und Netzwerk-Raten werden
 aus der Differenz zweier Aufrufe gebildet (der erste Aufruf liefert `null`).
 Die WebUI stellt CPU, RAM und Netzwerk als Verlaufskurven mit einstellbarem Abfrage-
 Intervall (2/5/10/30 s) dar.
@@ -787,7 +799,9 @@ Intervall (2/5/10/30 s) dar.
 }
 ```
 
-`perms` sind eine Liste aus `read`, `write`, `delete`, `share`, `admin`.
+`perms`/`permissions` sind eine Liste aus `read`, `write`, `delete`, `share`,
+`publish`, `admin`. System-Grants erlauben ausschließlich `audit` und `monitor`;
+`admin` kann dort nicht vergeben werden (`400`).
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -803,40 +817,35 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 Ausführlich: [Tutorial 5](../tutorials/05-benutzer-gruppen-rechte.md).
 
-### 8.4 Rollen
+### 8.4 Rollen (nur noch Adminrolle)
 
-Rollen sind benannte Rechtebündel mit `scope` **`system`** (global) oder **`resource`**
-(auf Einträge, vererbt sich auf Nachfahren). Eingebaute Rollen sind schreibgeschützt.
+Nach der Rollen-zu-Berechtigungen-Umstellung existiert nur noch die
+systemweite Rolle `admin`. Fachliche Rollen wurden in ACL- bzw. System-Grants
+migriert; die Rollen-UI ist entfernt.
 
 | Methode & Pfad | Beschreibung |
 |---|---|
-| `GET /api/roles?scope=` | Rollen auflisten |
-| `POST /api/roles` | Anlegen (`name`, `scope`, `permissions[]`, `description?`) → `201` |
-| `GET/PATCH/DELETE /api/roles/{id}` | Lesen/ändern/löschen (eingebaute: `409` beim Ändern der Rechte/Löschen) |
-| `GET /api/roles/{id}/assignments` | Zuweisungen der Rolle |
-| `POST /api/roles/{id}/assignments` | Zuweisen (`principal_type`, `principal_id`, `entry_id?`) → `201`; bei gesetztem `entry_id` ist `admin` am Eintrag erforderlich (`403` sonst) |
-| `DELETE /api/roles/assignments/{id}` | Zuweisung entfernen → `204`; bei Entry-gebundenen Zuweisungen ist zusätzlich `admin` am Eintrag erforderlich (`403` sonst) |
-| `GET /api/entries/{id}/roles` | Rollen eines Eintrags (Recht `admin` am Eintrag) |
-| `POST /api/entries/{id}/roles` | Ressourcenrolle zuweisen (`role_id`, `principal_type`, `principal_id`) |
-| `DELETE /api/entries/{id}/roles/{assignment_id}` | Eintragsrollen-Zuweisung entfernen |
-| `GET /api/users/{id}/roles` · `POST …/{role_id}` · `DELETE …/{assignment_id}` | Systemrollen eines Benutzers |
+| `GET /api/roles` | Liefert nur noch die Adminrolle (Kompatibilität) |
+| `GET /api/roles/{id}` | Adminrolle lesen; andere IDs → `410` |
+| `GET /api/roles/{id}/assignments` | Admin-Zuweisungen |
+| `GET /api/users/{id}/roles` | Admin-Zuweisungen eines Benutzers |
+| `POST/PATCH/DELETE /api/roles*` | `410 Gone` – Berechtigungen stattdessen über ACL/Systemrechte vergeben |
+| `GET/POST/DELETE /api/entries/{id}/roles*` | `410 Gone` – ersetzt durch `/api/entries/{id}/acl` |
+| `POST/DELETE /api/users/{id}/roles*` | `410 Gone` – Adminstatus über `PATCH /api/users/{id}` (`is_admin`) |
 
-`permissions` sind `read`, `write`, `delete`, `share`, `admin`; zusätzlich liefert die
-API `permission_names`.
-
-**Eingebaute Rollen:** `admin`, `auditor`, `user` (Scope `system`);
-`viewer`, `collaborator`, `editor`, `sharer`, `manager` (Scope `resource`).
-
-Die systemweite Rolle `admin` wirkt wie das Admin-Flag – auch für Admin-Endpunkte. Das
-bestehende ACL-Modell (`POST /api/entries/{id}/acl`) bleibt unverändert nutzbar.
-
-Beispiel:
+Die systemweite Adminrolle wirkt wie das Admin-Flag – auch für Admin-Endpunkte –
+und gewährt weiterhin **keinen** Dateizugriff auf fremde Bäume.
 
 ```bash
-# Ressourcenrolle "viewer" an Gruppe auf einem Ordner vergeben
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"role_id":"<role-id>","principal_type":"group","principal_id":"<group-id>"}' \
-  localhost:8000/api/entries/<entry-id>/roles
+# Eintragsrechte setzen (Besitzer/Eintrags-Admin)
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"principal_type":"group","principal_id":"<group-id>","permissions":["read","publish"]}' \
+  localhost:8000/api/entries/<entry-id>/acl
+
+# Systemrecht audit vergeben (Systemadmin)
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"permissions":["audit"]}' \
+  localhost:8000/api/users/<user-id>/permissions
 ```
 
 ---
@@ -862,14 +871,17 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 | Kopieren | `read` + `share` auf der Quelle, `write` auf dem Ziel |
 | Verschieben | `write` auf Quelle und Ziel, zusätzlich `read` auf der Quelle |
 | Löschen | `delete` |
-| Freigabe erstellen | `read` + `share` |
-| Freigabe widerrufen | `share` (Ersteller, `share`-Berechtigte oder Systemadmin) |
+| Link/Freigabe erstellen | `read` + `share` |
+| Freigabe widerrufen | Ersteller, `share`-Berechtigte oder Systemadmin |
 | Freigabe ändern (PATCH) | Ersteller oder `share`; kein Admin-Override |
-| Veröffentlichen (Galerie) | `read` + `share` |
-| Veröffentlichung zurückziehen | Ersteller, `share`-Berechtigte oder Systemadmin |
-| ACL setzen | `admin` am Eintrag |
-| Ressourcenrolle zuweisen (`entry_id`) | `admin` am Eintrag |
-| Benutzer/Gruppen/Audit | globale Adminrolle |
+| Veröffentlichen (Galerie) | `read` + `publish` |
+| Veröffentlichung zurückziehen | Ersteller, `publish`-Berechtigte oder Systemadmin |
+| ACL-Zugriff lesen/setzen/löschen | `admin` am Eintrag |
+| Audit-Log lesen | `audit` oder Systemadmin |
+| System-/Resourcenmonitor | `monitor` oder Systemadmin |
+| Benutzer/Gruppen/Rollen verwalten | Systemadmin (Adminrolle oder Flag) |
 
-Der **Besitzer** eines Eintrags hat implizit alle Rechte. Rechte werden entlang des
-Baums vererbt. Details: [Sicherheit](sicherheit.md).
+Der **Besitzer** eines Eintrags hat implizit alle Eintragsrechte
+(`ALL_RESOURCE`), aber **keine** Systemrechte. Eintrags- und Systemrechte sind
+getrennte Namensräume; Rechte werden entlang des Baums vererbt. Details:
+[Sicherheit](sicherheit.md).

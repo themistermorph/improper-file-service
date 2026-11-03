@@ -57,8 +57,28 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 - **Tests:** `tests/test_opt_http_throughput.py` deckt geordnetes Parallel-
   Prefetch, Range/Ticket, Out-of-order-Parts, Idempotenz, Größenprüfung,
   Cleanup und `PartReader`/S3-Finalisierung ab.
+- **Berechtigungen statt Rollen:** Neue Bits `publish=32`, `audit=64` und
+  `monitor=128`; `ALL_RESOURCE=63`, `ALL_SYSTEM=208`. Eintragsrechte werden
+  direkt als ACL-Grants vergeben, Systemrechte (`audit`/`monitor`) in der neuen
+  Tabelle `system_permissions`.
+- **ACL-API:** `GET/PUT/DELETE /api/entries/{id}/acl` (Upsert, exaktes Setzen,
+  Entfernen) sowie `GET /api/principals?entry_id=…&q=…` als minimierter
+  Benutzer-/Gruppen-Picker ohne E-Mail/Adminflag.
+- **System-Permissions-API:** `GET/PUT /api/users/{id}/permissions` und
+  `GET/PUT /api/groups/{id}/permissions` (nur `audit`/`monitor`).
+- **`/api/me` und `EntryOut`:** liefern effektive Berechtigungen
+  (`permissions`); `is_admin` ist effektiv (Adminrolle oder Flag).
 
 ### Changed
+- **Berechtigungsprüfungen:** Link (`read`+`share`), Zugriff (`admin` am
+  Eintrag), Veröffentlichen (`read`+`publish`), Audit (`audit` oder
+  Systemadmin) und System (`monitor` oder Systemadmin) prüfen dieselbe
+  Bedingung in UI und API. Die Account-/Zeilenmenüs hängen an
+  `EntryOut.permissions` statt am DB-Flag.
+- **Nur noch Adminrolle:** `BUILTIN_ROLES` enthält ausschließlich `admin`;
+  `ensure_builtin_roles` aktualisiert die Rolle auf `ALL`. Fachliche Rollen und
+  die Rollen-UI sind entfernt.
+
 - **`deploy/` aufgeräumt:** Kanonische Skripte (`up.sh`, `down.sh`,
   `status.sh`, `rebuild.sh`, `prepare.sh`, `setup-seaweedfs.sh`,
   `preflight-s3.sh`, `apply-migrations.sh`, `verify.sh`) liegen im Root;
@@ -80,6 +100,37 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 - **`.env.example`:** fehlende Optionen `IFS_JWT_ALGORITHM`,
   `IFS_WORKER_INTERVAL_SECONDS`, `IFS_WORKER_OUTBOX_BATCH_SIZE` und
   `IFS_FTP_BANNER` ergänzt.
+
+### Removed
+- **Fachliche Rollen und Rollen-UI:** `auditor`, `user`, `viewer`, `collaborator`,
+  `editor`, `sharer`, `manager` sowie Rollen-Dialoge und die Endpunkte
+  `POST/PATCH/DELETE /api/roles*` und `/api/entries/{id}/roles*` entfallen
+  (letztere antworten mit `410 Gone` und verweisen auf ACL/Systemrechte).
+  `GET /api/roles` liefert zur Kompatibilität nur noch die Adminrolle.
+- **Breaking Change:** Externe Clients müssen Eintragsrechte über
+  `/api/entries/{id}/acl` und Systemrechte über `/api/users/{id}/permissions`
+  bzw. `/api/groups/{id}/permissions` vergeben.
+
+### Security
+- **Getrennte Namensräume:** Systemrechte landen nie in ACLs, Eintragsrechte
+  nie in `system_permissions`. Eintrags-`admin` macht niemanden zum
+  Systemadmin; Systemadmin hat weiterhin keinen Dateizugriff auf fremde Bäume.
+- **Audit:** ACL-Änderungen (`acl.set`, `acl.delete`) und System-Grant-Änderungen
+  (`system_permission.set`) werden mit Akteur, Ziel und Details protokolliert.
+- **Cache:** ACL-/System-Grant-Änderungen invalidieren den Authz-Memo-Cache über
+  die bestehenden Flush-/Bulk-DML-/Rollback-Hooks.
+
+### Migration
+- **`0011_permissions_schema.sql`:** additive Tabelle `system_permissions`,
+  Dedupe bestehender ACL-Zeilen (Bit-OR) und Unique-Index
+  `(entry_id, principal_type, principal_id)`.
+- **`0012_permissions_backfill.sql`:** nicht destruktiver Backfill
+  (Ressourcenrollen → ACL, `auditor` → `audit`, ADMIN-Systemrollen/`is_admin`
+  → Adminrolle, bestehende `share`-ACLs → zusätzlich `publish`).
+- **`0013_permissions_cleanup.sql`:** erst nach Verifikation ausführen; löscht
+  alle Rollen außer `admin` und entfernt Entry-gebundene Admin-Zuweisungen.
+  Vorher PostgreSQL-Dump/Backup erstellen. Rollback vor dem Cleanup ist ohne
+  Datenverlust möglich; danach ist ein DB-Restore nötig.
 
 ### Fixed
 - **Ordner-Upload in der Web-UI:** Drag-&-Drop und ein neuer Button

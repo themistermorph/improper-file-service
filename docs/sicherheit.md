@@ -82,23 +82,46 @@ Zentrales Modul `src/ifs/core/authz.py` (Policy Decision Point). Beide Adapter r
 auf.
 
 - **Deny by default**: ohne passendes Recht wird abgelehnt.
-- **Besitzer** eines Eintrags hat implizit alle Rechte.
+- **Besitzer** eines Eintrags hat implizit alle **Eintrags**rechte
+  (`ALL_RESOURCE = read|write|delete|share|publish|admin`).
 - **Per-User-Wurzel**: Jeder Benutzer besitzt ein eigenes Home (`parent_id IS NULL`,
   `owner_id = Benutzer`). Systemadmins haben **keinen** Dateizugriff auf fremde Wurzeln;
   systemweite Rollen (auch `admin`) gewähren nur Systemfunktionen, keine Dateirechte.
-  Zugriff entsteht ausschließlich über Besitz, ACLs und Ressourcenrollen, dadurch sind die
-  Homes voneinander isoliert.
+  Zugriff entsteht ausschließlich über Besitz und ACLs, dadurch sind die Homes
+  voneinander isoliert.
 - **Admin-Grenzen:** Auch die API-Pfade sind so begrenzt, dass Admins die Isolation nicht
-  aushebeln können: Ressourcenrollen dürfen nur mit `admin` am Eintrag vergeben werden,
-  fremde Freigaben dürfen Admins nur **widerrufen**, nicht ändern. Bewusste Break-Glass-
-  Funktionen sind der Widerruf fremder Links und `delete_user(..., transfer_to)`
-  (Besitzübernahme beim Löschen eines Kontos).
-- **Vererbung**: Rechte werden additiv entlang des Pfades gesammelt; ein Recht auf einem
-  Ordner gilt für alle Nachfahren.
-- **Bitmaske**: `read=1`, `write=2`, `delete=4`, `share=8`, `admin=16`.
-- **Rollen:** benannte Rechtebündel – systemweit (`admin`, `auditor`, `user`, nur
-  Systemfunktionen) oder pro Eintrag (`viewer`, `collaborator`, `editor`, `sharer`,
-  `manager`). Ressourcenrollen **ergänzen** die ACLs.
+  aushebeln können: ACL-Grants dürfen nur mit `admin` am Eintrag vergeben werden,
+  fremde Freigaben/Veröffentlichungen dürfen Admins nur **widerrufen**, nicht ändern.
+  Bewusste Break-Glass-Funktionen sind der Widerruf fremder Links und
+  `delete_user(..., transfer_to)` (Besitzübernahme beim Löschen eines Kontos).
+- **Vererbung**: Eintragsrechte werden additiv entlang des Pfades gesammelt; ein Recht
+  auf einem Ordner gilt für alle Nachfahren.
+- **Namensräume (PDP):**
+  - Eintragsrechte in `acl`: `read=1`, `write=2`, `delete=4`, `share=8`,
+    `admin=16`, `publish=32` (`ALL_RESOURCE=63`).
+  - Systemrechte in `system_permissions`: `audit=64`, `monitor=128`
+    (`ALL_SYSTEM=208`, inkl. `ADMIN`). `ADMIN` als Systemrecht kommt
+    ausschließlich über die Adminrolle/`users.is_admin`, nie als Grant.
+  - `effective_perms()` liefert **nur** Eintragsbits; `system_perms()` liefert
+    **nur** `admin|audit|monitor`. ACLs und System-Grants werden nie gemischt.
+- **Berechtigungsmatrix (UI = API):**
+
+  | Aktion | Bedingung |
+  |---|---|
+  | Lesen/Download | `read` am Eintrag |
+  | Schreiben/Umbenennen/Verschieben | `write` (Move zusätzlich `read` auf Quelle) |
+  | Löschen | `delete` |
+  | Link erstellen | `read` + `share` |
+  | Veröffentlichen | `read` + `publish` |
+  | Zugriff verwalten | `admin` am Eintrag |
+  | Audit-Log | `audit` oder Systemadmin |
+  | System/Resourcenmonitor | `monitor` oder Systemadmin |
+  | Benutzer/Gruppen/Rollen | Systemadmin (Adminrolle oder Flag) |
+
+- **Grants:** `POST /api/entries/{id}/acl` vereinigt Bits (Upsert), `PUT` setzt
+  exakt, `DELETE` entfernt. System-Grants (`audit`/`monitor`) werden über
+  `/api/users/{id}/permissions` bzw. `/api/groups/{id}/permissions` gesetzt.
+  Jede Änderung wird auditiert und invalidiert den Authz-Memo-Cache.
 - Die Prüfung erfolgt **serverseitig bei jeder Operation**, auch bei FTP.
 
 ---
@@ -187,7 +210,8 @@ auf.
 - **Listing:** Wer `read` auf einem Ordner hat, sieht die **Namen** aller enthaltenen
   Einträge. Der Zugriff auf Inhalte/Metadaten wird weiterhin je Eintrag geprüft; ein
   feingranulares Filtern des Listings nach Rechten ist eine geplante Härtung.
-- ACLs lassen sich über die API setzen, aber (noch) nicht einzeln löschen.
+- ACLs lassen sich über `GET/PUT/DELETE /api/entries/{id}/acl` verwalten; der
+  Principal-Picker `/api/principals` liefert nur minimierte Benutzer-/Gruppendaten.
 
 ## 12. Härtungs-Checkliste für den Betrieb
 
@@ -214,7 +238,7 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   `/healthz` liefert keine internen Zähler mehr.
 - **Robuste Eingaben:** Ungültige `Range`-/`Upload-Offset`-/Pfadwerte liefern `400`/`416`
   statt `500` (zusätzlicher `ValueError`-Handler).
-- **Plausibilitätsprüfungen:** ACL- und Rollen-Zuweisungen prüfen die Existenz des
+- **Plausibilitätsprüfungen:** ACL- und System-Grant-Zuweisungen prüfen die Existenz des
   Principals; `copy` verhindert Kopien eines Ordners in sich selbst.
 - **Freigaben:** Werden bei Deaktivierung/Löschung des Erstellers automatisch widerrufen;
   Tokens erscheinen nicht mehr im Audit-Log und werden in Access-Logs redigiert.
@@ -374,7 +398,7 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   nicht veröffentlichen.
 - **Admins umgehen die Per-User-Isolation nicht mehr per API:**
   `POST /api/roles/{id}/assignments` mit `entry_id` verlangt nun `admin` am Eintrag; ein
-  Systemadmin kann sich keine Ressourcenrolle an fremden Wurzeln mehr selbst zuweisen.
+  Systemadmin kann sich keine Entry-ACL an fremden Wurzeln selbst setzen.
   `PATCH /api/shares/{token}` erlaubt Systemadmins ebenfalls nicht mehr (ein PATCH hätte
   z. B. den Passwortschutz fremder Links entfernen können); das **Widerrufen** fremder
   Freigaben bleibt als Missbrauchsschutz erlaubt. Die Share-Übersicht ist für Admins
@@ -430,9 +454,9 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   dem Schreiben erneut bestimmt – ein parallel angelegter gleichnamiger Eintrag wird
   nicht mehr ersetzt, sondern umbenannt. `DELETE /api/shares/{token}` wird als
   `share.revoke` auditiert (nur Token-Präfix).
-- **Rollen:** `DELETE /api/roles/assignments/{id}` verlangt bei Entry-gebundenen
-  Zuweisungen `admin` am Eintrag – konsistent zur Zuweisung am Eintrag. Verwaiste
-  Zuweisungen darf der Systemadmin weiterhin aufräumen.
+- **ACL-Grants:** `PUT /api/entries/{id}/acl` verlangt `admin` am Eintrag;
+  `DELETE /api/entries/{id}/acl/{id}` ebenso. `POST` wird als `acl.set`,
+  `DELETE` als `acl.delete` auditiert.
 - **Archiv:** Abgebrochene/abgelaufene ZIP-Jobs hinterlassen keine Dateien mehr im
   Spool; die Namensausweichung im ZIP kollidiert nicht mehr (`a`, `a`, `a (2)` →
   drei unterscheidbare Einträge).

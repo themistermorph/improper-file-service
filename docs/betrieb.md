@@ -155,7 +155,8 @@ die Papierkorb-Frist steuert `IFS_TRASH_RETENTION_DAYS` (Standard 30 Tage).
 ## 7. Upgrades und Migrationen
 
 ```bash
-# 1. Backup erstellen (siehe oben)
+# 1. Backup erstellen (siehe oben) – bei der Rollen-Umstellung zwingend:
+#    PostgreSQL-Dump + S3-Volume/Snapshot + .env sichern.
 # 2. Neuen Stand einspielen
 git pull
 docker compose build
@@ -164,11 +165,45 @@ docker compose build
 bash deploy/apply-migrations.sh
 #    Vor 0006_per_user_roots.sql muss für jeden Benutzer eine Wurzel existieren.
 #    Enthält u. a. 0007_performance_indexes.sql, 0008_published_entries.sql,
-#    0009_published_public_name.sql und 0010_published_public_path.sql.
+#    0009_published_public_name.sql, 0010_published_public_path.sql,
+#    0011_permissions_schema.sql, 0012_permissions_backfill.sql und
+#    0013_permissions_cleanup.sql.
 
 # 4. Rollen neu starten
 docker compose up -d
 ```
+
+### 7.1 Rollen → Berechtigungen (Reihenfolge)
+
+Die drei Berechtigungs-Migrationen sind bewusst getrennt, damit ein Rollback
+ohne Datenverlust möglich bleibt:
+
+| Schritt | Datei | Wirkung | Rollback |
+|---|---|---|---|
+| 1. Schema | `0011_permissions_schema.sql` | `system_permissions`, ACL-Dedupe + Unique-Index | additiv, Code-Rollback genügt |
+| 2. Backfill | `0012_permissions_backfill.sql` | Rollen → ACL/System-Grants; Rollen bleiben | nicht destruktiv, Code-Rollback genügt |
+| 3. Cleanup | `0013_permissions_cleanup.sql` | nur `admin` bleibt; Entry-Rollen-Zuweisungen entfallen | **nur per DB-Restore** |
+
+Empfohlener Ablauf auf dem Testsystem:
+
+1. Backup (DB + S3 + `.env`).
+2. `0011` und `0012` anwenden; API/Worker können weiterlaufen.
+3. Ergebnisse prüfen: Anzahl ACL-/System-Grants, `auditor` → `audit`,
+   `users.is_admin` → Adminrolle, keine ACL-Duplikate.
+4. Neuen Code ausrollen (`api`, `worker`, `ftp` neu starten).
+5. Matrix mit echten Benutzern prüfen (Eigentümer/Zugriff, Link, publish,
+   audit, monitor, Admin ohne Dateizugriff).
+6. Erst danach `0013` anwenden.
+7. Regression: `ruff`, volle Testsuite, `scripts/check-doc-links.py`.
+
+`deploy/apply-permissions.sh` kapselt die Schritte (Standard: 0011+0012;
+Cleanup nur mit `IFS_PERMISSIONS_CLEANUP=1`). `deploy/verify-permissions.sh`
+prüft anschließend Rollen-/Grant-Zahlen und den Admin-Bootstrap.
+
+Hinweis: Es gibt **keine neuen Konfigurationsvariablen** für die Umstellung.
+`users.is_admin` bleibt als Bootstrap-/Legacy-Flag lesbar und wird mit der
+Adminrolle synchron gehalten.
+
 
 - `IFS_AUTO_CREATE_SCHEMA` in Produktion **niemals** aktiv lassen.
 - Schemaänderungen immer als idempotente SQL-Migration unter `migrations/sql/`

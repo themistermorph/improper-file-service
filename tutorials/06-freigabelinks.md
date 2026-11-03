@@ -6,6 +6,12 @@ Downloadlimit – und den Link wieder widerrufen.
 **Voraussetzungen:** laufendes IFS; ein angemeldeter Benutzer mit `share`-Recht am
 Eintrag (der Besitzer hat es implizit).
 
+> **Abgrenzung:** Ein **Link** (dieses Tutorial) ist eine externe Freigabe mit
+> Token/Passwort/Ablauf und braucht `read`+`share`. **Zugriff** verwaltet
+> Benutzer-/Gruppen-ACLs und braucht `admin` am Eintrag. **Veröffentlichen**
+> stellt einen Eintrag in die öffentliche Galerie und braucht `read`+`publish`.
+> Die drei Rechte sind unabhängig voneinander.
+
 ---
 
 ## 1. Datei vorbereiten

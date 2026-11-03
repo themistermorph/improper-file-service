@@ -26,6 +26,11 @@ Im Log steht meist die konkrete Ursache (Konfiguration, DB-/S3-Verbindung).
 |---|---|---|
 | `401 Unauthorized` | fehlender/abgelaufener Token, falsches Passwort | neu einloggen; Header `Authorization: Bearer …` prüfen |
 | `403 Forbidden` | fehlendes Recht | ACL/Besitz prüfen; [Tutorial 5](05-benutzer-gruppen-rechte.md) |
+| `403` bei `POST /api/published/{id}` | `publish` fehlt (nur `share` reicht nicht) | Eintrags-ACL `read`+`publish` setzen |
+| `403` bei `GET /api/audit` | `audit`-Grant fehlt | Systemadmin: `PUT /api/users/{id}/permissions` mit `["audit"]` |
+| `403` bei `GET /api/system/stats` | `monitor`-Grant fehlt | Systemadmin: `PUT /api/users/{id}/permissions` mit `["monitor"]` |
+| `403` bei `GET/PUT /api/entries/{id}/acl` | `admin` am Eintrag fehlt | Besitzer/Eintrags-Admin fragen oder ACL setzen lassen |
+| `410 Gone` bei `/api/roles*` oder `/api/entries/{id}/roles*` | fachliche Rollen entfernt | ACL- bzw. System-Permission-Endpunkte nutzen |
 | `404 Not Found` | Eintrag gelöscht/nie existiert | Pfad/ID prüfen; Soft-Delete nach 30 Tagen endgültig |
 | `409 Conflict` | Name existiert oder Upload-Offset falsch | anderen Namen wählen; Offset per `HEAD` lesen |
 | `413 Payload Too Large` (JSON `{"code": "…"}`) | `IFS_MAX_UPLOAD_SIZE`/Quota überschritten | Limit erhöhen oder Datei verkleinern |

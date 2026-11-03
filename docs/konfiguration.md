@@ -13,6 +13,10 @@ Arbeitsverzeichnis (siehe `.env.example`).
 - Werte sind typisiert (Pydantic); ein ungültiger Wert verhindert den Start mit klarer
   Fehlermeldung.
 
+> **Rollen → Berechtigungen:** Diese Umstellung führt **keine neuen
+> Konfigurationsvariablen** ein. Die Grants liegen in der Datenbank
+> (`acl`, `system_permissions`); Migrationen siehe [Betrieb](betrieb.md#71-rollen--berechtigungen-reihenfolge).
+
 > **Ausnahme:** `IFS_S3_UI_USER` und `IFS_S3_UI_PASSWORD` werden nur vom Deploy-Skript
 > `deploy/setup-seaweedfs.sh` für die SeaweedFS-UI verwendet; die Anwendung selbst
 > wertet sie nicht aus.

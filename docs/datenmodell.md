@@ -30,7 +30,7 @@ Fremdschlüssel), um einen zyklischen FK zwischen `entries` und `versions` zu ve
                                           S3: cas/<sha[:2]>/<sha256>
 ```
 
-Weitere Tabellen: `credentials`, `acl`, `roles`, `role_assignments`, `shares`,
+Weitere Tabellen: `credentials`, `acl`, `system_permissions`, `roles`, `role_assignments`, `shares`,
 `published_entries`, `upload_sessions`, `audit_log`, `outbox`.
 
 ---
@@ -101,37 +101,50 @@ Per-User-Wurzeln.
 ### `acl`
 
 `id`, `entry_id`, `principal_type` (`user`/`group`), `principal_id`, `perms` (Bitmaske),
-`inherited`, `created_at`.
+`inherited`, `created_at`. Seit der Rollen-Umstellung ist
+`(entry_id, principal_type, principal_id)` **eindeutig**
+(`uq_acl_entry_principal`); wiederholte Vergaben werden per Upsert
+zusammengeführt. Vor dem Index vorhandene Duplikate werden in Migration `0011`
+per `bit_or(perms)` dedupliziert.
 
-Bitmaske: `read=1`, `write=2`, `delete=4`, `share=8`, `admin=16`.
+Eintrags-Bitmaske: `read=1`, `write=2`, `delete=4`, `share=8`, `admin=16`,
+`publish=32`. `ALL_RESOURCE = 63`. Systemrechte (`audit=64`, `monitor=128`)
+dürfen **nicht** in `acl` gespeichert werden.
+
+### `system_permissions`
+
+| Spalte | Typ | Anmerkung |
+|---|---|---|
+| `id` | UUID | |
+| `principal_type` | varchar(16) | `user` \| `group` |
+| `principal_id` | UUID | Benutzer- oder Gruppen-ID |
+| `permissions` | int | nur `audit=64` und/oder `monitor=128` |
+| `created_at` | timestamptz | |
+
+Unique-Index `(principal_type, principal_id)`: ein Datensatz je Principal.
+`ADMIN` ist hier bewusst nicht erlaubt – Systemverwaltung kommt ausschließlich
+über die Adminrolle bzw. das Bootstrap-Flag `users.is_admin`.
 
 ### `roles`
 
-| Spalte | Typ | Anmerkung |
-|---|---|---|
-| `id` | UUID | |
-| `name` | varchar(64) | eindeutig |
-| `description` | varchar(255) | optional |
-| `permissions` | int | Bitmaske wie ACLs |
-| `scope` | enum | `system` (global) \| `resource` (auf Einträge) |
-| `is_builtin` | bool | eingebaute Rollen sind schreibgeschützt |
-| `created_at` | timestamptz | |
+Nach dem Cleanup enthält die Tabelle **nur noch** `admin` (systemweit,
+`permissions=ALL=255`). Die früheren fachlichen Rollen (`auditor`, `user`,
+`viewer`, `collaborator`, `editor`, `sharer`, `manager`) wurden in ACL- bzw.
+System-Grants migriert und gelöscht.
 
 ### `role_assignments`
 
-| Spalte | Typ | Anmerkung |
-|---|---|---|
-| `id` | UUID | |
-| `role_id` | UUID → `roles.id` | `ON DELETE CASCADE` |
-| `principal_type` | enum | `user` \| `group` |
-| `principal_id` | UUID | Benutzer- oder Gruppen-ID |
-| `entry_id` | UUID \| null → `entries.id` | null = systemweit; sonst Vererbung ab diesem Eintrag |
-| `created_at` | timestamptz | |
+Enthält nur noch systemweite Admin-Zuweisungen (`entry_id IS NULL`).
+Entry-gebundene Zuweisungen sind nach der Migration ungültig und werden in
+`0013` entfernt. `users.is_admin` bleibt als Bootstrap-/Legacy-Flag lesbar und
+wird mit der Adminrolle synchron gehalten.
 
-**Rechteberechnung:** effektive Rechte = Besitzer-Vollrechte ∪ Ressourcenrollen und
-ACLs entlang des Pfades. Systemweite Rollen (`entry_id IS NULL`, auch `admin`) gewähren
-**keine** Dateirechte, sondern nur Systemfunktionen (Benutzer/Rollen/Audit/System).
-Details: [Sicherheit](sicherheit.md).
+**Rechteberechnung:** effektive Eintragsrechte = Besitz (`ALL_RESOURCE`) ∪ ACLs
+entlang des Pfades. `system_perms` = `users.is_admin`/Adminrolle (`ADMIN`) ∪
+`system_permissions` (`AUDIT`/`MONITOR`). Die beiden Namensräume werden nie
+vermischt; Systemadmins haben weiterhin **keinen** Dateizugriff auf fremde
+Bäume. Details: [Sicherheit](sicherheit.md).
+
 
 ### `shares`
 

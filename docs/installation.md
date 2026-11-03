@@ -188,6 +188,10 @@ python -m ifs.cli run-worker   # Hintergrundjobs
 > `0006_per_user_roots.sql`, `0007_performance_indexes.sql`,
 > `0008_published_entries.sql` (öffentliche Galerie),
 > `0009_published_public_name.sql` und `0010_published_public_path.sql` (Vanity-Links).
+> **Rollen → Berechtigungen:** `0011_permissions_schema.sql` und
+> `0012_permissions_backfill.sql` sind additiv/nicht destruktiv; erst nach
+> Verifikation `0013_permissions_cleanup.sql` anwenden (siehe
+> [Betrieb](betrieb.md#71-rollen--berechtigungen-reihenfolge)). Vorher Backup!
 > **Vor** dem Unique-Index aus 0006
 > muss für jeden Benutzer eine Wurzel existieren. Beispiel (vom
 > Projektwurzelverzeichnis aus):

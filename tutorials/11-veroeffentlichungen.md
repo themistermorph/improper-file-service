@@ -4,7 +4,7 @@
 bereitstellen, ohne Anmeldung herunterladen und die Veröffentlichung wieder zurückziehen.
 
 **Voraussetzungen:** laufendes IFS; `curl`; ein angemeldeter Benutzer mit `read`- und
-`share`-Recht am Eintrag (der Besitzer hat beide implizit).
+`publish`-Recht am Eintrag (der Besitzer hat es implizit).
 
 ---
 
@@ -12,11 +12,11 @@ bereitstellen, ohne Anmeldung herunterladen und die Veröffentlichung wieder zur
 
 | Schritt | Aufruf | Benötigt |
 |---|---|---|
-| Veröffentlichen | `POST /api/published/{entry_id}` | `read` + `share` |
+| Veröffentlichen | `POST /api/published/{entry_id}` | `read` + `publish` |
 | Galerie (ohne Login) | `GET /api/published` (`?q=` zum Filtern) | – |
 | Download (ohne Login) | `GET /api/published/{entry_id}/content` | – |
 | Eigene auflisten (Admin: alle) | `GET /api/published/mine` | Bearer-Token |
-| Zurückziehen | `DELETE /api/published/{entry_id}` | Ersteller, `share`-Berechtigte oder Systemadmin |
+| Zurückziehen | `DELETE /api/published/{entry_id}` | Ersteller, `publish`-Berechtigte oder Systemadmin |
 
 Eine Veröffentlichung ist **schlanker als ein Freigabelink** (Tutorial 6): es gibt
 **kein Passwort, kein Ablaufdatum und kein Downloadlimit**. Sie wird in der Tabelle
@@ -72,7 +72,7 @@ Antwort (`201 Created`):
 }
 ```
 
-Das Veröffentlichen erfordert **`read` und `share`** am Eintrag. Wer den Inhalt nicht
+Das Veröffentlichen erfordert **`read` und `publish`** am Eintrag. Wer den Inhalt nicht
 lesen darf, darf ihn auch nicht öffentlich zugänglich machen. Ordner werden genauso
 veröffentlicht (dann ist `type` `folder`); beim Download liefert IFS den kompletten
 Teilbaum als **ZIP**.
@@ -198,7 +198,7 @@ curl -s -X DELETE "$HOST/api/published/$ENTRY" -H "$AUTH" -o /dev/null -w "%{htt
 curl -s "$HOST/api/published/$ENTRY/content" -o /dev/null -w "%{http_code}\n"
 ```
 
-Zurückziehen darf der **Ersteller**, wer `share` am Eintrag hat, oder ein **Systemadmin**
+Zurückziehen darf der **Ersteller**, wer `publish` am Eintrag hat, oder ein **Systemadmin**
 (Missbrauchsschutz). Automatisch widerrufen wird eine Veröffentlichung außerdem, wenn:
 
 - der Eintrag gelöscht wird (`DELETE /api/entries/{id}`, Papierkorb), oder
