@@ -192,7 +192,7 @@ def restore_entry(
         db, "trash.restore", actor_id=user.id, target_entry=restored.id,
         protocol="http", ip=client_ip(request),
     )
-    return to_entry_out(db, restored)
+    return to_entry_out(db, restored, user=user)
 
 
 @router.delete("/trash/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)

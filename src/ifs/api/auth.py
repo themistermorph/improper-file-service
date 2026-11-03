@@ -7,13 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, lazyload
 
 from ..config import get_settings
-from ..core import audit, ratelimit
+from ..core import audit, authz, ratelimit
 from ..db import session_scope
 from ..models import User
 from ..security import create_access_token, verify_password_safe
 from ..utils import utcnow
 from .deps import client_ip, get_current_user, get_db
-from .schemas import LoginRequest, TokenResponse, UserOut
+from .schemas import LoginRequest, MeOut, TokenResponse
 
 router = APIRouter(tags=["auth"])
 
@@ -73,6 +73,26 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     return TokenResponse(access_token=token, expires_in=settings.access_token_ttl_seconds)
 
 
-@router.get("/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)) -> User:
-    return user
+@router.get("/me", response_model=MeOut)
+def me(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MeOut:
+    """Eigene Sicht mit effektiven Systemrechten.
+
+    ``is_admin`` ist bewusst effektiv (Adminrolle *oder* Flag), damit die UI
+    dieselbe Bedingung wie die API prüft. ``permissions`` enthält nur
+    ``audit``/``monitor`` – Admin wird über ``is_admin`` ausgedrückt.
+    """
+    perms = authz.system_perms(db, user) & authz.SYSTEM_ASSIGNABLE
+    return MeOut(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        email=user.email,
+        is_admin=authz.is_system_admin(db, user),
+        is_active=user.is_active,
+        last_login_at=user.last_login_at,
+        created_at=user.created_at,
+        permissions=authz.names_from_perms(perms, namespace="system"),
+    )

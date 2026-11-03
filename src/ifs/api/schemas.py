@@ -81,6 +81,13 @@ class UserDetailOut(UserOut):
     groups: list[GroupOut] = []
 
 
+class MeOut(UserOut):
+    """Eigene Sicht: `is_admin` ist effektiv, `permissions` sind Systemrechte."""
+
+    # Nur `audit`/`monitor` (Admin wird über `is_admin` ausgedrückt).
+    permissions: list[str] = []
+
+
 class GroupCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
@@ -100,6 +107,9 @@ class EntryOut(BaseModel):
     sha256: str | None = None
     created_at: datetime
     updated_at: datetime
+    # Effektive Eintragsrechte des anfragenden Benutzers; UI und API prüfen
+    # damit dieselbe Bedingung (leer, wenn kein Benutzerkontext vorliegt).
+    permissions: list[str] = []
 
 
 class FolderCreate(BaseModel):

@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from uuid import UUID
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select
 
-from ifs.core import authz, namespace, permissions
-from ifs.db import get_engine
+from ifs import main
+from ifs.core import authz, namespace, permissions, roles
+from ifs.db import get_engine, session_scope
 from ifs.models import Group, PrincipalType
 
 from .conftest import make_user
+from .helpers import login
 
 MIGRATION = (
     Path(__file__).resolve().parent.parent
@@ -292,4 +296,98 @@ def test_cleanup_laesst_nur_adminrolle_uebrig(db):
 
     # Idempotent.
     assert permissions.cleanup_roles(db)["roles_removed"] == 0
+
+
+# --- API: /api/me und EntryOut.permissions ---------------------------------
+
+
+def test_me_liefert_effektive_systemrechte():
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client)}"}
+        me = client.get("/api/me", headers=admin).json()
+        assert me["is_admin"] is True
+        assert me["permissions"] == []
+
+        user_id = client.post(
+            "/api/users", headers=admin, json={"username": "me-audit", "password": "geheim123"}
+        ).json()["id"]
+        with session_scope() as db:
+            permissions.merge_system_permissions(
+                db,
+                principal_type=PrincipalType.user,
+                principal_id=UUID(user_id),
+                perms=authz.AUDIT | authz.MONITOR,
+            )
+        headers = {"Authorization": f"Bearer {login(client, 'me-audit', 'geheim123')}"}
+        me = client.get("/api/me", headers=headers).json()
+        assert me["is_admin"] is False
+        assert me["permissions"] == ["audit", "monitor"]
+
+        # Normale Nutzer haben weder Admin noch Systemrechte.
+        client.post(
+            "/api/users", headers=admin, json={"username": "me-normal", "password": "geheim123"}
+        )
+        normal = {"Authorization": f"Bearer {login(client, 'me-normal', 'geheim123')}"}
+        me = client.get("/api/me", headers=normal).json()
+        assert me["is_admin"] is False
+        assert me["permissions"] == []
+
+
+def test_adminrolle_ohne_flag_ist_in_me_effektiv_admin():
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client)}"}
+        user_id = client.post(
+            "/api/users", headers=admin, json={"username": "role-admin", "password": "geheim123"}
+        ).json()["id"]
+        with session_scope() as db:
+            roles.ensure_builtin_roles(db)
+            admin_role = roles.find_by_name(db, "admin")
+            roles.assign_role(
+                db,
+                role=admin_role,
+                principal_type=PrincipalType.user,
+                principal_id=UUID(user_id),
+            )
+        headers = {"Authorization": f"Bearer {login(client, 'role-admin', 'geheim123')}"}
+        me = client.get("/api/me", headers=headers).json()
+        assert me["is_admin"] is True
+        # Gleiche Bedingung wie die API: Admin-Endpunkte funktionieren.
+        assert client.get("/api/users", headers=headers).status_code == 200
+
+
+def test_entryout_liefert_effektive_eintragsrechte():
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client)}"}
+        folder = client.post("/api/folders", headers=admin, json={"name": "caps"}).json()
+        assert set(folder["permissions"]) == {
+            "read",
+            "write",
+            "delete",
+            "share",
+            "publish",
+            "admin",
+        }
+
+        sam_id = client.post(
+            "/api/users", headers=admin, json={"username": "caps-sam", "password": "geheim123"}
+        ).json()["id"]
+        granted = client.post(
+            f"/api/entries/{folder['id']}/acl",
+            headers=admin,
+            json={
+                "principal_type": "user",
+                "principal_id": sam_id,
+                "perms": ["read", "share", "publish"],
+            },
+        )
+        assert granted.status_code == 201, granted.text
+
+        sam = {"Authorization": f"Bearer {login(client, 'caps-sam', 'geheim123')}"}
+        entry = client.get(f"/api/entries/{folder['id']}", headers=sam).json()
+        assert set(entry["permissions"]) == {"read", "share", "publish"}
+        # Kein Schreib-/Loesch-/Adminrecht nur wegen share/publish.
+        assert "write" not in entry["permissions"]
+        assert "delete" not in entry["permissions"]
+        assert "admin" not in entry["permissions"]
+
 

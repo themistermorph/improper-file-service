@@ -118,7 +118,21 @@ def entry_paths(
     return paths
 
 
-def to_entry_out(db: Session, entry: Entry, path: str | None = None) -> EntryOut:
+def to_entry_out(
+    db: Session,
+    entry: Entry,
+    path: str | None = None,
+    *,
+    user: User | None = None,
+    perms: int | None = None,
+) -> EntryOut:
+    """Antwortobjekt inklusive effektiver Eintragsrechte des Benutzers.
+
+    ``read`` ist immer enthalten, wenn der Eintrag sichtbar ist; die UI nutzt
+    dieselben Bits für Menüs (Link/Zugriff/Veröffentlichen/…).
+    """
+    if perms is None and user is not None:
+        perms = authz.effective_perms(db, user, entry)
     return EntryOut(
         id=entry.id,
         parent_id=entry.parent_id,
@@ -130,6 +144,11 @@ def to_entry_out(db: Session, entry: Entry, path: str | None = None) -> EntryOut
         sha256=entry.sha256,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
+        permissions=(
+            authz.names_from_perms(int(perms or 0), namespace="entry")
+            if perms is not None
+            else []
+        ),
     )
 
 
@@ -150,7 +169,7 @@ def list_entries(
     # erneut über die Ahnenkette aufzusteigen. Die Wurzel ist ohne Query "/".
     base = "/" if parent.parent_id is None else namespace.path_of(db, parent)
     return [
-        to_entry_out(db, child, path=_child_path(base, child.name))
+        to_entry_out(db, child, path=_child_path(base, child.name), user=user)
         for child in namespace.list_children(db, parent)
     ]
 
@@ -169,7 +188,7 @@ def list_folders(
     # Ordner (Sortierung + Ausgabe) erneut über ``path_of`` aufzusteigen.
     paths = entry_paths(db, visible, {folder.id: folder for folder in folders})
     visible.sort(key=lambda folder: paths[folder.id])
-    return [to_entry_out(db, folder, path=paths[folder.id]) for folder in visible]
+    return [to_entry_out(db, folder, path=paths[folder.id], user=user) for folder in visible]
 
 
 @router.get("/shared", response_model=list[EntryOut])
@@ -231,7 +250,7 @@ def list_shared(
     # Sortierung und Ausgabe aus derselben Pfad-Map (kein doppelter Aufstieg).
     paths = entry_paths(db, entries, parents)
     entries.sort(key=lambda entry: paths[entry.id].lower())
-    return [to_entry_out(db, entry, path=paths[entry.id]) for entry in entries]
+    return [to_entry_out(db, entry, path=paths[entry.id], user=user) for entry in entries]
 
 
 @router.get("/root", response_model=EntryOut)
@@ -242,7 +261,7 @@ def get_root(
     """Liefert die eigene Wurzel (nützlich für die Web-UI)."""
     root = _root_for(db, user)
     authz.authorize(db, user, "read", root)
-    return to_entry_out(db, root)
+    return to_entry_out(db, root, user=user)
 
 
 @router.get("/entries/{entry_id}", response_model=EntryOut)
@@ -253,7 +272,7 @@ def get_entry(
 ) -> EntryOut:
     entry = namespace.get_entry(db, entry_id)
     authz.authorize(db, user, "read", entry)
-    return to_entry_out(db, entry)
+    return to_entry_out(db, entry, user=user)
 
 
 @router.post("/folders", response_model=EntryOut, status_code=status.HTTP_201_CREATED)
@@ -274,7 +293,7 @@ def create_folder(
     # angelegten Ordner) darf den Ordner sofort sehen. ``get_db`` committet
     # sonst erst nach dem Senden der Antwort.
     db.commit()
-    return to_entry_out(db, folder)
+    return to_entry_out(db, folder, user=user)
 
 
 @router.patch("/entries/{entry_id}", response_model=EntryOut)
@@ -292,7 +311,7 @@ def update_entry(
         db, "entry.rename", actor_id=user.id, target_entry=entry.id,
         protocol="http", ip=client_ip(request),
     )
-    return to_entry_out(db, entry)
+    return to_entry_out(db, entry, user=user)
 
 
 @router.post("/entries/{entry_id}/move", response_model=EntryOut)
@@ -316,7 +335,7 @@ def move_entry(
         db, "entry.move", actor_id=user.id, target_entry=entry.id,
         protocol="http", ip=client_ip(request), details={"parent_id": str(target.id)},
     )
-    return to_entry_out(db, entry)
+    return to_entry_out(db, entry, user=user)
 
 
 @router.post("/entries/{entry_id}/copy", response_model=EntryOut, status_code=status.HTTP_201_CREATED)
@@ -341,7 +360,7 @@ def copy_entry(
         db, "entry.copy", actor_id=user.id, target_entry=clone.id,
         protocol="http", ip=client_ip(request),
     )
-    return to_entry_out(db, clone)
+    return to_entry_out(db, clone, user=user)
 
 
 @router.delete("/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
