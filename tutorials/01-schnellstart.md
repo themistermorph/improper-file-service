@@ -76,6 +76,10 @@ Erwartete Antwort:
 Öffne die Web-UI: <http://localhost:8000> und melde dich an
 (Benutzer `admin`, das Passwort aus `.env`).
 
+> **Mobil:** Unter <http://localhost:8000/mobile> steht eine touch-optimierte
+> Ansicht für Dateien, „Mit mir geteilt“, Download/Upload und einfache
+> Dateiaktionen bereit. Die Anmeldung ist dieselbe wie in der Desktop-UI.
+
 ---
 
 ## Schritt 5 – Erste Datei über die UI

@@ -15,6 +15,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   ACL-Grants auf den eigenen Einträgen (Ziel, Empfänger, Rechte) und öffnet
   direkt den Zugriff-Dialog. Grundlage ist `GET /api/shared/outgoing`; die
   Ansicht zeigt bewusst keine fremden Bäume.
+- **Mobile Oberfläche unter `/mobile`:** Touch-optimierte Single-Page-App mit
+  Login, Dateiliste, „Mit mir geteilt“, Download, Upload, neuen Ordnern,
+  Umbenennen/Löschen, Suche und Wechsel zur Desktop-Ansicht. Eigene
+  `mobile.html`, keine externen Assets; dieselbe Session wie die Desktop-UI.
 
 ### Changed
 - **Horizontales Scrollen:** Tabellenboxen scrollen bei breiten Tabellen

@@ -172,6 +172,12 @@ def create_app() -> FastAPI:
 
     web_dir = pathlib.Path(__file__).parent / "web"
     if web_dir.exists():
+        @app.get("/mobile", include_in_schema=False)
+        @app.get("/mobile/", include_in_schema=False)
+        async def mobile_app() -> FileResponse:
+            """Mobile-optimierte Oberfläche (eigenständige Single-Page-App)."""
+            return FileResponse(web_dir / "mobile.html")
+
         # Öffentliche Galerie unter eigener, teilbarer URL. Muss vor dem
         # Catch-all-Mount registriert werden, damit /published nicht vom
         # StaticFiles-Handler (der kein solches Verzeichnis kennt) beantwortet wird.

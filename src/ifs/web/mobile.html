@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0e13" />
+  <title>IFS – Mobil</title>
+  <style>
+    :root {
+      --bg: #0b0e13; --panel: #121721; --panel2: #171d29;
+      --border: #253043; --text: #e5e9f0; --muted: #96a2b5;
+      --accent: #3b82f6; --accent2: #60a5fa; --danger: #ef4444;
+      --ok: #22c55e; --radius: 12px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 16px; line-height: 1.4;
+    }
+    .hidden { display: none !important; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .muted { color: var(--muted); }
+
+    #login {
+      min-height: 100dvh; display: flex; align-items: center; justify-content: center;
+      padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+    }
+    .login-card {
+      width: 100%; max-width: 380px; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 18px; padding: 22px;
+    }
+    .login-card h1 { margin: 0 0 4px; font-size: 28px; }
+    .login-card .sub { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px; }
+    .field input {
+      width: 100%; padding: 14px 14px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--panel2);
+      color: var(--text); font-size: 16px;
+    }
+    .field input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    .btn {
+      width: 100%; min-height: 50px; border: 0; border-radius: 12px;
+      background: var(--accent); color: white; font-weight: 700; font-size: 16px;
+    }
+    .btn:active { background: var(--accent2); }
+    .btn.secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+    .btn.danger { background: var(--danger); }
+    .error { min-height: 20px; color: #fca5a5; font-size: 14px; margin-top: 10px; }
+
+    #app { min-height: 100dvh; display: flex; flex-direction: column; }
+    header {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; gap: 6px;
+      padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+      background: rgba(11, 14, 19, .96); border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+    }
+    header .titlebox { flex: 1; min-width: 0; }
+    header .title { font-weight: 700; font-size: 17px; white-space: nowrap;
+                    overflow: hidden; text-overflow: ellipsis; }
+    header .path { color: var(--muted); font-size: 12px; white-space: nowrap;
+                   overflow: hidden; text-overflow: ellipsis; }
+    .iconbtn {
+      width: 44px; height: 44px; min-height: 44px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--panel2);
+      color: var(--text); font-size: 20px; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .iconbtn:disabled { opacity: .35; }
+    .searchbar { padding: 8px 12px 4px; }
+    .searchbar input {
+      width: 100%; padding: 11px 12px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--panel2);
+      color: var(--text); font-size: 16px;
+    }
+    main { flex: 1; padding: 4px 12px 110px; }
+    .list {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow-x: auto; overflow-y: hidden;
+    }
+    .row {
+      display: flex; align-items: center; gap: 10px; min-height: 64px;
+      padding: 10px 8px 10px 12px; border-bottom: 1px solid var(--border);
+    }
+    .row:last-child { border-bottom: 0; }
+    .row:active { background: var(--panel2); }
+    .row .ficon { font-size: 22px; width: 28px; text-align: center; flex: 0 0 28px; }
+    .row .info { flex: 1; min-width: 0; }
+    .row .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+    .row .meta { color: var(--muted); font-size: 12px; margin-top: 2px;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .more {
+      width: 44px; height: 44px; min-height: 44px; border-radius: 10px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); font-size: 22px; flex: 0 0 44px;
+    }
+    .empty { padding: 36px 16px; text-align: center; color: var(--muted); }
+    .bottomnav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 12;
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      background: rgba(18, 23, 33, .98); border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
+      backdrop-filter: blur(8px);
+    }
+    .bottomnav button, .bottomnav a {
+      min-height: 58px; border: 0; background: transparent; color: var(--muted);
+      text-decoration: none; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 2px; font-size: 11px;
+    }
+    .bottomnav .navicon { font-size: 20px; line-height: 1; }
+    .bottomnav .active { color: var(--accent2); }
+    .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 19; }
+    .sheet {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      background: var(--panel); border-top: 1px solid var(--border);
+      border-radius: 18px 18px 0 0; padding: 12px 14px
+      calc(14px + env(safe-area-inset-bottom));
+      box-shadow: 0 -16px 40px rgba(0, 0, 0, .45);
+    }
+    .sheet h2 { margin: 4px 6px 12px; font-size: 17px; }
+    .sheet .sheetbtn {
+      width: 100%; min-height: 50px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--panel2); color: var(--text); text-align: left;
+      padding: 0 14px; margin-bottom: 8px; font-size: 15px;
+    }
+    .sheet .sheetbtn.danger { color: #fca5a5; }
+    .sheet .cancel { color: var(--muted); text-align: center; }
+    .toast {
+      position: fixed; left: 50%; transform: translateX(-50%); z-index: 30;
+      bottom: calc(78px + env(safe-area-inset-bottom));
+      background: #1b2332; border: 1px solid var(--border); color: var(--text);
+      padding: 11px 16px; border-radius: 10px; max-width: calc(100% - 32px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .35); font-size: 14px;
+    }
+    .toast.err { border-color: var(--danger); color: #fecaca; }
+    .toast.ok { border-color: var(--ok); }
+    @media (min-width: 760px) {
+      #app { max-width: 760px; width: 100%; margin: 0 auto; }
+      .bottomnav { max-width: 760px; left: 50%; transform: translateX(-50%);
+                   border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+      .sheet { max-width: 760px; left: 50%; transform: translateX(-50%); }
+    }
+  </style>
+</head>
+<body>
+  <section id="login">
+    <form class="login-card" id="login-form">
+      <h1>IFS<span style="color:var(--accent)">.</span></h1>
+      <p class="sub">Mobile Ansicht – Dateien, Freigaben und Uploads</p>
+      <div class="field">
+        <label for="username">Benutzername</label>
+        <input id="username" autocomplete="username" autocapitalize="none" required />
+      </div>
+      <div class="field">
+        <label for="password">Passwort</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn" id="login-btn" type="submit">Anmelden</button>
+      <div class="error" id="login-error"></div>
+    </form>
+  </section>
+
+  <section id="app" class="hidden">
+    <header>
+      <button class="iconbtn" id="back" type="button" aria-label="Zurück" disabled>←</button>
+      <div class="titlebox">
+        <div class="title" id="title">Dateien</div>
+        <div class="path" id="path"></div>
+      </div>
+      <button class="iconbtn" id="refresh" type="button" aria-label="Aktualisieren">⟳</button>
+      <button class="iconbtn" id="menu" type="button" aria-label="Menü">☰</button>
+    </header>
+
+    <div class="searchbar">
+      <input id="search" type="search" placeholder="Im aktuellen Ordner filtern…"
+             autocomplete="off" />
+    </div>
+
+    <main>
+      <div class="list" id="list"></div>
+      <div class="empty hidden" id="empty">Dieser Ordner ist leer.</div>
+    </main>
+
+    <nav class="bottomnav">
+      <button id="tab-files" class="active" type="button">
+        <span class="navicon">📁</span>Dateien
+      </button>
+      <button id="tab-shared" type="button">
+        <span class="navicon">📥</span>Geteilt
+      </button>
+      <a href="/published" target="_blank" rel="noopener">
+        <span class="navicon">🌐</span>Galerie
+      </a>
+    </nav>
+
+    <div id="backdrop" class="backdrop hidden"></div>
+    <div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
+      <h2 id="sheet-title">Menü</h2>
+      <div id="sheet-body"></div>
+      <button class="sheetbtn cancel" id="sheet-cancel" type="button">Schließen</button>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <input id="file-input" type="file" multiple class="hidden" />
+  </section>
+
+  <script>
+    "use strict";
+    const API = "";
+    const TOKEN_KEY = "ifs_token";
+    const state = {
+      token: sessionStorage.getItem(TOKEN_KEY) || "",
+      me: null,
+      root: null,
+      filesCwd: null,
+      filesStack: [],
+      sharedStack: [],
+      entries: [],
+      tab: "files",
+      filter: "",
+      loading: false,
+    };
+
+    const $ = (id) => document.getElementById(id);
+    let toastTimer = null;
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"]/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;",
+      }[c]));
+    }
+    function fmtSize(bytes) {
+      const n = Number(bytes || 0);
+      if (n === 0) return "0 B";
+      if (n < 1024) return Math.round(n) + " B";
+      if (n < 1024 ** 2) return (n / 1024).toFixed(1) + " KB";
+      if (n < 1024 ** 3) return (n / 1024 ** 2).toFixed(1) + " MB";
+      return (n / 1024 ** 3).toFixed(2) + " GB";
+    }
+    function fmtDate(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      const p = (x) => String(x).padStart(2, "0");
+      return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+    function toast(message, kind = "") {
+      const el = $("toast");
+      el.textContent = message;
+      el.className = "toast " + kind;
+      el.classList.remove("hidden");
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add("hidden"), 4000);
+    }
+
+    async function api(method, path, body) {
+      const headers = {};
+      if (state.token) headers.Authorization = "Bearer " + state.token;
+      let payload;
+      if (body !== undefined) {
+        headers["Content-Type"] = "application/json";
+        payload = JSON.stringify(body);
+      }
+      const res = await fetch(API + path, { method, headers, body: payload });
+      if (res.status === 401) {
+        logout();
+        throw new Error("Sitzung abgelaufen");
+      }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error("HTTP " + res.status + (text ? ": " + text : ""));
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    }
+
+    function logout() {
+      state.token = "";
+      state.me = null;
+      state.root = null;
+      state.filesCwd = null;
+      state.filesStack = [];
+      state.sharedStack = [];
+      state.entries = [];
+      sessionStorage.removeItem(TOKEN_KEY);
+      $("app").classList.add("hidden");
+      $("login").classList.remove("hidden");
+      $("password").value = "";
+      closeSheet();
+    }
+
+    async function login(event) {
+      event.preventDefault();
+      const username = $("username").value.trim();
+      const password = $("password").value;
+      $("login-error").textContent = "";
+      $("login-btn").disabled = true;
+      try {
+        const res = await fetch(API + "/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        if (res.status === 429) {
+          $("login-error").textContent = "Zu viele Fehlversuche – bitte später erneut versuchen.";
+          return;
+        }
+        if (!res.ok) {
+          $("login-error").textContent = "Benutzername oder Passwort falsch.";
+          return;
+        }
+        state.token = (await res.json()).access_token;
+        sessionStorage.setItem(TOKEN_KEY, state.token);
+        await start();
+      } catch (e) {
+        $("login-error").textContent = "Verbindungsfehler: " + e.message;
+      } finally {
+        $("login-btn").disabled = false;
+      }
+    }
+
+    async function start() {
+      const [me, root] = await Promise.all([
+        api("GET", "/api/me"),
+        api("GET", "/api/root"),
+      ]);
+      state.me = me;
+      state.root = root;
+      state.filesCwd = root;
+      state.filesStack = [];
+      state.sharedStack = [];
+      $("login").classList.add("hidden");
+      $("app").classList.remove("hidden");
+      await load();
+    }
+
+    async function load() {
+      if (state.loading) return;
+      state.loading = true;
+      try {
+        if (state.tab === "files") {
+          if (!state.filesCwd) state.filesCwd = await api("GET", "/api/root");
+          state.entries = await api(
+            "GET", "/api/entries?parent_id=" + encodeURIComponent(state.filesCwd.id),
+          );
+        } else if (state.sharedStack.length) {
+          const current = state.sharedStack[state.sharedStack.length - 1];
+          state.entries = await api(
+            "GET", "/api/entries?parent_id=" + encodeURIComponent(current.id),
+          );
+        } else {
+          state.entries = await api("GET", "/api/shared");
+        }
+        render();
+      } catch (e) {
+        toast("Laden fehlgeschlagen: " + e.message, "err");
+      } finally {
+        state.loading = false;
+      }
+    }
+
+    function currentPath() {
+      if (state.tab === "files") return state.filesCwd?.path || "/";
+      if (state.sharedStack.length) {
+        return state.sharedStack.map((entry) => entry.name).join(" / ");
+      }
+      return "Mit mir geteilte Einträge";
+    }
+
+    function render() {
+      const list = $("list");
+      const frag = document.createDocumentFragment();
+      const needle = state.filter.trim().toLowerCase();
+      const items = state.entries.filter(
+        (entry) => !needle || entry.name.toLowerCase().includes(needle),
+      );
+
+      for (const entry of items) {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const icon = document.createElement("div");
+        icon.className = "ficon";
+        icon.textContent = entry.type === "folder" ? "📁" : "📄";
+        row.appendChild(icon);
+
+        const info = document.createElement("div");
+        info.className = "info";
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = entry.name;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = entry.type === "folder"
+          ? "Ordner · " + fmtDate(entry.updated_at)
+          : fmtSize(entry.size) + " · " + fmtDate(entry.updated_at);
+        info.appendChild(name);
+        info.appendChild(meta);
+        row.appendChild(info);
+
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "more";
+        more.textContent = "⋯";
+        more.setAttribute("aria-label", "Aktionen für " + entry.name);
+        more.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openEntrySheet(entry);
+        });
+        row.appendChild(more);
+
+        row.addEventListener("click", () => activate(entry));
+        frag.appendChild(row);
+      }
+
+      list.replaceChildren(frag);
+      const empty = $("empty");
+      empty.textContent = needle
+        ? "Keine Treffer."
+        : (state.tab === "files" ? "Dieser Ordner ist leer." : "Keine Freigaben für dich.");
+      empty.classList.toggle("hidden", items.length > 0);
+
+      $("title").textContent = state.tab === "files"
+        ? (state.filesStack.length ? state.filesCwd.name : "Dateien")
+        : (state.sharedStack.length ? state.sharedStack[state.sharedStack.length - 1].name : "Mit mir geteilt");
+      $("path").textContent = currentPath();
+      $("back").disabled = state.tab === "files"
+        ? state.filesStack.length === 0
+        : state.sharedStack.length === 0;
+      $("refresh").classList.remove("hidden");
+      $("menu").classList.remove("hidden");
+      $("tab-files").classList.toggle("active", state.tab === "files");
+      $("tab-shared").classList.toggle("active", state.tab === "shared");
+    }
+
+    function activate(entry) {
+      if (entry.type === "folder") {
+        if (state.tab === "files") {
+          state.filesStack.push(state.filesCwd);
+          state.filesCwd = entry;
+        } else {
+          state.sharedStack.push(entry);
+        }
+        state.filter = "";
+        $("search").value = "";
+        load();
+        return;
+      }
+      download(entry);
+    }
+
+    async function download(entry) {
+      try {
+        toast("Download wird vorbereitet …");
+        const ticket = await api(
+          "POST", "/api/entries/" + encodeURIComponent(entry.id) + "/download-token",
+        );
+        window.location.href = ticket.url;
+        toast("Download gestartet.", "ok");
+      } catch (e) {
+        toast("Download fehlgeschlagen: " + e.message, "err");
+      }
+    }
+
+    function goBack() {
+      if (state.tab === "files") {
+        if (!state.filesStack.length) return;
+        state.filesCwd = state.filesStack.pop();
+      } else {
+        if (!state.sharedStack.length) return;
+        state.sharedStack.pop();
+      }
+      state.filter = "";
+      $("search").value = "";
+      load();
+    }
+
+    function openTab(tab) {
+      state.tab = tab;
+      state.filter = "";
+      $("search").value = "";
+      state.sharedStack = tab === "shared" ? [] : state.sharedStack;
+      load();
+    }
+
+    function closeSheet() {
+      $("sheet").classList.add("hidden");
+      $("backdrop").classList.add("hidden");
+      $("sheet-body").replaceChildren();
+    }
+
+    function openSheet(title, buttons) {
+      $("sheet-title").textContent = title;
+      const body = $("sheet-body");
+      body.replaceChildren();
+      for (const item of buttons) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "sheetbtn" + (item.danger ? " danger" : "");
+        button.textContent = item.label;
+        button.addEventListener("click", () => {
+          closeSheet();
+          item.action();
+        });
+        body.appendChild(button);
+      }
+      $("sheet").classList.remove("hidden");
+      $("backdrop").classList.remove("hidden");
+    }
+
+    function openMenu() {
+      const buttons = [];
+      if (state.tab === "files") {
+        buttons.push({ label: "＋ Neuer Ordner", action: newFolder });
+        buttons.push({ label: "⬆ Datei hochladen", action: () => $("file-input").click() });
+      }
+      buttons.push({ label: "🖥 Desktop-Ansicht", action: () => { window.location.href = "/"; } });
+      buttons.push({ label: "Abmelden", danger: true, action: logout });
+      openSheet(state.me ? (state.me.display_name || state.me.username) : "Menü", buttons);
+    }
+
+    function openEntrySheet(entry) {
+      const canWrite = (entry.permissions || []).includes("write");
+      const canDelete = (entry.permissions || []).includes("delete");
+      const buttons = [
+        {
+          label: entry.type === "folder" ? "📂 Öffnen" : "⬇ Download",
+          action: () => activate(entry),
+        },
+      ];
+      if (canWrite) buttons.push({ label: "✏️ Umbenennen", action: () => renameEntry(entry) });
+      if (canDelete) {
+        buttons.push({
+          label: "🗑 Löschen", danger: true, action: () => deleteEntry(entry),
+        });
+      }
+      openSheet(entry.name, buttons);
+    }
+
+    async function newFolder() {
+      if (state.tab !== "files" || !state.filesCwd) return;
+      const name = prompt("Name des neuen Ordners:");
+      if (!name) return;
+      try {
+        await api("POST", "/api/folders", {
+          parent_id: state.filesCwd.id,
+          name: name.trim(),
+        });
+        toast("Ordner angelegt.", "ok");
+        await load();
+      } catch (e) {
+        toast("Anlegen fehlgeschlagen: " + e.message, "err");
+      }
+    }
+
+    async function renameEntry(entry) {
+      const name = prompt("Neuer Name:", entry.name);
+      if (!name || name === entry.name) return;
+      try {
+        await api("PATCH", "/api/entries/" + encodeURIComponent(entry.id), {
+          name: name.trim(),
+        });
+        toast("Umbenannt.", "ok");
+        await load();
+      } catch (e) {
+        toast("Umbenennen fehlgeschlagen: " + e.message, "err");
+      }
+    }
+
+    async function deleteEntry(entry) {
+      if (!confirm(`'${entry.name}' in den Papierkorb verschieben?`)) return;
+      try {
+        await api("DELETE", "/api/entries/" + encodeURIComponent(entry.id));
+        toast("In den Papierkorb verschoben.", "ok");
+        await load();
+      } catch (e) {
+        toast("Löschen fehlgeschlagen: " + e.message, "err");
+      }
+    }
+
+    async function uploadFiles(files) {
+      if (state.tab !== "files" || !state.filesCwd || !files.length) return;
+      const parentId = state.filesCwd.id;
+      try {
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index];
+          toast(`Lade ${index + 1}/${files.length}: ${file.name}`);
+          const params = new URLSearchParams({ parent_id: parentId, name: file.name });
+          const res = await fetch(API + "/api/uploads/simple?" + params.toString(), {
+            method: "PUT",
+            headers: {
+              Authorization: "Bearer " + state.token,
+              "Content-Type": "application/octet-stream",
+            },
+            body: file,
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            toast(file.name + ": HTTP " + res.status + " " + text, "err");
+            return;
+          }
+        }
+        toast("Upload abgeschlossen.", "ok");
+        await load();
+      } catch (e) {
+        toast("Upload fehlgeschlagen: " + e.message, "err");
+      }
+    }
+
+    // --- Events ---
+    $("login-form").addEventListener("submit", login);
+    $("back").addEventListener("click", goBack);
+    $("refresh").addEventListener("click", load);
+    $("menu").addEventListener("click", openMenu);
+    $("sheet-cancel").addEventListener("click", closeSheet);
+    $("backdrop").addEventListener("click", closeSheet);
+    $("tab-files").addEventListener("click", () => openTab("files"));
+    $("tab-shared").addEventListener("click", () => openTab("shared"));
+    $("search").addEventListener("input", (event) => {
+      state.filter = event.target.value;
+      render();
+    });
+    $("file-input").addEventListener("change", async (event) => {
+      const files = Array.from(event.target.files || []);
+      event.target.value = "";
+      await uploadFiles(files);
+    });
+
+    // Bestehende Sitzung aus der Desktop-/Mobilansicht übernehmen.
+    if (state.token) {
+      start().catch(() => logout());
+    }
+  </script>
+</body>
+</html>

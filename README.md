@@ -45,7 +45,7 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 - **Verwaltung**: Benutzerverwaltung (anlegen, bearbeiten, Passwort-Reset, deaktivieren,
   Gruppen), Gruppen, ACLs, Audit-Log
 - **Selbstbedienung**: eigenes Profil und Passwort ändern
-- **Rollen**: benannte Rechtebündel (systemweit oder pro Eintrag) – ergänzen die ACLs
+- **Berechtigungen**: nur noch die Adminrolle; Eintragsrechte als ACLs, Systemrechte (`audit`/`monitor`) direkt je Benutzer/Gruppe
 - **Freigaben**: Übersicht aller Links mit Kopieren, Öffnen und Widerrufen; Dateien und **Ordner** (als ZIP), optional Upload per Drop-Link
 - **Veröffentlichungen**: Dateien und **Ordner** (als ZIP) ausdrücklich in einer **öffentlichen Galerie** (`/published`, ohne Login, inkl. Download) bereitstellen und jederzeit zurückziehen
 - **Bulk-Aktionen**: Mehrfachauswahl zum Sammel-Download (.zip), Verschieben und Löschen
@@ -62,6 +62,9 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
   **Verschieben** (einzeln und mehrfach), Umbenennen, Löschen, Details,
   Freigabelinks, **Veröffentlichungen** (öffentliche Galerie unter `/published`),
   **Vorschau** für Text/Code, HTML, PDF, Bilder, Video und Audio)
+- **Mobile Oberfläche**: unter `/mobile` eine touch-optimierte Ansicht für
+  Dateien, „Mit mir geteilt“, Download, Upload, neue Ordner, Umbenennen und
+  Löschen; dieselbe Anmeldung wie die Desktop-UI
 
 ---
 
