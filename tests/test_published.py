@@ -124,6 +124,49 @@ def test_publish_requires_permission(monkeypatch):
         assert client.post(f"/api/published/{entry['id']}", headers=sam).status_code == 403
 
 
+def test_publish_requires_publish_not_share(monkeypatch):
+    """`share` (Link) und `publish` (Galerie) sind getrennte Berechtigungen."""
+    monkeypatch.setattr(content, "store_blob", fake_store_blob)
+    monkeypatch.setattr(content, "get_object", _fake_get_object)
+
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client, 'admin', 'admin')}"}
+        entry = _upload(client, admin)
+        sam_id = client.post(
+            "/api/users", headers=admin, json={"username": "sam-pub", "password": "geheim123"}
+        ).json()["id"]
+        sam = {"Authorization": f"Bearer {login(client, 'sam-pub', 'geheim123')}"}
+
+        assert client.post(
+            f"/api/entries/{entry['id']}/acl",
+            headers=admin,
+            json={
+                "principal_type": "user",
+                "principal_id": sam_id,
+                "perms": ["read", "share"],
+            },
+        ).status_code == 201
+        # Nur share/read: Link erlaubt, Veröffentlichen nicht.
+        assert client.post(f"/api/published/{entry['id']}", headers=sam).status_code == 403
+        assert client.post(
+            "/api/shares", headers=sam, json={"entry_id": entry["id"]}
+        ).status_code == 201
+
+        # publish kommt getrennt hinzu.
+        assert client.post(
+            f"/api/entries/{entry['id']}/acl",
+            headers=admin,
+            json={
+                "principal_type": "user",
+                "principal_id": sam_id,
+                "perms": ["publish"],
+            },
+        ).status_code == 201
+        published = client.post(f"/api/published/{entry['id']}", headers=sam)
+        assert published.status_code == 201, published.text
+        assert published.json()["published_by_username"] == "sam-pub"
+
+
 def test_public_name_set_change_and_clear(monkeypatch):
     monkeypatch.setattr(content, "store_blob", fake_store_blob)
     monkeypatch.setattr(content, "get_object", _fake_get_object)
@@ -401,7 +444,7 @@ def test_republish_keeps_original_publisher(monkeypatch):
             json={
                 "principal_type": "user",
                 "principal_id": sam_id,
-                "perms": ["read", "share"],
+                "perms": ["read", "publish"],
             },
         ).status_code == 201
         sam = {"Authorization": f"Bearer {login(client, 'sam', 'geheim123')}"}

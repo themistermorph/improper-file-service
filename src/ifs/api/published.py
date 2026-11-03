@@ -4,8 +4,9 @@ Eine Veröffentlichung stellt eine **Datei oder einen Ordner** ohne Anmeldung
 unter ``/published`` bereit. Ordner werden beim Download als ZIP geliefert (wie
 bei Freigaben). Die Veröffentlichung ist bewusst schlanker als eine Freigabe
 (kein Passwort, kein Ablauf, kein Download-Limit) und wird über
-``published_entries`` geführt. Die Berechtigung entspricht dem Erstellen eines
-Freigabelinks: ``read`` **und** ``share`` am Eintrag.
+``published_entries`` geführt. Die Berechtigung ist ``read`` **und** ``publish``
+am Eintrag – nicht ``share``: Link-Freigaben und öffentliche Veröffentlichungen
+sind getrennte Rechte.
 """
 
 from __future__ import annotations
@@ -313,10 +314,11 @@ def publish_entry(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Die Wurzel kann nicht veröffentlicht werden"
         )
-    # `share` allein reicht nicht: Wer den Inhalt nicht lesen darf, darf ihn auch
-    # nicht öffentlich zugänglich machen (sonst wäre `share` faktisch `read`).
+    # `publish` allein reicht nicht: Wer den Inhalt nicht lesen darf, darf ihn
+    # auch nicht öffentlich zugänglich machen. `share` ist hier bewusst NICHT
+    # ausreichend – Veröffentlichen und externe Links sind getrennte Rechte.
     authz.authorize(db, user, "read", entry)
-    authz.authorize(db, user, "share", entry)
+    authz.authorize(db, user, "publish", entry)
 
     public_name = _clean_public_name(payload.public_name) if payload else None
     suffix = (
@@ -369,10 +371,10 @@ def publish_entry(
 def _can_manage(
     db: Session, user: User, published: PublishedEntry, entry: Entry | None
 ) -> bool:
-    """Verwaltungsrecht: Ersteller, `share`-Berechtigte oder Systemadmin."""
+    """Verwaltungsrecht: Ersteller, `publish`-Berechtigte oder Systemadmin."""
     if published.published_by == user.id:
         return True
-    if entry is not None and authz.can(db, user, "share", entry):
+    if entry is not None and authz.can(db, user, "publish", entry):
         return True
     return authz.is_system_admin(db, user)
 
@@ -431,8 +433,8 @@ def unpublish_entry(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Datei ist nicht veröffentlicht")
     entry = db.get(Entry, entry_id)
     # Auch nach dem Verschieben in den Papierkorb darf die Veröffentlichung
-    # widerrufen werden; verwalten darf sie der Ersteller, wer `share` am Eintrag
-    # hat oder (als Missbrauchsschutz) ein Systemadmin.
+    # widerrufen werden; verwalten darf sie der Ersteller, wer `publish` am
+    # Eintrag hat oder (als Missbrauchsschutz) ein Systemadmin.
     if not _can_manage(db, user, published, entry):
         raise PermissionDenied("Kein Recht, diese Veröffentlichung zu verwalten")
     db.delete(published)
