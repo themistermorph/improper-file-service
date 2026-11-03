@@ -136,3 +136,51 @@ def test_acl_audit_eintraege():
         del_rows = client.get("/api/audit?action=acl.delete", headers=admin).json()
         assert any(row["target_entry"] == folder["id"] for row in set_rows)
         assert any(row["target_entry"] == folder["id"] for row in del_rows)
+
+
+def test_geteilt_uebersicht_zeigt_ausgehende_acls():
+    with TestClient(main.app) as client:
+        admin = {"Authorization": f"Bearer {login(client)}"}
+        _alice_id, alice = _make_user(client, admin, "out-alice")
+        bob_id, bob = _make_user(client, admin, "out-bob")
+        group_id = client.post(
+            "/api/groups", headers=admin, json={"name": "out-group"}
+        ).json()["id"]
+        folder = client.post(
+            "/api/folders", headers=alice, json={"name": "geteilt"}
+        ).json()
+
+        assert client.put(
+            f"/api/entries/{folder['id']}/acl",
+            headers=alice,
+            json={
+                "principal_type": "user",
+                "principal_id": bob_id,
+                "permissions": ["read", "publish"],
+            },
+        ).status_code == 200
+        assert client.put(
+            f"/api/entries/{folder['id']}/acl",
+            headers=alice,
+            json={
+                "principal_type": "group",
+                "principal_id": group_id,
+                "permissions": ["read"],
+            },
+        ).status_code == 200
+
+        grants = client.get("/api/shared/outgoing", headers=alice).json()
+        assert len(grants) == 2
+        by_type = {g["principal_type"]: g for g in grants}
+        assert by_type["user"]["principal_name"] == "out-bob"
+        assert set(by_type["user"]["permission_names"]) == {"read", "publish"}
+        assert by_type["user"]["entry_path"] == "/geteilt"
+        assert by_type["group"]["principal_name"] == "out-group"
+
+        # Empfänger und Systemadmin sehen die ausgehende Übersicht nicht.
+        assert client.get("/api/shared/outgoing", headers=bob).json() == []
+        assert client.get("/api/shared/outgoing", headers=admin).json() == []
+
+        # Papierkorb-Einträge erscheinen nicht mehr.
+        assert client.delete(f"/api/entries/{folder['id']}", headers=alice).status_code == 204
+        assert client.get("/api/shared/outgoing", headers=alice).json() == []

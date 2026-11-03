@@ -197,6 +197,7 @@
       <div class="nav">
         <button class="btn small active" id="nav-files" onclick="showView('files')">📁 Dateien</button>
         <button class="btn small secondary" id="nav-shared" onclick="showView('shared')">📥 Mit mir geteilt</button>
+        <button class="btn small secondary" id="nav-shared-out" onclick="showView('shared-out')">🤝 Geteilt</button>
         <button class="btn small secondary" id="nav-published" onclick="showView('published')">📤 Meine Veröffentlichungen</button>
         <button class="btn small secondary" id="nav-shares" onclick="showView('shares')">🔗 Freigaben</button>
       </div>
@@ -363,6 +364,22 @@
         </div>
       </div>
 
+      <div id="shared-out-view" class="hidden">
+        <div class="toolbar">
+          <button class="btn secondary" onclick="loadSharedOut()">Aktualisieren</button>
+          <span class="muted" style="font-size:13px">Berechtigungen, die du auf deinen Einträgen vergeben hast.</span>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr><th>Ziel</th><th>Empfänger</th><th>Rechte</th><th></th></tr>
+            </thead>
+            <tbody id="shared-out-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="shared-out-empty">Du hast noch keine Berechtigungen vergeben.</div>
+        </div>
+      </div>
+
       <div id="published-view" class="hidden">
         <div class="toolbar">
           <button class="btn secondary" onclick="loadPublished()">Aktualisieren</button>
@@ -453,6 +470,7 @@
       sharesSelected: new Set(),
       shared: [],
       sharedPath: [],
+      sharedOut: [],
       published: [],
       publishedIds: new Set(),
       audit: [],
@@ -670,6 +688,7 @@
     function logout() {
       state.token = ""; state.me = null; state.root = null; state.cwdId = null;
       state.stack = []; state.entries = []; state.users = []; state.view = "files";
+      state.shared = []; state.sharedPath = []; state.sharedOut = [];
       sessionStorage.removeItem("ifs_token");
       document.getElementById("app").classList.add("hidden");
       document.getElementById("login").classList.remove("hidden");
@@ -1588,6 +1607,7 @@
       document.getElementById("users-view").classList.toggle("hidden", view !== "users");
       document.getElementById("shares-view").classList.toggle("hidden", view !== "shares");
       document.getElementById("shared-view").classList.toggle("hidden", view !== "shared");
+      document.getElementById("shared-out-view").classList.toggle("hidden", view !== "shared-out");
       document.getElementById("published-view").classList.toggle("hidden", view !== "published");
       document.getElementById("audit-view").classList.toggle("hidden", view !== "audit");
       document.getElementById("system-view").classList.toggle("hidden", view !== "system");
@@ -1596,6 +1616,8 @@
       if (navFiles) navFiles.className = "btn small" + (view === "files" ? " active" : " secondary");
       const navShared = document.getElementById("nav-shared");
       if (navShared) navShared.className = "btn small" + (view === "shared" ? " active" : " secondary");
+      const navSharedOut = document.getElementById("nav-shared-out");
+      if (navSharedOut) navSharedOut.className = "btn small" + (view === "shared-out" ? " active" : " secondary");
       const navPublished = document.getElementById("nav-published");
       if (navPublished) navPublished.className = "btn small" + (view === "published" ? " active" : " secondary");
       const navShares = document.getElementById("nav-shares");
@@ -1607,6 +1629,7 @@
       else if (view === "users") loadUsers();
       else if (view === "shares") loadShares();
       else if (view === "shared") loadShared();
+      else if (view === "shared-out") loadSharedOut();
       else if (view === "published") loadPublished();
       else if (view === "audit") loadAudit();
       else if (view === "system") loadSystem();
@@ -1620,6 +1643,7 @@
       else if (state.view === "users") loadUsers();
       else if (state.view === "shares") loadShares();
       else if (state.view === "shared") loadShared();
+      else if (state.view === "shared-out") loadSharedOut();
       else if (state.view === "published") loadPublished();
       else if (state.view === "audit") loadAudit();
       else if (state.view === "system") loadSystem();
@@ -2354,6 +2378,7 @@
         toast("Berechtigung gespeichert.", "ok");
         await Promise.all([entryAccessDialog(accessEntry), refreshMe()]);
         if (state.view === "files") load();
+        else if (state.view === "shared-out") loadSharedOut();
       } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -2363,6 +2388,7 @@
         toast("Entfernt.", "ok");
         await Promise.all([entryAccessDialog(accessEntry), refreshMe()]);
         if (state.view === "files") load();
+        else if (state.view === "shared-out") loadSharedOut();
       } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -2545,6 +2571,63 @@
     function sharedBack() {
       if (state.sharedPath.length > 0) state.sharedPath.pop();
       loadShared();
+    }
+
+    // ---------- Geteilt: ACL-Grants auf eigenen Einträgen ----------
+    async function loadSharedOut() {
+      try {
+        state.sharedOut = await apiJson(
+          "GET", "/api/shared/outgoing", undefined, { noCache: true },
+        );
+        renderSharedOut();
+      } catch (e) {
+        toast("Geteilt laden fehlgeschlagen: " + e.message, "err");
+      }
+    }
+
+    function renderSharedOut() {
+      const tbody = document.getElementById("shared-out-rows");
+      const items = state.sharedOut || [];
+      const frag = document.createDocumentFragment();
+      document.getElementById("shared-out-empty").classList.toggle("hidden", items.length > 0);
+      for (const grant of items) {
+        const tr = document.createElement("tr");
+
+        const tdTarget = document.createElement("td");
+        tdTarget.innerHTML = (grant.entry_type === "folder" ? "📁" : "📄") + " "
+          + esc(grant.entry_path || grant.entry_name);
+        tdTarget.title = grant.entry_path || "";
+        tr.appendChild(tdTarget);
+
+        const tdPrincipal = document.createElement("td");
+        const kind = grant.principal_type === "group" ? "Gruppe" : "Benutzer";
+        const principal = grant.principal_display_name
+          ? `${grant.principal_display_name} (${grant.principal_name})`
+          : (grant.principal_name || grant.principal_id);
+        tdPrincipal.textContent = kind + ": " + principal;
+        tr.appendChild(tdPrincipal);
+
+        const tdPerms = document.createElement("td");
+        tdPerms.innerHTML = (grant.permission_names || [])
+          .map(p => `<span class="chip">${esc(ENTRY_PERM_LABELS[p] || p)}</span>`)
+          .join("") || '<span class="muted">–</span>';
+        tr.appendChild(tdPerms);
+
+        const tdActions = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "row-actions";
+        wrap.appendChild(action("Verwalten", "secondary", () => entryAccessDialog({
+          id: grant.entry_id,
+          name: grant.entry_name,
+          type: grant.entry_type,
+          path: grant.entry_path,
+        })));
+        tdActions.appendChild(wrap);
+        tr.appendChild(tdActions);
+
+        frag.appendChild(tr);
+      }
+      tbody.replaceChildren(frag);
     }
 
     async function loadShares() {

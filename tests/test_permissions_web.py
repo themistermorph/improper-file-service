@@ -91,6 +91,23 @@ def test_benutzerdialog_verwaltet_audit_und_monitor():
     assert "refreshMe()" in submit
 
 
+def test_geteilt_ansicht_zeigt_ausgehende_acls():
+    source = _html()
+    assert 'id="nav-shared-out"' in source
+    assert "showView('shared-out')" in source
+    assert 'id="shared-out-rows"' in source
+
+    load = _function_block(source, "loadSharedOut")
+    assert '"/api/shared/outgoing"' in load
+
+    render = _function_block(source, "renderSharedOut")
+    assert "entryAccessDialog" in render
+    assert "ENTRY_PERM_LABELS" in render
+
+    show = _function_block(source, "showView")
+    assert 'view === "shared-out"' in show
+
+
 def test_geteilt_menue_verwaltet_bestehende_links():
     render = _function_block(_html(), "render")
     label = render.index('label: "Geteilt"')

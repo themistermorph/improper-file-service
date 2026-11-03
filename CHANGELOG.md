@@ -11,6 +11,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   bestehenden Freigabelinks eines Eintrags und erlaubt Kopieren, Bearbeiten,
   Widerrufen sowie „Neuer Link“. Sichtbar mit `share` am Eintrag; die
   Rechteprüfung bleibt serverseitig (`read` + `share`).
+- **„Geteilt“-Übersicht:** Ein neuer Navigationspunkt „Geteilt“ listet die
+  ACL-Grants auf den eigenen Einträgen (Ziel, Empfänger, Rechte) und öffnet
+  direkt den Zugriff-Dialog. Grundlage ist `GET /api/shared/outgoing`; die
+  Ansicht zeigt bewusst keine fremden Bäume.
 
 ## [0.1.8] – 2026-11-03
 

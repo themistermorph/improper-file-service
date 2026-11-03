@@ -15,6 +15,10 @@ Eintrag (der Besitzer hat es implizit).
 > **Bestehende Links verwalten:** Im Zeilenmenü (`…`) → **„Geteilt“** siehst du
 > alle aktiven Links eines Eintrags und kannst sie kopieren, bearbeiten oder
 > widerrufen – ohne den Umweg über „Zugriff“.
+>
+> **Übersichten:** Navigation **„Freigaben“** listet alle Links, Navigation
+> **„Geteilt“** listet ACL-Grants auf deinen eigenen Einträgen (Empfänger und
+> Rechte) und öffnet den Zugriff-Dialog.
 
 ---
 

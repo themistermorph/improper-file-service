@@ -295,6 +295,23 @@ class PrincipalOut(BaseModel):
     display_name: str | None = None
 
 
+class SharedGrantOut(BaseModel):
+    """Ausgehender ACL-Grant in der „Geteilt“-Übersicht."""
+
+    acl_id: UUID
+    entry_id: UUID
+    entry_name: str
+    entry_path: str
+    entry_type: EntryType
+    principal_type: PrincipalType
+    principal_id: UUID
+    principal_name: str | None = None
+    principal_display_name: str | None = None
+    perms: int
+    permission_names: list[str] = []
+    created_at: datetime
+
+
 class TrashEntryOut(BaseModel):
     id: UUID
     name: str

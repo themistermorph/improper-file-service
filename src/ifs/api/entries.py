@@ -18,6 +18,7 @@ from ..models import (
     Blob,
     Entry,
     EntryType,
+    Group,
     PrincipalType,
     RoleAssignment,
     User,
@@ -33,6 +34,7 @@ from .schemas import (
     EntryUpdate,
     FolderCreate,
     MoveRequest,
+    SharedGrantOut,
 )
 
 router = APIRouter(tags=["entries"])
@@ -251,6 +253,95 @@ def list_shared(
     paths = entry_paths(db, entries, parents)
     entries.sort(key=lambda entry: paths[entry.id].lower())
     return [to_entry_out(db, entry, path=paths[entry.id], user=user) for entry in entries]
+
+
+@router.get("/shared/outgoing", response_model=list[SharedGrantOut])
+def list_outgoing_shares(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[SharedGrantOut]:
+    """ACL-Grants, die auf den eigenen Einträgen vergeben wurden.
+
+    Grundlage der UI-Ansicht „Geteilt“: listet je Grant Ziel, Empfänger und
+    Rechte. Es werden nur aktive Einträge im Besitz des Benutzers gezeigt;
+    Systemadmins erhalten hier bewusst keinen Einblick in fremde Bäume.
+    """
+    rows = db.execute(
+        select(ACL, Entry)
+        .join(Entry, Entry.id == ACL.entry_id)
+        .where(Entry.owner_id == user.id, Entry.trashed_at.is_(None))
+        .order_by(Entry.name, ACL.created_at)
+    ).all()
+    if not rows:
+        return []
+
+    entries = {entry.id: entry for _acl, entry in rows}
+    paths = entry_paths(db, list(entries.values()))
+    user_ids = {
+        acl.principal_id
+        for acl, _entry in rows
+        if acl.principal_type == PrincipalType.user
+    }
+    group_ids = {
+        acl.principal_id
+        for acl, _entry in rows
+        if acl.principal_type == PrincipalType.group
+    }
+    users = {
+        item.id: item
+        for item in (
+            db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
+            if user_ids
+            else []
+        )
+    }
+    groups = {
+        item.id: item
+        for item in (
+            db.execute(select(Group).where(Group.id.in_(group_ids))).scalars().all()
+            if group_ids
+            else []
+        )
+    }
+
+    result: list[SharedGrantOut] = []
+    for acl, entry in rows:
+        if acl.principal_type == PrincipalType.user:
+            principal = users.get(acl.principal_id)
+            name = principal.username if principal is not None else None
+            display_name = principal.display_name if principal is not None else None
+        else:
+            principal = groups.get(acl.principal_id)
+            name = principal.name if principal is not None else None
+            display_name = None
+        entry_path = paths.get(entry.id)
+        if entry_path is None:
+            entry_path = namespace.path_of(db, entry)
+        result.append(
+            SharedGrantOut(
+                acl_id=acl.id,
+                entry_id=entry.id,
+                entry_name=entry.name,
+                entry_path=entry_path,
+                entry_type=entry.type,
+                principal_type=acl.principal_type,
+                principal_id=acl.principal_id,
+                principal_name=name,
+                principal_display_name=display_name,
+                perms=acl.perms,
+                permission_names=authz.names_from_perms(
+                    acl.perms, namespace="entry"
+                ),
+                created_at=acl.created_at,
+            )
+        )
+    result.sort(
+        key=lambda item: (
+            item.entry_path.lower(),
+            (item.principal_display_name or item.principal_name or "").lower(),
+        )
+    )
+    return result
 
 
 @router.get("/root", response_model=EntryOut)

@@ -152,7 +152,14 @@ Web-UI, um die Wurzel-ID zu ermitteln (z. B. für Uploads in die Wurzel).
 
 Listet Einträge, die dem Benutzer per ACL freigegeben sind
 (oberste Einstiegspunkte, ohne eigene Einträge) – Grundlage der UI-Ansicht
-„Mit mir geteilt".
+„Mit mir geteilt“.
+
+### `GET /api/shared/outgoing`
+
+Listet ACL-Grants auf aktiven Einträgen im Besitz des Benutzers (Grundlage der
+UI-Ansicht „Geteilt“). Jeder Eintrag enthält `entry_path`, `principal_type`,
+`principal_name`, `permission_names` und `acl_id`. Einträge im Papierkorb und
+fremde Bäume sind ausgeschlossen.
 
 ### `GET /api/folders`
 
