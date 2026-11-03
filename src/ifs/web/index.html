@@ -175,7 +175,6 @@
         <button onclick="showView('trash')">🗑 Papierkorb <span id="trash-badge" class="badge hidden"></span></button>
         <button onclick="showView('profile')">👤 Profil</button>
         <button id="menu-users" class="hidden" onclick="showView('users')">👥 Benutzer</button>
-        <button id="menu-roles" class="hidden" onclick="showView('roles')">🎭 Rollen</button>
         <button id="menu-system" class="hidden" onclick="showView('system')">📊 System</button>
         <button id="menu-audit" class="hidden" onclick="showView('audit')">🧾 Audit</button>
         <hr />
@@ -543,6 +542,33 @@
       document.getElementById("who").textContent =
         personName(me.display_name, me.username) + (me.is_admin ? " (Admin)" : "");
     }
+    // Menüs hängen an denselben Bedingungen wie die API: Adminrolle/Flag für
+    // Benutzerverwaltung, echte System-Grants für Audit und Monitor.
+    function applyAccountMenus(me) {
+      const info = me || {};
+      const systemPerms = new Set(info.permissions || []);
+      const menuUsers = document.getElementById("menu-users");
+      const menuSystem = document.getElementById("menu-system");
+      const menuAudit = document.getElementById("menu-audit");
+      if (!menuUsers || !menuSystem || !menuAudit) return;
+      menuUsers.classList.add("hidden");
+      menuSystem.classList.add("hidden");
+      menuAudit.classList.add("hidden");
+      if (info.is_admin) menuUsers.classList.remove("hidden");
+      if (info.is_admin || systemPerms.has("monitor")) {
+        menuSystem.classList.remove("hidden");
+      }
+      if (info.is_admin || systemPerms.has("audit")) {
+        menuAudit.classList.remove("hidden");
+      }
+    }
+    async function refreshMe() {
+      try {
+        state.me = await apiJson("GET", "/api/me", undefined, { noCache: true });
+        setWho();
+        applyAccountMenus(state.me);
+      } catch (e) { /* Menüs bleiben beim letzten gültigen Stand */ }
+    }
     // Entprellt häufige Eingaben (Suche/Filter), damit nicht jeder
     // Tastendruck sofort neu rendert bzw. lädt.
     function debounce(fn, wait) {
@@ -672,7 +698,6 @@
       document.getElementById("who").textContent = "";
       document.getElementById("account-btn").classList.add("hidden");
       document.getElementById("menu-users").classList.add("hidden");
-      document.getElementById("menu-roles").classList.add("hidden");
       document.getElementById("menu-system").classList.add("hidden");
       document.getElementById("menu-audit").classList.add("hidden");
       clearSystemTimer();
@@ -702,13 +727,8 @@
         ]);
         state.me = me;
         setWho();
+        applyAccountMenus(me);
         document.getElementById("account-btn").classList.remove("hidden");
-        if (me.is_admin) {
-          document.getElementById("menu-users").classList.remove("hidden");
-          document.getElementById("menu-roles").classList.remove("hidden");
-          document.getElementById("menu-system").classList.remove("hidden");
-          document.getElementById("menu-audit").classList.remove("hidden");
-        }
         state.root = root;
         state.cwdId = state.root.id;
         state.stack = [];
@@ -820,25 +840,33 @@
         wrap.className = "row-actions";
 
         const menuItems = [];
+        const entryPerms = new Set(e.permissions || []);
+        const can = (perm) => entryPerms.has(perm);
         if (e.type === "file" && previewKind(e) !== "none") {
           menuItems.push({ label: "Ansehen", handler: () => openPreview(e) });
         }
         if (e.type === "file") {
           menuItems.push({ label: "Versionen", handler: () => versionsDialog(e) });
         }
+        // Veröffentlichen prüft `publish`, Link prüft `share`, Zugriff prüft
+        // `admin` am Eintrag – exakt wie die jeweiligen Backend-Endpunkte.
         if (state.publishedIds.has(e.id)) {
-          menuItems.push({ label: "Nicht mehr veröffentlichen", handler: () => unpublishEntry(e) });
-        } else {
+          if (can("publish") || (state.me && state.me.is_admin)) {
+            menuItems.push({ label: "Nicht mehr veröffentlichen", handler: () => unpublishEntry(e) });
+          }
+        } else if (can("publish")) {
           menuItems.push({ label: "Veröffentlichen", handler: () => publishDialog(e) });
         }
-        menuItems.push({ label: "Link", handler: () => shareDialog(e) });
-        // Eigentümer-Verwaltung ist derzeit nur mit Systemadmin möglich:
-        // der Dialog nutzt admin-only Endpunkte (GET /api/roles, /api/users, /api/groups).
-        if (state.me && state.me.is_admin) {
+        if (can("share")) {
+          menuItems.push({ label: "Link", handler: () => shareDialog(e) });
+        }
+        if (can("admin")) {
           menuItems.push({ label: "Zugriff", handler: () => entryAccessDialog(e) });
         }
-        menuItems.push({ label: "Verschieben", handler: () => moveEntryDialog(e) });
-        menuItems.push({ label: "Umbenennen", handler: () => rename(e) });
+        if (can("write")) {
+          menuItems.push({ label: "Verschieben", handler: () => moveEntryDialog(e) });
+          menuItems.push({ label: "Umbenennen", handler: () => rename(e) });
+        }
 
         const more = document.createElement("button");
         more.className = "btn small secondary";
@@ -849,7 +877,9 @@
 
         if (e.type === "file") wrap.appendChild(action("Download", "secondary", () => download(e)));
         else wrap.appendChild(action("Download (.zip)", "secondary", () => downloadZip(e)));
-        wrap.appendChild(action("Löschen", "danger", () => removeEntry(e)));
+        if (can("delete")) {
+          wrap.appendChild(action("Löschen", "danger", () => removeEntry(e)));
+        }
         tdActions.appendChild(wrap);
         tr.appendChild(tdActions);
 
@@ -1985,12 +2015,25 @@
       } catch (e) { toast("Anlegen fehlgeschlagen: " + e.message, "err"); }
     }
 
-    function userEditDialog(u) {
+    async function userEditDialog(u) {
+      let systemPerms = [];
+      try {
+        const data = await apiJson(
+          "GET", "/api/users/" + u.id + "/permissions", undefined, { noCache: true },
+        );
+        systemPerms = data.permission_names || [];
+      } catch (e) { /* Fallback: keine Systemrechte anzeigen */ }
+      const hasPerm = (name) => systemPerms.includes(name);
       openModal(`
         <h2>Benutzer bearbeiten – ${esc(personName(u.display_name, u.username))}</h2>
         <div class="field"><label>Anzeigename</label><input id="eu-display" value="${esc(u.display_name || "")}" /></div>
         <div class="field"><label>E-Mail</label><input id="eu-email" value="${esc(u.email || "")}" /></div>
         <label class="checkline"><input type="checkbox" id="eu-admin" ${u.is_admin ? "checked" : ""} /> Administrator</label>
+        <fieldset style="border:0;padding:0;margin:8px 0">
+          <legend class="muted" style="font-size:13px">Systemberechtigungen</legend>
+          <label class="checkline"><input type="checkbox" id="eu-audit" ${hasPerm("audit") ? "checked" : ""} /> Audit-Log lesen</label>
+          <label class="checkline"><input type="checkbox" id="eu-monitor" ${hasPerm("monitor") ? "checked" : ""} /> Systemmonitor</label>
+        </fieldset>
         <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
         <button class="btn" onclick="submitUserEdit('${u.id}')">Speichern</button></div>`);
     }
@@ -2001,11 +2044,18 @@
         email: document.getElementById("eu-email").value.trim(),
         is_admin: document.getElementById("eu-admin").checked,
       };
+      const systemPerms = [];
+      if (document.getElementById("eu-audit").checked) systemPerms.push("audit");
+      if (document.getElementById("eu-monitor").checked) systemPerms.push("monitor");
       try {
         await apiJson("PATCH", "/api/users/" + id, body);
+        await apiJson("PUT", "/api/users/" + id + "/permissions", {
+          permissions: systemPerms,
+        });
         closeModal();
         toast("Gespeichert.", "ok");
         loadUsers();
+        refreshMe();
       } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -2346,24 +2396,51 @@
       } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
     }
 
-    // --- Zugriff auf einen Eintrag (Ressourcenrollen) ---
+    // --- Zugriff auf einen Eintrag (ACL-Grants) ---
+    const ENTRY_PERM_LABELS = {
+      read: "lesen",
+      write: "schreiben",
+      delete: "löschen",
+      share: "teilen (Link)",
+      publish: "veröffentlichen",
+      admin: "Zugriff verwalten",
+    };
+    const ENTRY_PERMS = ["read", "write", "delete", "share", "publish", "admin"];
     let accessShares = [];
+    let accessPrincipals = [];
+
+    function entryPermCheckboxes(selected) {
+      const chosen = new Set(selected || []);
+      return ENTRY_PERMS.map(p =>
+        `<label class="checkline"><input type="checkbox" class="entry-perm" value="${p}" ${chosen.has(p) ? "checked" : ""} /> ${ENTRY_PERM_LABELS[p]}</label>`
+      ).join("");
+    }
+
+    function selectedEntryPerms() {
+      return [...document.querySelectorAll("input.entry-perm:checked")].map(el => el.value);
+    }
 
     async function entryAccessDialog(entry) {
       accessEntry = entry;
       try {
-        const [assignments, allRoles, shares] = await Promise.all([
-          apiJson("GET", "/api/entries/" + entry.id + "/roles"),
-          apiJson("GET", "/api/roles?scope=resource"),
-          apiJson("GET", "/api/shares?entry_id=" + entry.id),
+        const [acls, shares] = await Promise.all([
+          apiJson("GET", "/api/entries/" + entry.id + "/acl", undefined, { noCache: true }),
+          apiJson("GET", "/api/shares?entry_id=" + entry.id, undefined, { noCache: true }),
         ]);
         accessShares = shares;
-        const list = assignments.length
-          ? assignments.map(a =>
-              `<div class="checkline"><span class="grow">${esc(a.role_name || a.role_id)} – ${esc(principalLabel(a))}</span>` +
-              `<button class="btn small danger" onclick="removeEntryAssignment('${a.id}')">Entfernen</button></div>`
-            ).join("")
-          : '<p class="muted">Keine Rollen zugewiesen.</p>';
+        const list = acls.length
+          ? acls.map(a => {
+              const kind = a.principal_type === "group" ? "Gruppe" : "Benutzer";
+              const who = a.principal_display_name
+                ? `${a.principal_display_name} (${a.principal_name})`
+                : (a.principal_name || a.principal_id);
+              const chips = (a.permission_names || [])
+                .map(p => `<span class="chip">${esc(ENTRY_PERM_LABELS[p] || p)}</span>`)
+                .join("");
+              return `<div class="checkline"><span class="grow">${esc(kind)}: ${esc(who)} ${chips}</span>` +
+                `<button class="btn small danger" onclick="removeEntryAcl('${a.id}')">Entfernen</button></div>`;
+            }).join("")
+          : '<p class="muted">Keine Berechtigungen vergeben.</p>';
         const links = shares.length
           ? shares.map(s =>
               `<div class="checkline"><span class="grow">${shareLink(s)}` +
@@ -2373,27 +2450,48 @@
               `<button class="btn small danger" onclick="revokeAccessLink('${s.token}')">Widerrufen</button></div>`
             ).join("")
           : '<p class="muted">Keine Links vorhanden.</p>';
-        const roleOptions = allRoles.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
         openModal(`
           <h2>Zugriff – ${esc(entry.name)}</h2>
           ${list}
           <hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
-          <h3 style="margin:0 0 8px">Rolle zuweisen</h3>
-          <div class="field"><label>Rolle</label><select id="ea-role">${roleOptions}</select></div>
+          <h3 style="margin:0 0 8px">Berechtigung zuweisen</h3>
           <div class="field"><label>Typ</label>
-            <select id="ea-type" onchange="fillPrincipals('ea-principal','ea-type')">
+            <select id="ea-type" onchange="loadAccessPrincipals()">
               <option value="user">Benutzer</option><option value="group">Gruppe</option>
             </select></div>
-          <div class="field"><label>Empfänger</label><select id="ea-principal"></select></div>
-          <button class="btn" onclick="submitEntryAccess()">Zuweisen</button>
+          <div class="field"><label>Empfänger suchen</label>
+            <input id="ea-q" type="text" placeholder="Benutzername oder Gruppe…" oninput="scheduleLoadAccessPrincipals()" /></div>
+          <div class="field"><label>Benutzer/Gruppe</label><select id="ea-principal"></select></div>
+          <div class="field"><label>Rechte</label>${entryPermCheckboxes([])}</div>
+          <button class="btn" onclick="submitEntryAccess()">Speichern</button>
           <hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
           <h3 style="margin:0 0 8px">Links</h3>
           ${links}
           <button class="btn secondary" onclick="shareDialog(accessEntry)">＋ Neuer Link</button>
           <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
-        fillPrincipals("ea-principal", "ea-type");
+        loadAccessPrincipals();
       } catch (e) { toast("Zugriff laden fehlgeschlagen: " + e.message, "err"); }
     }
+
+    async function loadAccessPrincipals() {
+      const typeEl = document.getElementById("ea-type");
+      const select = document.getElementById("ea-principal");
+      if (!typeEl || !select || !accessEntry) return;
+      const type = typeEl.value;
+      const q = (document.getElementById("ea-q")?.value || "").trim();
+      select.innerHTML = "";
+      try {
+        const query = "?entry_id=" + accessEntry.id + (q ? "&q=" + encodeURIComponent(q) : "");
+        accessPrincipals = await apiJson("GET", "/api/principals" + query, undefined, { noCache: true });
+        for (const p of accessPrincipals.filter(item => item.type === type)) {
+          select.appendChild(new Option(
+            p.display_name ? `${p.display_name} (${p.name})` : p.name, p.id,
+          ));
+        }
+        if (!select.options.length) select.appendChild(new Option("– keine Treffer –", ""));
+      } catch (e) { /* z. B. bei fehlendem Zugriff */ }
+    }
+    const scheduleLoadAccessPrincipals = debounce(loadAccessPrincipals, 200);
 
     function copyAccessLink(token) {
       const share = accessShares.find(s => s.token === token);
@@ -2411,24 +2509,27 @@
     }
 
     async function submitEntryAccess() {
-      const role = document.getElementById("ea-role").value;
       const type = document.getElementById("ea-type").value;
       const principal = document.getElementById("ea-principal").value;
-      if (!role || !principal) { toast("Rolle und Empfänger wählen.", "err"); return; }
+      const perms = selectedEntryPerms();
+      if (!principal) { toast("Bitte einen Empfänger wählen.", "err"); return; }
+      if (!perms.length) { toast("Mindestens ein Recht wählen.", "err"); return; }
       try {
-        await apiJson("POST", "/api/entries/" + accessEntry.id + "/roles", {
-          role_id: role, principal_type: type, principal_id: principal,
+        await apiJson("PUT", "/api/entries/" + accessEntry.id + "/acl", {
+          principal_type: type, principal_id: principal, permissions: perms,
         });
-        toast("Zugewiesen.", "ok");
-        entryAccessDialog(accessEntry);
-      } catch (e) { toast("Zuweisen fehlgeschlagen: " + e.message, "err"); }
+        toast("Berechtigung gespeichert.", "ok");
+        await Promise.all([entryAccessDialog(accessEntry), refreshMe()]);
+        if (state.view === "files") load();
+      } catch (e) { toast("Speichern fehlgeschlagen: " + e.message, "err"); }
     }
 
-    async function removeEntryAssignment(assignmentId) {
+    async function removeEntryAcl(aclId) {
       try {
-        await api("DELETE", "/api/entries/" + accessEntry.id + "/roles/" + assignmentId);
+        await api("DELETE", "/api/entries/" + accessEntry.id + "/acl/" + aclId);
         toast("Entfernt.", "ok");
-        entryAccessDialog(accessEntry);
+        await Promise.all([entryAccessDialog(accessEntry), refreshMe()]);
+        if (state.view === "files") load();
       } catch (e) { toast("Entfernen fehlgeschlagen: " + e.message, "err"); }
     }
 

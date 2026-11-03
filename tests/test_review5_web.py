@@ -63,11 +63,11 @@ def test_change_my_password_uses_api_json():
 
 # --- 2) „Zugriff“-Dialog nur für Admins (admin-only Endpunkte) ---
 
-def test_access_menu_item_is_admin_only():
+def test_access_menu_item_is_entry_admin_only():
     source = _html()
-    guard = source.index("state.me && state.me.is_admin")
+    guard = source.index('if (can("admin"))')
     item = source.index('label: "Zugriff"')
-    assert 0 < item - guard < 300, "Menüpunkt „Zugriff“ ist nicht an is_admin gekoppelt"
+    assert 0 < item - guard < 120, "Menüpunkt „Zugriff“ ist nicht an Entry-admin gekoppelt"
 
 
 # --- 3) logout(): Zustand, ZIP-Poll und Modal aufräumen ---
