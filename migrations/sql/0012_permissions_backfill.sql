@@ -15,6 +15,8 @@
 --
 -- Idempotent: Upserts (ON CONFLICT) bzw. NOT EXISTS verhindern Duplikate.
 
+BEGIN;
+
 -- Adminrolle sicherstellen und auf alle (neuen) Bits setzen.
 INSERT INTO roles (id, name, description, permissions, scope, is_builtin, created_at)
 SELECT gen_random_uuid(), 'admin', 'Vollzugriff (systemweit)', 255, 'system', true, now()
@@ -102,3 +104,5 @@ UPDATE acl
 SET perms = perms | 32
 WHERE (perms & 8) <> 0
   AND (perms & 32) = 0;
+
+COMMIT;

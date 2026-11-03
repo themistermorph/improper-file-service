@@ -9,6 +9,8 @@
 --
 -- Idempotent: kann mehrfach angewendet werden.
 
+BEGIN;
+
 -- Adminrolle sicherstellen und auf alle Bits setzen.
 INSERT INTO roles (id, name, description, permissions, scope, is_builtin, created_at)
 SELECT gen_random_uuid(), 'admin', 'Vollzugriff (systemweit)', 255, 'system', true, now()
@@ -38,3 +40,5 @@ WHERE u.is_admin = true
         AND a.principal_id = u.id
         AND a.entry_id IS NULL
   );
+
+COMMIT;

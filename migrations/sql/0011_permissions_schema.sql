@@ -12,6 +12,8 @@
 -- Idempotent: kann mehrfach angewendet werden. Neue Installationen erhalten
 -- Tabelle und Index automatisch über create_all.
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS system_permissions (
     id             uuid PRIMARY KEY,
     principal_type varchar(16) NOT NULL,   -- user|group
@@ -54,3 +56,5 @@ DROP TABLE _acl_dedup;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_acl_entry_principal
     ON acl (entry_id, principal_type, principal_id);
+
+COMMIT;
