@@ -1,6 +1,6 @@
-"""Kontoverwaltung: Benutzer anlegen/bearbeiten, Passwörter, Deaktivieren, Gruppen.
+﻿"""Kontoverwaltung: Benutzer anlegen/bearbeiten, PasswÃ¶rter, Deaktivieren, Gruppen.
 
-Protokollunabhängiger Kern – von HTTP-API und (später) CLI nutzbar.
+ProtokollunabhÃ¤ngiger Kern â€“ von HTTP-API und (spÃ¤ter) CLI nutzbar.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def validate_password(password: str) -> None:
 
 def get_user(db: Session, user_id: UUID) -> User:
     # Gruppen erst bei Zugriff laden: Die meisten Aufrufer brauchen sie nicht,
-    # das spart pro Aufruf eine zusätzliche Abfrage (Daten bleiben unverändert).
+    # das spart pro Aufruf eine zusÃ¤tzliche Abfrage (Daten bleiben unverÃ¤ndert).
     user = db.get(User, user_id, options=[lazyload(User.groups)])
     if user is None:
         raise NotFound("Benutzer nicht gefunden")
@@ -72,7 +72,7 @@ def list_users(
         stmt = stmt.where(User.is_admin.is_(admin))
 
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-    # Die Listendarstellung enthält keine Gruppen: bewusst nicht mitladen.
+    # Die Listendarstellung enthÃ¤lt keine Gruppen: bewusst nicht mitladen.
     rows = (
         db.execute(
             stmt.order_by(User.username).limit(limit).offset(offset)
@@ -84,13 +84,13 @@ def list_users(
     return list(rows), int(total)
 
 
-def _sync_admin_role_assignment(db: Session, user: User, enabled: bool) -> None:
-    """Hält die Adminrolle synchron zum Bootstrap-Flag.
+def sync_admin_role_assignment(db: Session, user: User, enabled: bool) -> None:
+    """HÃ¤lt die Adminrolle synchron zum Bootstrap-Flag.
 
     Die Adminrolle ist nach der Umstellung die einzige systemweite Rolle. Das
-    Flag bleibt für Bootstrap/Abwärtskompatibilität bestehen; UI und API lesen
+    Flag bleibt fÃ¼r Bootstrap/AbwÃ¤rtskompatibilitÃ¤t bestehen; UI und API lesen
     effektiv beides. Fehlt die Rolle (z. B. in einem Unit-Test ohne Startup),
-    bleibt nur das Flag – die Autorisierung funktioniert weiterhin.
+    bleibt nur das Flag â€“ die Autorisierung funktioniert weiterhin.
     """
     role = db.execute(select(Role).where(Role.name == "admin")).scalars().first()
     if role is None:
@@ -146,7 +146,7 @@ def create_user(
     db.add(user)
     db.flush()
     if is_admin:
-        _sync_admin_role_assignment(db, user, True)
+        sync_admin_role_assignment(db, user, True)
     namespace.ensure_root(db, user.id)
     return user
 
@@ -183,7 +183,7 @@ def update_user(
             _ensure_not_last_active_admin(db, user)
         user.is_admin = is_admin
         user.token_version += 1
-        _sync_admin_role_assignment(db, user, is_admin)
+        sync_admin_role_assignment(db, user, is_admin)
     db.flush()
     return user
 
@@ -207,19 +207,19 @@ def change_password(db: Session, user: User, current_password: str, new_password
 
 
 def principal_exists(db: Session, principal_type: PrincipalType, principal_id: UUID) -> bool:
-    # Reine Existenzprüfung: Mitglieder bzw. Gruppen nicht mitladen.
+    # Reine ExistenzprÃ¼fung: Mitglieder bzw. Gruppen nicht mitladen.
     if principal_type == PrincipalType.group:
         return db.get(Group, principal_id, options=[lazyload(Group.members)]) is not None
     return db.get(User, principal_id, options=[lazyload(User.groups)]) is not None
 
 
 def _revoke_created_shares(db: Session, user: User) -> None:
-    # Sammel-DELETE statt Zeile für Zeile (eine Abfrage statt SELECT + N DELETE).
+    # Sammel-DELETE statt Zeile fÃ¼r Zeile (eine Abfrage statt SELECT + N DELETE).
     db.execute(delete(Share).where(Share.created_by == user.id))
 
 
 def _revoke_created_publications(db: Session, user: User) -> None:
-    # Deaktivierte/gelöschte Konten dürfen keine öffentlichen Dateien mehr zeigen.
+    # Deaktivierte/gelÃ¶schte Konten dÃ¼rfen keine Ã¶ffentlichen Dateien mehr zeigen.
     db.execute(delete(PublishedEntry).where(PublishedEntry.published_by == user.id))
 
 
@@ -227,7 +227,7 @@ def deactivate_user(db: Session, user: User) -> None:
     _ensure_not_last_active_admin(db, user)
     user.is_active = False
     user.token_version += 1
-    # Freigaben und Veröffentlichungen eines deaktivierten Kontos dürfen nicht
+    # Freigaben und VerÃ¶ffentlichungen eines deaktivierten Kontos dÃ¼rfen nicht
     # weiterleben.
     _revoke_created_shares(db, user)
     _revoke_created_publications(db, user)
@@ -271,7 +271,7 @@ def delete_user(db: Session, user: User, transfer_to: User | None = None) -> Non
 
     root = namespace.get_root(db, user.id)
     children = namespace.list_children(db, root) if root is not None else []
-    # Einträge des Benutzers (außer der Wurzel selbst) – z. B. auch in fremden,
+    # EintrÃ¤ge des Benutzers (auÃŸer der Wurzel selbst) â€“ z. B. auch in fremden,
     # freigegebenen Ordnern oder im eigenen Baum.
     owned = db.execute(
         select(Entry).where(
@@ -282,15 +282,15 @@ def delete_user(db: Session, user: User, transfer_to: User | None = None) -> Non
 
     if (children or owned) and transfer_to is None:
         raise Conflict(
-            "Benutzer besitzt noch Einträge – Zielbenutzer über 'transfer_to' angeben"
+            "Benutzer besitzt noch EintrÃ¤ge â€“ Zielbenutzer Ã¼ber 'transfer_to' angeben"
         )
     if transfer_to is not None:
         if transfer_to.id == user.id:
-            raise BadRequest("Besitz kann nicht an denselben Benutzer übertragen werden")
+            raise BadRequest("Besitz kann nicht an denselben Benutzer Ã¼bertragen werden")
         if not transfer_to.is_active:
             raise BadRequest("Zielbenutzer ist nicht aktiv")
 
-        # Besitz aller Einträge auf den Zielbenutzer umschreiben.
+        # Besitz aller EintrÃ¤ge auf den Zielbenutzer umschreiben.
         for entry in owned:
             entry.owner_id = transfer_to.id
         db.flush()
@@ -327,3 +327,4 @@ def remove_from_group(db: Session, user: User, group: Group) -> None:
     if group in user.groups:
         user.groups.remove(group)
         db.flush()
+

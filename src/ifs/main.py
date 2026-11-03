@@ -18,7 +18,7 @@ from .api import system
 from .api.deps import get_db, is_secure_request
 from .api.router import api_router
 from .config import get_settings
-from .core import content, namespace, roles
+from .core import accounts, content, namespace, roles
 from .db import create_all, session_scope
 from .errors import IFSError
 from .models import Entry, PublishedEntry, User
@@ -119,6 +119,11 @@ async def lifespan(app: FastAPI):
     seed_initial_data()
     with session_scope() as db:
         roles.ensure_builtin_roles(db)
+        # Bootstrap-Flag und Adminrolle synchron halten (idempotent).
+        for admin_user in db.execute(
+            select(User).where(User.is_admin.is_(True))
+        ).scalars().all():
+            accounts.sync_admin_role_assignment(db, admin_user, True)
     try:
         content.ensure_bucket()
     except Exception as exc:  # pragma: no cover - Start soll nicht hart scheitern

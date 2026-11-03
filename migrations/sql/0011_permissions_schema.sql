@@ -25,7 +25,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_system_permissions_principal
 
 -- Vor dem Unique-Index vorhandene Duplikate zusammenführen (Bit-OR). Das ist
 -- wichtig für Produktionsdaten, die vor der Umstellung mehrere ACL-Zeilen für
--- denselben Principal/Eintrag enthalten können.
+-- denselben Principal/Eintrag enthalten können. Die Tabellensperre verhindert
+-- konkurrierende Inserts zwischen Dedupe und Index-Erstellung.
+LOCK TABLE acl IN SHARE ROW EXCLUSIVE MODE;
+
 DROP TABLE IF EXISTS _acl_dedup;
 CREATE TEMP TABLE _acl_dedup AS
 SELECT entry_id,
