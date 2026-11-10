@@ -6,7 +6,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-Keine Änderungen seit v0.1.9.
+### Fixed
+- **Favicon-/Apple-Touch-Icon-Anfragen:** `/favicon.ico` und die üblichen
+  `apple-touch-icon*.png`-Varianten (inkl. `-precomposed`) antworten mit einem
+  leeren **`204 No Content`** statt `404`; andere Pfade bleiben `404`.
 
 ## [0.1.9] – 2026-11-03
 

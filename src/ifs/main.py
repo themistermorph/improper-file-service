@@ -6,7 +6,7 @@ import logging
 import pathlib
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
@@ -169,6 +169,21 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
     app.include_router(system.router)
+
+    # Browser fragen unabhängig vom Inhalt nach Favicon/Apple-Touch-Icons.
+    # Ein leerer 204 verhindert 404-Rauschen in Logs und unnötige Fehlerbilder.
+    @app.get("/favicon.ico", include_in_schema=False)
+    @app.head("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/apple-touch-icon{rest:path}", include_in_schema=False)
+    @app.head("/apple-touch-icon{rest:path}", include_in_schema=False)
+    async def apple_touch_icon(rest: str) -> Response:
+        # Nur echte Icon-Varianten (…png) beantworten; andere Pfade bleiben 404.
+        if not rest.endswith(".png"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     web_dir = pathlib.Path(__file__).parent / "web"
     if web_dir.exists():
