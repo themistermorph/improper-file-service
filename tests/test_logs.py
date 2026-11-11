@@ -81,3 +81,25 @@ def test_logs_panel_ist_im_adminmenue_und_auto_refresh():
     sync = _function_block(page, "syncLogsTimer")
     assert 'state.view !== "logs"' in sync
     assert "setInterval(loadLogs" in sync
+
+
+def test_log_panel_zugriffe_erzeugen_keine_eigenen_access_logs():
+    import logging
+
+    from ifs.cli import _SuppressLogsAccessFilter
+
+    def record(path: str) -> logging.LogRecord:
+        return logging.LogRecord(
+            "uvicorn.access",
+            logging.INFO,
+            __file__,
+            0,
+            "%s - \"%s %s HTTP/%s\" %s",
+            ("127.0.0.1:1", "GET", path, "1.1", 200),
+            None,
+        )
+
+    log_filter = _SuppressLogsAccessFilter()
+    assert log_filter.filter(record("/api/logs/api?lines=200")) is False
+    assert log_filter.filter(record("/api/logs")) is False
+    assert log_filter.filter(record("/api/entries")) is True

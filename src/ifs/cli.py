@@ -39,6 +39,18 @@ class _TokenRedactionFilter(logging.Filter):
         return True
 
 
+class _SuppressLogsAccessFilter(logging.Filter):
+    """Blendet Zugriffe des Log-Panels selbst aus (kein Selbst-Rauschen)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3:
+            path = args[2]
+            if isinstance(path, str) and path.startswith("/api/logs"):
+                return False
+        return True
+
+
 def _configure_logging(role: str | None = None) -> None:
     settings = get_settings()
     log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -48,6 +60,7 @@ def _configure_logging(role: str | None = None) -> None:
     )
     # Access-Logs: Tokens in URLs unkenntlich machen.
     logging.getLogger("uvicorn.access").addFilter(_TokenRedactionFilter())
+    logging.getLogger("uvicorn.access").addFilter(_SuppressLogsAccessFilter())
 
     if not role:
         return
