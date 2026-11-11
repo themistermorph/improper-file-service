@@ -84,9 +84,10 @@ def test_visibilitychange_stops_background_timers():
     source = _html()
     assert 'document.addEventListener("visibilitychange"' in source
     idx = source.index('document.addEventListener("visibilitychange"')
-    handler = source[idx:idx + 700]
+    handler = source[idx:idx + 900]
     assert 'document.visibilityState === "hidden"' in handler
     assert "clearSystemTimer()" in handler
+    assert "clearLogsTimer()" in handler
     assert "clearArchivePoll()" in handler
     # Beim Zurückkehren wird der ZIP-Poll wieder aufgenommen.
     assert "startArchivePoll()" in handler
@@ -94,12 +95,17 @@ def test_visibilitychange_stops_background_timers():
 
 def test_all_intervals_have_visibility_checks():
     source = _html()
-    assert source.count("setInterval(") == 2, "unerwartete setInterval-Aufrufe"
+    assert source.count("setInterval(") == 3, "unerwartete setInterval-Aufrufe"
 
     system = _function_block(source, "syncSystemTimer")
     assert "document.visibilityState" in system
     assert 'state.view !== "system"' in system
     assert "setInterval(loadSystem" in system
+
+    logs = _function_block(source, "syncLogsTimer")
+    assert "document.visibilityState" in logs
+    assert 'state.view !== "logs"' in logs
+    assert "setInterval(loadLogs" in logs
 
     archive = _function_block(source, "startArchivePoll")
     assert "document.visibilityState" in archive
@@ -241,6 +247,6 @@ def test_cards_scroll_horizontal():
 def test_key_dom_ids_are_preserved():
     source = _html()
     for element_id in ("entries", "trash-entries", "user-rows", "share-rows",
-                       "shared-rows", "audit-rows", "system-cards", "search", "user-q",
-                       "audit-q", "bulkbar", "toasts", "modal-root"):
+                       "shared-rows", "audit-rows", "system-cards", "log-output",
+                       "search", "user-q", "audit-q", "bulkbar", "toasts", "modal-root"):
         assert f'id="{element_id}"' in source, f"ID {element_id} fehlt"

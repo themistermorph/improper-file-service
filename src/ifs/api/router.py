@@ -8,6 +8,7 @@ from . import (
     auth,
     bulk,
     entries,
+    logs,
     monitor,
     preview,
     published,
@@ -34,3 +35,4 @@ api_router.include_router(shares.router)
 api_router.include_router(published.router)
 api_router.include_router(admin.router)
 api_router.include_router(monitor.router)
+api_router.include_router(logs.router)

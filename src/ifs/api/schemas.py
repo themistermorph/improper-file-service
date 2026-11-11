@@ -464,5 +464,17 @@ class BulkTokenResult(BaseModel):
     failed: list[str] = []
 
 
+class LogServiceOut(BaseModel):
+    service: str
+    available: bool
+    size: int
+    updated_at: datetime | None = None
+
+
+class LogOut(LogServiceOut):
+    lines: list[str] = []
+    truncated: bool = False
+
+
 class BulkPurgeResult(BulkResult):
     files: int = 0

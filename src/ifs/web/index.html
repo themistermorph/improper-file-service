@@ -151,6 +151,13 @@
     .modal .field label { font-size: 13px; color: var(--muted); }
     .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
     .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 14px; }
+    .logbox {
+      margin: 0; padding: 14px 16px; min-height: 320px; max-height: 65vh;
+      overflow: auto; background: #0b0e13; color: #dbe3ee;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px; line-height: 1.45; white-space: pre-wrap;
+      word-break: break-word; border-radius: var(--radius);
+    }
     .kv div { overflow-wrap: anywhere; }
     .kv .k { color: var(--muted); }
     .linkbox { display: flex; gap: 8px; }
@@ -182,6 +189,7 @@
         <button id="menu-users" class="hidden" onclick="showView('users')">👥 Benutzer</button>
         <button id="menu-system" class="hidden" onclick="showView('system')">📊 System</button>
         <button id="menu-audit" class="hidden" onclick="showView('audit')">🧾 Audit</button>
+        <button id="menu-logs" class="hidden" onclick="showView('logs')">📜 Logs</button>
         <hr />
         <button class="danger" onclick="logout()">Abmelden</button>
       </div>
@@ -434,6 +442,31 @@
         <div class="grid" id="system-cards"></div>
       </div>
 
+      <div id="logs-view" class="hidden">
+        <div class="toolbar">
+          <select id="log-service" onchange="loadLogs()">
+            <option value="api">API</option>
+            <option value="ftp">FTPS</option>
+            <option value="worker">Worker</option>
+          </select>
+          <select id="log-lines" onchange="loadLogs()">
+            <option value="100">100 Zeilen</option>
+            <option value="200" selected>200 Zeilen</option>
+            <option value="500">500 Zeilen</option>
+            <option value="1000">1000 Zeilen</option>
+          </select>
+          <button class="btn secondary" onclick="loadLogs()">Aktualisieren</button>
+          <label class="checkline" style="margin:0">
+            <input type="checkbox" id="log-follow" checked onchange="syncLogsTimer()" />
+            Automatisch
+          </label>
+          <span class="muted" id="log-status" style="font-size:12px"></span>
+        </div>
+        <div class="card" style="padding:0">
+          <pre id="log-output" class="logbox"></pre>
+        </div>
+      </div>
+
       <div id="profile-view" class="hidden">
         <div class="card" style="padding:20px">
           <h2 style="margin-top:0">Mein Profil</h2>
@@ -482,6 +515,8 @@
       audit: [],
       system: null,
       systemTimer: null,
+      logs: [],
+      logTimer: null,
       view: "files",
       filter: "",
       sort: { key: "name", dir: 1 },
@@ -552,11 +587,16 @@
       const menuUsers = document.getElementById("menu-users");
       const menuSystem = document.getElementById("menu-system");
       const menuAudit = document.getElementById("menu-audit");
-      if (!menuUsers || !menuSystem || !menuAudit) return;
+      const menuLogs = document.getElementById("menu-logs");
+      if (!menuUsers || !menuSystem || !menuAudit || !menuLogs) return;
       menuUsers.classList.add("hidden");
       menuSystem.classList.add("hidden");
       menuAudit.classList.add("hidden");
-      if (info.is_admin) menuUsers.classList.remove("hidden");
+      menuLogs.classList.add("hidden");
+      if (info.is_admin) {
+        menuUsers.classList.remove("hidden");
+        menuLogs.classList.remove("hidden");
+      }
       if (info.is_admin || systemPerms.has("monitor")) {
         menuSystem.classList.remove("hidden");
       }
@@ -703,7 +743,10 @@
       document.getElementById("menu-users").classList.add("hidden");
       document.getElementById("menu-system").classList.add("hidden");
       document.getElementById("menu-audit").classList.add("hidden");
+      document.getElementById("menu-logs").classList.add("hidden");
       clearSystemTimer();
+      clearLogsTimer();
+      state.logs = [];
       closeAccountMenu();
       closeRowMenu();
       // Laufende Navigation abbrechen und GET-Cache verwerfen, damit nach
@@ -1628,6 +1671,7 @@
       document.getElementById("published-view").classList.toggle("hidden", view !== "published");
       document.getElementById("audit-view").classList.toggle("hidden", view !== "audit");
       document.getElementById("system-view").classList.toggle("hidden", view !== "system");
+      document.getElementById("logs-view").classList.toggle("hidden", view !== "logs");
       document.getElementById("profile-view").classList.toggle("hidden", view !== "profile");
       const navFiles = document.getElementById("nav-files");
       if (navFiles) navFiles.className = "btn small" + (view === "files" ? " active" : " secondary");
@@ -1642,6 +1686,7 @@
       closeAccountMenu();
       closeRowMenu();
       if (view !== "system") clearSystemTimer();
+      if (view !== "logs") clearLogsTimer();
       if (view === "trash") loadTrash();
       else if (view === "users") loadUsers();
       else if (view === "shares") loadShares();
@@ -1650,6 +1695,7 @@
       else if (view === "published") loadPublished();
       else if (view === "audit") loadAudit();
       else if (view === "system") loadSystem();
+      else if (view === "logs") { loadLogs(); syncLogsTimer(); }
       else if (view === "profile") loadProfile();
       else load();
     }
@@ -1665,6 +1711,7 @@
       else if (state.view === "published") loadPublished();
       else if (state.view === "audit") loadAudit();
       else if (state.view === "system") loadSystem();
+      else if (state.view === "logs") loadLogs();
       else if (state.view === "profile") loadProfile();
       else load();
     }
@@ -3276,6 +3323,55 @@
       loadSystem();
     }
 
+    function clearLogsTimer() {
+      if (state.logTimer) {
+        clearInterval(state.logTimer);
+        state.logTimer = null;
+      }
+    }
+
+    // Log-Auto-Refresh nur in der Logs-Ansicht, bei sichtbarer Seite und wenn
+    // "Automatisch" aktiviert ist.
+    function syncLogsTimer() {
+      if (state.view !== "logs" || !state.me || document.visibilityState === "hidden") {
+        clearLogsTimer();
+        return;
+      }
+      const follow = document.getElementById("log-follow");
+      if (follow && !follow.checked) {
+        clearLogsTimer();
+        return;
+      }
+      if (!state.logTimer) state.logTimer = setInterval(loadLogs, 3000);
+    }
+
+    async function loadLogs() {
+      const service = document.getElementById("log-service").value || "api";
+      const lines = parseInt(document.getElementById("log-lines").value, 10) || 200;
+      try {
+        const data = await apiJson(
+          "GET", "/api/logs/" + service + "?lines=" + lines, undefined, { noCache: true },
+        );
+        state.logs = data.lines || [];
+        const output = document.getElementById("log-output");
+        output.textContent = data.available
+          ? (data.lines.join("\n") || "(leer)")
+          : "Keine Logdatei vorhanden (Prozess noch nicht gestartet?).";
+        output.scrollTop = output.scrollHeight;
+        const parts = [
+          service.toUpperCase(),
+          fmtSize(data.size || 0),
+          data.updated_at ? fmtDate(data.updated_at) : "keine Datei",
+        ];
+        if (data.truncated) parts.push("gekürzt");
+        document.getElementById("log-status").textContent = parts.join(" · ");
+      } catch (e) {
+        toast("Logs laden fehlgeschlagen: " + e.message, "err");
+      } finally {
+        syncLogsTimer();
+      }
+    }
+
     async function loadSystem() {
       try {
         const data = await apiJson("GET", "/api/system/stats");
@@ -3389,10 +3485,12 @@
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
         clearSystemTimer();
+        clearLogsTimer();
         clearArchivePoll();
         return;
       }
       if (state.view === "system") loadSystem();
+      if (state.view === "logs") { loadLogs(); syncLogsTimer(); }
       if (archiveJob) { startArchivePoll(); pollArchiveJob(); }
     });
 

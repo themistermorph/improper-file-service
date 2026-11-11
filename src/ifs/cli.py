@@ -39,14 +39,42 @@ class _TokenRedactionFilter(logging.Filter):
         return True
 
 
-def _configure_logging() -> None:
+def _configure_logging(role: str | None = None) -> None:
     settings = get_settings()
+    log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        format=log_format,
     )
     # Access-Logs: Tokens in URLs unkenntlich machen.
     logging.getLogger("uvicorn.access").addFilter(_TokenRedactionFilter())
+
+    if not role:
+        return
+    from logging.handlers import RotatingFileHandler
+
+    from .core import logs
+
+    root = logging.getLogger()
+    # Bei wiederholter Konfiguration (z. B. Tests) keine Doppel-Handler.
+    for handler in list(root.handlers):
+        if getattr(handler, "_ifs_file_handler", False):
+            root.removeHandler(handler)
+            handler.close()
+    try:
+        logs.LOG_DIR.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            logs.log_path(role),
+            maxBytes=5 * 1024 * 1024,
+            backupCount=2,
+            encoding="utf-8",
+        )
+    except OSError:
+        # Lokale Entwicklung ohne /var/log/ifs: nur Konsole.
+        return
+    handler.setFormatter(logging.Formatter(log_format))
+    handler._ifs_file_handler = True  # type: ignore[attr-defined]
+    root.addHandler(handler)
 
 
 def cmd_init_db(_: argparse.Namespace) -> int:
@@ -74,7 +102,15 @@ def cmd_seed_admin(args: argparse.Namespace) -> int:
 def cmd_run_api(args: argparse.Namespace) -> int:
     import uvicorn
 
-    uvicorn.run("ifs.main:app", host=args.host, port=args.port, log_level=args.log_level)
+    # Unsere Logging-Konfiguration (inkl. Datei-Handler) beibehalten; Uvicorn
+    # würde sonst die Root-Handler überschreiben.
+    uvicorn.run(
+        "ifs.main:app",
+        host=args.host,
+        port=args.port,
+        log_level=args.log_level,
+        log_config=None,
+    )
     return 0
 
 
@@ -163,11 +199,13 @@ def build_parser() -> argparse.ArgumentParser:
     api.add_argument("--host", default="0.0.0.0")
     api.add_argument("--port", type=int, default=8000)
     api.add_argument("--log-level", default="info")
-    api.set_defaults(func=cmd_run_api)
+    api.set_defaults(func=cmd_run_api, log_role="api")
 
-    sub.add_parser("run-ftp", help="FTPS-Gateway starten").set_defaults(func=cmd_run_ftp)
+    sub.add_parser("run-ftp", help="FTPS-Gateway starten").set_defaults(
+        func=cmd_run_ftp, log_role="ftp"
+    )
     sub.add_parser("run-worker", help="Hintergrund-Worker starten").set_defaults(
-        func=cmd_run_worker
+        func=cmd_run_worker, log_role="worker"
     )
     cleanup = sub.add_parser(
         "cleanup-missing-blobs",
@@ -183,9 +221,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    _configure_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
+    _configure_logging(getattr(args, "log_role", None))
     return args.func(args)
 
 

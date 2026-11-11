@@ -87,6 +87,7 @@ services:
       - "8000:8000"
     volumes:
       - spool:/var/lib/ifs/spool
+      - logs:/var/log/ifs
     depends_on:
       db:
         condition: service_healthy
@@ -106,6 +107,7 @@ services:
     volumes:
       - spool:/var/lib/ifs/spool
       - ./certs:/etc/ifs:ro
+      - logs:/var/log/ifs
     depends_on:
       db:
         condition: service_healthy
@@ -121,6 +123,7 @@ services:
       IFS_DATABASE_URL: postgresql+psycopg://ifs:${IFS_DB_PASSWORD:-ifs}@db:5432/ifs
     volumes:
       - spool:/var/lib/ifs/spool
+      - logs:/var/log/ifs
     depends_on:
       db:
         condition: service_healthy
@@ -132,3 +135,4 @@ volumes:
   db-data:
   s3-data:
   spool:
+  logs:

@@ -51,6 +51,8 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 - **Bulk-Aktionen**: Mehrfachauswahl zum Sammel-Download (.zip), Verschieben und Löschen
 - **Versionen**: Historie je Datei mit Download und Rollback
 - **Audit-Log**: Admin-Ansicht der Ereignisse mit Filter
+- **Log-Panel**: Admin-Ansicht der Prozess-Logs von API, FTPS und Worker inkl.
+  Auto-Refresh und Zeilenauswahl (`/api/logs`)
 - **Monitoring**: Admin-Panel mit Verlaufskurven für CPU, RAM und Netzwerk (↑/↓), einstellbarem Intervall sowie Speicherplatz- und SeaweedFS-Volumes-Statistik
 - **Papierkorb**: gelöschte Einträge auflisten, wiederherstellen oder endgültig entfernen; Mehrfachauswahl für Batch-Aktionen
 - **Per-User-Wurzel**: jeder Benutzer hat ein eigenes Home; Systemadmins haben **keinen** Zugriff auf fremde Dateien; freigegebene Einträge erscheinen unter „Mit mir geteilt"

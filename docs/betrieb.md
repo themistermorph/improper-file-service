@@ -210,6 +210,23 @@ Adminrolle synchron gehalten.
 - Schemaänderungen immer als idempotente SQL-Migration unter `migrations/sql/`
   versionieren (siehe [`migrations/README.md`](../migrations/README.md)).
 
+### 7.2 Prozess-Logs
+
+`api`, `ftp` und `worker` schreiben ihre Logs zusätzlich zur Konsole in ein
+gemeinsames Docker-Volume `/var/log/ifs`:
+
+| Datei | Prozess |
+|---|---|
+| `api.log` | HTTP-API/Web-UI |
+| `ftp.log` | FTPS-Gateway |
+| `worker.log` | Outbox/Papierkorb/Blob-GC |
+
+Die Dateien rotieren bei 5 MiB (2 Backups). Systemadmins sehen die letzten
+Zeilen im Admin-Menü **„Logs“** oder über `GET /api/logs/{service}?lines=200`
+(`api`/`ftp`/`worker`; max. 2000 Zeilen). Der Endpunkt ist ausschließlich für
+Systemadmins; Logs können interne Details enthalten. Fehlt eine Datei (Prozess
+noch nicht gestartet), liefert die API `available: false` statt eines Fehlers.
+
 ---
 
 ## 8. Skalierung

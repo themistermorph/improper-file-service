@@ -858,6 +858,17 @@ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/j
   localhost:8000/api/users/<user-id>/permissions
 ```
 
+### 8.5 Prozess-Logs (nur Systemadmin)
+
+| Methode & Pfad | Beschreibung |
+|---|---|
+| `GET /api/logs` | Verfügbare Logs (`api`, `ftp`, `worker`) mit `available`, `size`, `updated_at` |
+| `GET /api/logs/{service}?lines=200` | Letzte Zeilen der Logdatei (`lines` 1–2000); `lines`, `truncated`, `available` |
+
+Die Prozesse schreiben nach `/var/log/ifs/<service>.log` (gemeinsames
+Docker-Volume, 5-MiB-Rotation). Fehlt die Datei, ist `available` `false` und
+`lines` leer.
+
 ---
 
 ## 9. System

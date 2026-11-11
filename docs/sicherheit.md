@@ -166,6 +166,7 @@ auf.
 | Masquerade | korrekte externe Adresse, keine internen IPs preisgeben |
 | Rechteprüfung | je Kommando über den Kern |
 | Audit | Login/CWD/Transfer protokolliert |
+| Logs | Prozess-Logs (`/api/logs`) nur für Systemadmins; Access-Tokens werden redigiert |
 
 ---
 

@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY src ./src
 
 # Spool-Verzeichnis für resumable Uploads
-RUN mkdir -p /var/lib/ifs/spool
+RUN mkdir -p /var/lib/ifs/spool /var/log/ifs
 
 EXPOSE 8000 21
 # Passive-Portrange für FTPS

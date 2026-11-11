@@ -6,6 +6,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+- **Log-Panel:** Das Admin-Menü „Logs“ zeigt die letzten Zeilen der Prozess-Logs
+  von API, FTPS und Worker (Auswahl der Zeilenzahl, Auto-Refresh, Statuszeile).
+  `api`, `ftp` und `worker` schreiben auf ein gemeinsames Docker-Volume
+  `/var/log/ifs`; gelesen wird über `GET /api/logs` und
+  `GET /api/logs/{service}` (nur Systemadmin).
+
 ### Fixed
 - **Favicon-/Apple-Touch-Icon-Anfragen:** `/favicon.ico` und die üblichen
   `apple-touch-icon*.png`-Varianten (inkl. `-precomposed`) antworten mit einem
