@@ -211,6 +211,16 @@ class _S3Reader:
         return self._closed
 
 
+def _handle_size(handle) -> int:
+    """Größe eines offenen Handles – nur außerhalb des Schreib-Hot-Paths.
+
+    ``os.fstat`` wird bewusst nicht je Schreibblock aufgerufen; die Funktion
+    kapselt den einen erlaubten Aufruf für APPE/REST-Vorladen und macht ihn
+    testbar, ohne das globale ``os``-Modul zu patchen.
+    """
+    return os.fstat(handle.fileno()).st_size
+
+
 class _UploadWriter:
     """Datei-ähnliches Schreibobjekt; spoolt lokal.
 
@@ -263,7 +273,7 @@ class _UploadWriter:
     def sync_size(self) -> None:
         """Übernimmt die bereits vorhandene Dateigröße (APPE/REST-Vorladen)."""
         self._hashable = False
-        self._pos = self._size = os.fstat(self._handle.fileno()).st_size
+        self._pos = self._size = _handle_size(self._handle)
 
     def tell(self) -> int:
         return self._pos

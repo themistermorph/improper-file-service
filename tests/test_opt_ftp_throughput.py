@@ -152,7 +152,7 @@ def test_upload_limit_checked_without_fstat(monkeypatch, tmp_path):
         boom_calls["count"] += 1
         raise AssertionError("os.fstat darf im Schreib-Hot-Path nicht aufgerufen werden")
 
-    monkeypatch.setattr(fs_module.os, "fstat", _boom)
+    monkeypatch.setattr(fs_module, "_handle_size", _boom)
 
     writer = _UploadWriter(str(tmp_path / "spool.bin"), "spool.bin", limit=10)
     try:
