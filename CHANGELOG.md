@@ -17,6 +17,28 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 - **CSP-Hashes zur Laufzeit:** Die Hashes werden beim Start aus den tatsächlich
   ausgelieferten HTML-Dateien berechnet (`src/ifs/security_headers.py`). Nach
   Änderungen an den HTML-Dateien ist ein Neustart des API-Prozesses nötig.
+- **Sitzung im HttpOnly-Cookie statt `sessionStorage`:** Die Web-UI speichert
+  kein JWT mehr in JavaScript. `POST /api/auth/login` setzt ein
+  `HttpOnly`-Cookie (`SameSite=Strict`, `Path=/`, `Secure` bei HTTPS); der neue
+  Endpunkt `POST /api/auth/logout` löscht es. `GET /api/auth/session` prüft die
+  Sitzung ohne 401-Rauschen. Ein XSS kann die Sitzung damit nicht mehr auslesen.
+- **Bearer-Policy und Systemrecht `api`:** Bearer-Tokens werden nur noch aus
+  `IFS_BEARER_ALLOWED_NETWORKS` (CIDR, Standard Loopback) oder für Konten mit
+  dem neuen Systemrecht `api` (Bit 256) akzeptiert. Das Recht ist in der
+  Benutzerverwaltung setzbar und gilt nicht für Dateizugriffe.
+- **CSRF-Schutz für Cookie-Sessions:** Zusätzlich zu `SameSite=Strict` prüft die
+  Middleware bei `POST`/`PUT`/`PATCH`/`DELETE` mit Session-Cookie `Origin` und
+  `Sec-Fetch-Site` und lehnt fremde Aufrufe mit `403` ab.
+- **Token-Invalidierung:** Passwortänderung, Admin-Reset und Deaktivierung
+  invalidieren Cookie und Bearer sofort über `token_version`.
+
+### Changed
+- **Login-Antwort:** `POST /api/auth/login?issue_token=false` liefert kein JWT
+  im Body (`access_token: null`, `token_type: "cookie"`); das Cookie wird
+  trotzdem gesetzt. Ohne den Parameter bleibt die bisherige Bearer-Antwort für
+  API-Clients erhalten, sofern die IP/das `api`-Recht es erlaubt.
+- **Benutzerdialog:** Neue Checkbox „API-Tokens (Bearer)“ für das Systemrecht
+  `api`.
 
 ### Added
 - **Log-Panel:** Das Admin-Menü „Logs“ zeigt die letzten Zeilen der Prozess-Logs

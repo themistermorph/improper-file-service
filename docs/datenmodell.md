@@ -108,8 +108,8 @@ zusammengeführt. Vor dem Index vorhandene Duplikate werden in Migration `0011`
 per `bit_or(perms)` dedupliziert.
 
 Eintrags-Bitmaske: `read=1`, `write=2`, `delete=4`, `share=8`, `admin=16`,
-`publish=32`. `ALL_RESOURCE = 63`. Systemrechte (`audit=64`, `monitor=128`)
-dürfen **nicht** in `acl` gespeichert werden.
+`publish=32`. `ALL_RESOURCE = 63`. Systemrechte (`audit=64`, `monitor=128`,
+`api=256`) dürfen **nicht** in `acl` gespeichert werden.
 
 ### `system_permissions`
 
@@ -118,7 +118,7 @@ dürfen **nicht** in `acl` gespeichert werden.
 | `id` | UUID | |
 | `principal_type` | varchar(16) | `user` \| `group` |
 | `principal_id` | UUID | Benutzer- oder Gruppen-ID |
-| `permissions` | int | nur `audit=64` und/oder `monitor=128` |
+| `permissions` | int | `audit=64`, `monitor=128` und/oder `api=256` |
 | `created_at` | timestamptz | |
 
 Unique-Index `(principal_type, principal_id)`: ein Datensatz je Principal.
@@ -128,7 +128,7 @@ Unique-Index `(principal_type, principal_id)`: ein Datensatz je Principal.
 ### `roles`
 
 Nach dem Cleanup enthält die Tabelle **nur noch** `admin` (systemweit,
-`permissions=ALL=255`). Die früheren fachlichen Rollen (`auditor`, `user`,
+`permissions=ALL=511`). Die früheren fachlichen Rollen (`auditor`, `user`,
 `viewer`, `collaborator`, `editor`, `sharer`, `manager`) wurden in ACL- bzw.
 System-Grants migriert und gelöscht.
 
@@ -141,7 +141,7 @@ wird mit der Adminrolle synchron gehalten.
 
 **Rechteberechnung:** effektive Eintragsrechte = Besitz (`ALL_RESOURCE`) ∪ ACLs
 entlang des Pfades. `system_perms` = `users.is_admin`/Adminrolle (`ADMIN`) ∪
-`system_permissions` (`AUDIT`/`MONITOR`). Die beiden Namensräume werden nie
+`system_permissions` (`AUDIT`/`MONITOR`/`API`). Die beiden Namensräume werden nie
 vermischt; Systemadmins haben weiterhin **keinen** Dateizugriff auf fremde
 Bäume. Details: [Sicherheit](sicherheit.md).
 

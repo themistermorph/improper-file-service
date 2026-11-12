@@ -528,7 +528,6 @@
   <script>
     const API = "";
     const state = {
-      token: sessionStorage.getItem("ifs_token") || "",
       me: null,
       root: null,
       cwdId: null,
@@ -698,13 +697,12 @@
 
     async function api(method, path, body, signal) {
       const headers = {};
-      if (state.token) headers["Authorization"] = "Bearer " + state.token;
       if (body !== undefined) headers["Content-Type"] = "application/json";
       const res = await fetch(API + path, {
         method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal,
       });
       if (method !== "GET") bustJsonCache(); // Schreibzugriff: alte GET-Daten verwerfen
-      if (res.status === 401) { logout(); throw new Error("Sitzung abgelaufen"); }
+      if (res.status === 401) { resetSessionUI(); throw new Error("Sitzung abgelaufen"); }
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error("HTTP " + res.status + (text ? ": " + text : ""));
@@ -749,7 +747,9 @@
       const password = document.getElementById("password").value;
       document.getElementById("login-error").textContent = "";
       try {
-        const res = await fetch("/api/auth/login", {
+        // issue_token=false: Die Sitzung kommt ausschliesslich als
+        // HttpOnly-Cookie zurueck, nicht als JWT in den JavaScript-Speicher.
+        const res = await fetch("/api/auth/login?issue_token=false", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password }),
         });
@@ -759,18 +759,20 @@
           return;
         }
         if (!res.ok) { document.getElementById("login-error").textContent = "Benutzername oder Passwort falsch."; return; }
-        state.token = (await res.json()).access_token;
-        sessionStorage.setItem("ifs_token", state.token);
         await start();
       } catch (e) {
         document.getElementById("login-error").textContent = "Verbindungsfehler: " + e.message;
       }
     }
     function logout() {
-      state.token = ""; state.me = null; state.root = null; state.cwdId = null;
+      // Serverseitiges Cookie loeschen; die UI raeumt unabhaengig davon auf.
+      fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+      resetSessionUI();
+    }
+    function resetSessionUI() {
+      state.me = null; state.root = null; state.cwdId = null;
       state.stack = []; state.entries = []; state.users = []; state.view = "files";
       state.shared = []; state.sharedPath = []; state.sharedOut = [];
-      sessionStorage.removeItem("ifs_token");
       document.getElementById("app").classList.add("hidden");
       document.getElementById("login").classList.remove("hidden");
       document.getElementById("who").textContent = "";
@@ -1456,7 +1458,6 @@
         const params = new URLSearchParams({ name: file.name, parent_id: parentId });
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", "/api/uploads/simple?" + params.toString());
-        xhr.setRequestHeader("Authorization", "Bearer " + state.token);
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
         xhr.upload.onprogress = e => prog.set(e.loaded, e.total || file.size, false, false);
         xhr.onload = () => (xhr.status >= 200 && xhr.status < 300)
@@ -1487,7 +1488,6 @@
         const put = await fetch("/api/uploads/" + session.id, {
           method: "PATCH",
           headers: {
-            "Authorization": "Bearer " + state.token,
             "Upload-Offset": String(offset),
             "Content-Type": "application/offset+octet-stream",
           },
@@ -1504,7 +1504,6 @@
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", "/api/uploads/" + uploadId + "/parts/" + partNumber);
-        xhr.setRequestHeader("Authorization", "Bearer " + state.token);
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
         xhr.upload.onprogress = e => onProgress(Math.min(e.loaded, blob.size));
         xhr.onload = () => {
@@ -2186,6 +2185,7 @@
           <legend class="muted fs-13">Systemberechtigungen</legend>
           <label class="checkline"><input type="checkbox" id="eu-audit" ${hasPerm("audit") ? "checked" : ""} /> Audit-Log lesen</label>
           <label class="checkline"><input type="checkbox" id="eu-monitor" ${hasPerm("monitor") ? "checked" : ""} /> Systemmonitor</label>
+          <label class="checkline"><input type="checkbox" id="eu-api" ${hasPerm("api") ? "checked" : ""} /> API-Tokens (Bearer)</label>
         </fieldset>
         <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
         <button class="btn" data-action="submitUserEdit" data-id="${u.id}">Speichern</button></div>`);
@@ -2200,6 +2200,7 @@
       const systemPerms = [];
       if (document.getElementById("eu-audit").checked) systemPerms.push("audit");
       if (document.getElementById("eu-monitor").checked) systemPerms.push("monitor");
+      if (document.getElementById("eu-api").checked) systemPerms.push("api");
       try {
         await apiJson("PATCH", "/api/users/" + id, body);
         await apiJson("PUT", "/api/users/" + id + "/permissions", {
@@ -2545,7 +2546,7 @@
     }
 
     async function openTextPreview(entry) {
-      const headers = { "Authorization": "Bearer " + state.token };
+      const headers = {};
       // Bei 0-Byte-Dateien kein Range senden – der Server antwortet sonst mit 416.
       if (entry.size > 0) headers["Range"] = "bytes=0-" + (PREVIEW_TEXT_LIMIT - 1);
       const response = await fetch("/api/entries/" + entry.id + "/content", { headers });
@@ -3299,7 +3300,6 @@
       try {
         const response = await fetch(
           "/api/entries/" + versionsEntry.id + "/versions/" + versionId + "/content",
-          { headers: { "Authorization": "Bearer " + state.token } },
         );
         if (!response.ok) throw new Error("HTTP " + response.status);
         const blob = await response.blob();
@@ -3654,7 +3654,14 @@
 
     // ---------- Start ----------
     document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
-    if (state.token) start(); else document.getElementById("login").classList.remove("hidden");
+    // Die Sitzung steckt im HttpOnly-Cookie. Die Probe antwortet auch ohne
+    // Anmeldung mit 200 (authenticated=false), damit die Konsole sauber bleibt.
+    fetch("/api/auth/session")
+      .then((res) => res.json())
+      .then((status) => {
+        if (status.authenticated) start().catch(() => resetSessionUI());
+      })
+      .catch(() => { /* Login-Screen bleibt sichtbar */ });
   </script>
 </body>
 </html>

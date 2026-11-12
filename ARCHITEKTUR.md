@@ -180,7 +180,7 @@ outbox           (id, event_type, payload, published_at)
 - **UUIDv7** als IDs (zeitlich sortierbar, indexfreundlich).
 - Eindeutigkeit von Namen case-insensitiv pro Parent.
 - **Eintrags-Bits:** `read | write | delete | share | publish | admin`
-  (`ALL_RESOURCE=63`); **System-Bits:** `audit | monitor` (`ADMIN` nur über die
+  (`ALL_RESOURCE=63`); **System-Bits:** `audit | monitor | api` (`ADMIN` nur über die
   Adminrolle/`users.is_admin`). Beide Namensräume werden getrennt geprüft.
 - **PDP:** `effective_perms()` (Besitz + ACLs) und `system_perms()` (Flag,
   Adminrolle, `system_permissions`) liefern nie gemischte Bits.
@@ -267,7 +267,7 @@ DELETE:      trashed_at setzen (Papierkorb); Worker räumt nach Frist endgültig
 | Bereich | Maßnahme |
 |---|---|
 | Transport | TLS 1.2+ überall: HTTPS am Ingress, FTPS im FTP-Dienst (explicit AUTH TLS). Plain-FTP wird auf Protokollebene abgelehnt. |
-| AuthN Web/API | OIDC/SSO oder lokale Session; API-Tokens mit Scopes; MFA für Adminrollen. |
+| AuthN Web/API | Web-UI: `HttpOnly`-Session-Cookie (`SameSite=Strict`, kein JWT im JS-Speicher); API-Clients: Bearer nur aus `IFS_BEARER_ALLOWED_NETWORKS` oder mit Systemrecht `api`; MFA für Adminrollen (Ausbaustufe). |
 | AuthN FTPS | FTP-Login gegen zentralen Credential-Store (Over TLS). Optional Client-Zertifikate. |
 | AuthZ | Zentraler PDP, deny by default, serverseitig bei jeder Operation; identisch für HTTP und FTPS. |
 | Pfad-Sicherheit | Ausschließlich virtueller Namespace; keine OS-Pfade, keine Symlinks nach außen. |
@@ -284,8 +284,8 @@ DELETE:      trashed_at setzen (Papierkorb); Worker räumt nach Frist endgültig
 ## 8. Schnittstellen/API-Skizze (REST)
 
 ```
-Auth      POST   /api/auth/login            POST /api/auth/token
-          GET    /api/me
+Auth      POST   /api/auth/login            POST /api/auth/logout
+          GET    /api/auth/session          GET  /api/me
 
 Namespace GET    /api/entries?parent={id}   GET  /api/entries/{id}
           POST   /api/folders               PATCH /api/entries/{id}

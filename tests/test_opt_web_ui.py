@@ -54,7 +54,7 @@ def test_api_invalidates_cache_on_mutation():
 
 def test_cache_is_busted_on_logout_refresh_and_upload():
     source = _html()
-    assert "bustJsonCache()" in _function_block(source, "logout")
+    assert "bustJsonCache()" in _function_block(source, "resetSessionUI")
     assert "bustJsonCache()" in _function_block(source, "refreshCurrent")
     # Uploads laufen per XHR an api() vorbei -> Liste muss frisch geladen werden.
     assert "bustJsonCache()" in _function_block(source, "uploadFiles")

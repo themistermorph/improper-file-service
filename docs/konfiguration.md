@@ -55,14 +55,20 @@ IFS_DATABASE_URL=postgresql+psycopg://ifs:geheim@db:5432/ifs
 |---|---|---|---|
 | `IFS_JWT_SECRET` | string | *(leer)* | HMAC-Schlüssel (≥ 32 Zeichen). In `prod` ist ein starker Wert **Pflicht**, sonst startet der Dienst nicht; in Dev wird sonst ein zufälliges Secret erzeugt. |
 | `IFS_JWT_ALGORITHM` | string | `HS256` | JWT-Algorithmus; erlaubt sind `HS256`, `HS384`, `HS512`. In Produktion werden andere Werte abgelehnt. |
-| `IFS_ACCESS_TOKEN_TTL_SECONDS` | int | `3600` | Gültigkeitsdauer eines Tokens in Sekunden. |
+| `IFS_ACCESS_TOKEN_TTL_SECONDS` | int | `3600` | Gültigkeitsdauer eines Tokens bzw. der Cookie-Session in Sekunden. |
+| `IFS_AUTH_COOKIE_NAME` | string | `ifs_session` | Name des `HttpOnly`-Session-Cookies der Web-UI. In Produktion empfiehlt sich ein `__Host-`-Präfix (z. B. `__Host-ifs_session`); das erzwingt `Secure`, `Path=/` und verbietet ein `Domain`-Attribut. Leerzeichen, `;`, `=` und `,` sind ungültig. |
+| `IFS_BEARER_ALLOWED_NETWORKS` | string | `127.0.0.1/32,::1/128` | Kommagetrennte CIDR-Liste, aus der Bearer-Tokens akzeptiert werden. Leer = kein IP-basierter Bearer-Zugriff. Unabhängig davon darf jedes Konto mit dem Systemrecht `api` Bearer-Tokens nutzen. Die Web-UI benötigt diese Freigabe nicht (Cookie-Session). |
 | `IFS_LOGIN_MAX_ATTEMPTS` | int | `5` | Fehlversuche pro Konto (IP+Benutzer) bis zur Sperre. |
 | `IFS_LOGIN_IP_MAX_ATTEMPTS` | int | `20` | Fehlversuche pro IP (Schutz vor Credential-Spraying). |
 | `IFS_LOGIN_WINDOW_SECONDS` | int | `300` | Zeitfenster, in dem Fehlversuche gezählt werden. |
 | `IFS_LOGIN_LOCK_SECONDS` | int | `30` | Basisdauer der Sperre (verdoppelt sich je weiterem Fehlversuch). |
 | `IFS_LOGIN_MAX_LOCK_SECONDS` | int | `900` | Maximale Sperrdauer. |
 
-> Ein Wechsel von `IFS_JWT_SECRET` invalidiert alle ausgestellten Tokens sofort.
+> Ein Wechsel von `IFS_JWT_SECRET` invalidiert alle ausgestellten Tokens und
+> Cookie-Sessions sofort. Die Web-UI nutzt ausschließlich ein `HttpOnly`-Cookie
+> (`SameSite=Strict`); Bearer-Tokens sind für API-Clients gedacht und werden nur
+> aus `IFS_BEARER_ALLOWED_NETWORKS` oder für Konten mit Systemrecht `api`
+> akzeptiert. Beispiel für ein Administrationsnetz: `10.13.13.0/24`.
 
 ## Objektspeicher (S3)
 

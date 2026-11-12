@@ -31,7 +31,7 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 
 ## Funktionsumfang
 
-- **HTTP(S)**: Login (JWT), Verzeichnisse/Dateien auflisten, anlegen, umbenennen,
+- **HTTP(S)**: Login (Web-UI: `HttpOnly`-Cookie; API-Clients: Bearer), Verzeichnisse/Dateien auflisten, anlegen, umbenennen,
   verschieben, kopieren, löschen
 - **Download**: `GET`/`HEAD` mit `Range`-Support (resumable, `206`), ETag, Streaming;
   Web-UI lädt große Dateien über ein kurzlebiges Ticket nativ auf die Platte
@@ -45,7 +45,7 @@ Grundlage und Detailkonzept: [`ANFORDERUNGEN.md`](ANFORDERUNGEN.md) und
 - **Verwaltung**: Benutzerverwaltung (anlegen, bearbeiten, Passwort-Reset, deaktivieren,
   Gruppen), Gruppen, ACLs, Audit-Log
 - **Selbstbedienung**: eigenes Profil und Passwort ändern
-- **Berechtigungen**: nur noch die Adminrolle; Eintragsrechte als ACLs, Systemrechte (`audit`/`monitor`) direkt je Benutzer/Gruppe
+- **Berechtigungen**: nur noch die Adminrolle; Eintragsrechte als ACLs, Systemrechte (`audit`/`monitor`/`api`) direkt je Benutzer/Gruppe
 - **Freigaben**: Übersicht aller Links mit Kopieren, Öffnen und Widerrufen; Dateien und **Ordner** (als ZIP), optional Upload per Drop-Link
 - **Veröffentlichungen**: Dateien und **Ordner** (als ZIP) ausdrücklich in einer **öffentlichen Galerie** (`/published`, ohne Login, inkl. Download) bereitstellen und jederzeit zurückziehen
 - **Bulk-Aktionen**: Mehrfachauswahl zum Sammel-Download (.zip), Verschieben und Löschen
@@ -156,7 +156,9 @@ Die wichtigsten:
 | `IFS_DATABASE_URL` | SQLAlchemy-URL | `postgresql+psycopg://ifs:ifs@localhost:5432/ifs` |
 | `IFS_DB_PASSWORD` | DB-Passwort (von Compose zur URL zusammengesetzt) | `ifs` |
 | `IFS_AUTO_CREATE_SCHEMA` | Schema beim Start anlegen (Dev) | `false` |
-| `IFS_JWT_SECRET` | Schlüssel für Access-Tokens (min. 32 Zeichen; in Produktion Pflicht) | *(leer)* |
+| `IFS_JWT_SECRET` | Schlüssel für Access-Tokens/Cookie-Sessions (min. 32 Zeichen; in Produktion Pflicht) | *(leer)* |
+| `IFS_AUTH_COOKIE_NAME` | Name des `HttpOnly`-Session-Cookies (Produktion: `__Host-ifs_session`) | `ifs_session` |
+| `IFS_BEARER_ALLOWED_NETWORKS` | CIDR-Liste für Bearer-Clients (leer = nur Konten mit `api`-Recht) | `127.0.0.1/32,::1/128` |
 | `IFS_S3_ENDPOINT_URL` | S3-Endpunkt (leer = AWS) | – |
 | `IFS_S3_BUCKET` | Bucket für Blobs | `ifs` |
 | `IFS_S3_SSE` | Serverseitige Verschlüsselung | `AES256` |
@@ -181,7 +183,9 @@ Die wichtigsten:
 ## API-Auszug
 
 ```
-POST   /api/auth/login                 Login → Bearer-Token
+POST   /api/auth/login                 Login → Cookie + optional Bearer-Token
+POST   /api/auth/logout                Cookie löschen
+GET    /api/auth/session               Session-Probe (200, authenticated)
 GET    /api/me
 
 GET    /api/entries?parent_id=...      Verzeichnis auflisten
@@ -234,7 +238,8 @@ GET    /api/groups, /api/audit         Administration
 GET    /api/system/stats               Admin-Monitoring (CPU/RAM/Disk/Netz)
 ```
 
-Beispiel:
+Beispiel (Bearer wird nur aus `IFS_BEARER_ALLOWED_NETWORKS` oder mit dem
+Systemrecht `api` akzeptiert; Loopback ist per Default freigegeben):
 
 ```bash
 # IFS_ADMIN_PASSWORD muss gesetzt sein (siehe .env)

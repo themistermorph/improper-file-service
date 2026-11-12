@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import pathlib
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -41,8 +42,32 @@ _STATIC_SECURITY_HEADERS = (
 )
 
 
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _cross_origin(request: Request) -> bool:
+    """True, wenn eine Cookie-authentifizierte Anfrage fremdartig aussieht.
+
+    ``SameSite=Strict`` ist die primaere CSRF-Abwehr. Zusaetzlich werden
+    vorhandene ``Origin``-/``Sec-Fetch-Site``-Header geprueft, damit auch
+    Same-Site-Subdomains oder aeltere Browser nicht durchrutschen. Requests
+    ohne diese Header (curl, API-Clients) bleiben zulaessig; sie koennen keine
+    fremde Browser-Sitzung missbrauchen.
+    """
+    origin = request.headers.get("origin")
+    if origin:
+        if origin == "null":
+            return True
+        parsed = urlsplit(origin)
+        host = (request.headers.get("host") or "").lower()
+        scheme = "https" if is_secure_request(request) else "http"
+        return parsed.scheme != scheme or parsed.netloc.lower() != host
+    site = (request.headers.get("sec-fetch-site") or "").lower()
+    return site in {"cross-site", "same-site"}
+
+
 class SecurityHeadersMiddleware:
-    """Reine ASGI-Middleware für Sicherheits-Header.
+    """Reine ASGI-Middleware für Sicherheits-Header und Cookie-CSRF-Schutz.
 
     Gegenüber ``BaseHTTPMiddleware`` (``@app.middleware("http")``) entfallen die
     Task-Group-/Stream-Wrapper pro Request; Header, Streaming-Verhalten und
@@ -56,6 +81,17 @@ class SecurityHeadersMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+
+        if scope["method"] in _UNSAFE_METHODS:
+            request = Request(scope)
+            cookie = request.cookies.get(get_settings().auth_cookie_name)
+            if cookie and _cross_origin(request):
+                response = JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={"code": "Forbidden", "message": "Cross-Origin-Anfrage abgelehnt"},
+                )
+                await response(scope, receive, send)
+                return
 
         async def send_with_security_headers(message) -> None:
             if message["type"] == "http.response.start":

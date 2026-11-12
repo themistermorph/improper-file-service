@@ -73,7 +73,8 @@ def test_access_menu_item_is_entry_admin_only():
 # --- 3) logout(): Zustand, ZIP-Poll und Modal aufräumen ---
 
 def test_logout_clears_transient_state():
-    block = _function_block(_html(), "logout")
+    # logout() delegiert das Aufraeumen an resetSessionUI(), das auch bei 401 greift.
+    block = _function_block(_html(), "resetSessionUI")
     assert "state.selected.clear()" in block, "Phantom-Auswahl überlebt den Logout"
     assert "clearArchivePoll()" in block, "ZIP-Poll läuft nach dem Logout weiter"
     assert "archiveJob = null" in block

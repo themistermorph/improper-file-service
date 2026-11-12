@@ -16,8 +16,16 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class SessionStatus(BaseModel):
+    """Antwort der Session-Probe; 200 auch ohne Anmeldung (kein 401-Rauschen)."""
+
+    authenticated: bool
+
+
 class TokenResponse(BaseModel):
-    access_token: str
+    # Beim Cookie-Login (``issue_token=false``) wird bewusst kein JWT an
+    # JavaScript ausgeliefert; die Sitzung steckt dann nur im HttpOnly-Cookie.
+    access_token: str | None = None
     token_type: str = "bearer"
     expires_in: int
 
@@ -104,8 +112,8 @@ class SystemPermissionOut(BaseModel):
 
 
 class SystemPermissionUpdate(BaseModel):
-    # Nur audit/monitor; Admin kommt ausschließlich über die Adminrolle.
-    permissions: list[str] = Field(default_factory=list, max_length=2)
+    # audit/monitor/api; Admin kommt ausschließlich über die Adminrolle.
+    permissions: list[str] = Field(default_factory=list, max_length=3)
 
 
 class EntryOut(BaseModel):

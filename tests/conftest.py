@@ -28,6 +28,7 @@ import hmac
 
 import pytest
 from sqlalchemy import event
+from starlette.testclient import TestClient as _TestClient
 
 from ifs import security
 from ifs.config import get_settings
@@ -37,6 +38,19 @@ from ifs.models import Blob, BlobStatus, User
 from ifs.security import hash_password
 
 from .helpers import reset_content
+
+# TestClient nutzt sonst den nicht aufloesbaren Peer-Namen "testclient".
+# Fuer die Bearer-IP-Policy (IFS_BEARER_ALLOWED_NETWORKS) und die Audit-IP
+# verhalten sich die Tests damit wie ein lokaler Client (127.0.0.1).
+_original_testclient_init = _TestClient.__init__
+
+
+def _testclient_init(self, *args, **kwargs):
+    kwargs.setdefault("client", ("127.0.0.1", 50000))
+    _original_testclient_init(self, *args, **kwargs)
+
+
+_TestClient.__init__ = _testclient_init
 
 
 class _FastHasher:

@@ -49,10 +49,27 @@ und die Härtungsmaßnahmen im Betrieb.
 
 | Kanal | Verfahren |
 |---|---|
-| Web/API | Benutzername + Passwort → JWT-Bearer-Token |
+| Web-UI | Benutzername + Passwort → `HttpOnly`-Cookie (`SameSite=Strict`) |
+| API-Clients | Benutzername + Passwort → JWT-Bearer-Token (nur freigegebene Netze oder Systemrecht `api`) |
 | FTPS | FTP-Login gegen denselben Benutzerbestand (über TLS) |
 
 - Passwörter mit **Argon2id** gehasht, niemals im Klartext gespeichert oder geloggt.
+- **Web-UI ohne JWT im JavaScript:** Der Login setzt ein `HttpOnly`-Cookie
+  (`SameSite=Strict`, `Path=/`, `Secure` bei HTTPS). `sessionStorage` und
+  `localStorage` bleiben leer; ein XSS kann die Sitzung daher nicht auslesen.
+  Die Web-UI ruft den Login mit `?issue_token=false` auf.
+- **CSRF:** `SameSite=Strict` als primäre Abwehr; zusätzlich prüft die Middleware
+  bei unsafe Methoden (`POST`/`PUT`/`PATCH`/`DELETE`) `Origin` und
+  `Sec-Fetch-Site`, sobald ein Session-Cookie vorhanden ist. Requests ohne diese
+  Header (curl/API-Clients) bleiben zulässig, können aber keine fremde
+  Browser-Sitzung ausnutzen.
+- **Bearer-Policy:** Bearer wird nur aus `IFS_BEARER_ALLOWED_NETWORKS` (CIDR)
+  oder für Konten mit Systemrecht `api` akzeptiert. Das Recht ist über
+  Benutzer-/Gruppen-Systemrechte vergebbar (Bit 256) und gilt nicht für
+  Dateizugriffe.
+- **Logout/Invalidierung:** `POST /api/auth/logout` löscht das Cookie. Bei
+  Passwortänderung, Admin-Reset und Deaktivierung erhöht sich `token_version`;
+  Cookie und Bearer sind sofort ungültig.
 - Tokens signiert (HMAC) mit `IFS_JWT_SECRET`, Gültigkeit über
   `IFS_ACCESS_TOKEN_TTL_SECONDS`.
 - Fehlgeschlagene Logins werden als `auth.login.failed` auditiert.
@@ -99,11 +116,12 @@ auf.
 - **Namensräume (PDP):**
   - Eintragsrechte in `acl`: `read=1`, `write=2`, `delete=4`, `share=8`,
     `admin=16`, `publish=32` (`ALL_RESOURCE=63`).
-  - Systemrechte in `system_permissions`: `audit=64`, `monitor=128`
-    (`ALL_SYSTEM=208`, inkl. `ADMIN`). `ADMIN` als Systemrecht kommt
+  - Systemrechte in `system_permissions`: `audit=64`, `monitor=128`, `api=256`
+    (`ALL_SYSTEM=464`, inkl. `ADMIN`). `ADMIN` als Systemrecht kommt
     ausschließlich über die Adminrolle/`users.is_admin`, nie als Grant.
   - `effective_perms()` liefert **nur** Eintragsbits; `system_perms()` liefert
-    **nur** `admin|audit|monitor`. ACLs und System-Grants werden nie gemischt.
+    **nur** `admin|audit|monitor|api`. ACLs und System-Grants werden nie gemischt.
+  - `api` erlaubt Bearer-Tokens (API-Clients), **keine** Dateizugriffe.
 - **Berechtigungsmatrix (UI = API):**
 
   | Aktion | Bedingung |
@@ -119,7 +137,7 @@ auf.
   | Benutzer/Gruppen/Rollen | Systemadmin (Adminrolle oder Flag) |
 
 - **Grants:** `POST /api/entries/{id}/acl` vereinigt Bits (Upsert), `PUT` setzt
-  exakt, `DELETE` entfernt. System-Grants (`audit`/`monitor`) werden über
+  exakt, `DELETE` entfernt. System-Grants (`audit`/`monitor`/`api`) werden über
   `/api/users/{id}/permissions` bzw. `/api/groups/{id}/permissions` gesetzt.
   Jede Änderung wird auditiert und invalidiert den Authz-Memo-Cache.
 - Die Prüfung erfolgt **serverseitig bei jeder Operation**, auch bei FTP.
@@ -205,6 +223,13 @@ auf.
 
 - Kein MFA, kein OIDC/SSO (in der Architektur vorgesehen).
 - Kein Virenscan und keine Inhaltsprüfung.
+- **XSS bleibt ein Restrisiko:** Die strikte CSP ohne `unsafe-inline` und die
+  HttpOnly-Session verhindern das Auslesen des Cookies, aber nicht jede
+  DOM-Manipulation durch kompromittierte Same-Origin-Ressourcen. Es gibt keine
+  Trusted-Types-Policy (erfordert einen größeren Umbau der `innerHTML`-Nutzung).
+- **Stateless Sessions:** Es gibt keine serverseitige Session-Liste; Logout
+  löscht nur das Cookie. Ein bereits kopiertes Cookie bleibt bis zum Ablauf
+  gültig, sofern `token_version` nicht erhöht wird.
 - Keine Ende-zu-Ende-Verschlüsselung (Server sieht Klartext).
 - Keine Bandbreiten-Drosselung; Login-Rate-Limit ist vorhanden, allgemeine Request-Limits nicht.
 - Presigned-URLs sind implementiert, aber im Standardpfad nicht aktiv.
@@ -217,6 +242,9 @@ auf.
 ## 12. Härtungs-Checkliste für den Betrieb
 
 - [ ] `IFS_JWT_SECRET` und Admin-Passwort geändert
+- [ ] `IFS_BEARER_ALLOWED_NETWORKS` auf die tatsächlichen Admin-/API-Netze begrenzt
+      (oder leer, dann nur Konten mit Systemrecht `api`)
+- [ ] `IFS_AUTH_COOKIE_NAME` ggf. auf `__Host-ifs_session` gesetzt (HTTPS)
 - [ ] HTTPS mit gültigem Zertifikat, TLS ≥ 1.2
 - [ ] FTPS-Zertifikat gültig, Passive-Range beschränkt und per Firewall geschützt
 - [ ] `IFS_AUTO_CREATE_SCHEMA=false`, Migrationen im Einsatz
@@ -254,8 +282,9 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
 - **Deploy-Tooling:** Host-Key-Prüfung (RejectPolicy, `IFS_DEPLOY_HOSTKEY_POLICY=auto` als
   Opt-in), Key-Auth empfohlen; Zugangsdaten nur aus Umgebungsvariablen.
 - **Frontend:** Security-Header (CSP, `X-Frame-Options`, `Referrer-Policy`,
-  `X-Content-Type-Options`, HSTS bei HTTPS); Token im `sessionStorage` statt `localStorage`
-  (verbleibendes XSS-Risiko dokumentiert).
+  `X-Content-Type-Options`, HSTS bei HTTPS); Sitzung ausschließlich im
+  `HttpOnly`-Cookie (`SameSite=Strict`), kein JWT in `localStorage`/
+  `sessionStorage`.
 
 **Content-Security-Policy der Web-Oberfläche:**
 

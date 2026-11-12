@@ -10,7 +10,7 @@ Quellen effektiver Rechte:
 - übergangsweise Ressourcenrollen (nach der Migration nur noch ACLs).
 
 Systemweite Rollen/Grants gewähren **keinen** Dateizugriff; Systemrechte
-(``audit``/``monitor``) werden getrennt über ``system_perms`` geprüft.
+(``audit``/``monitor``/``api``) werden getrennt über ``system_perms`` geprüft.
 
 Performance: Die Vorfahrenkette wird in einer Query über eine rekursive CTE
 bestimmt; ACLs und Ressourcenrollen werden jeweils für die *gesamte* Kette in
@@ -46,16 +46,20 @@ ADMIN = 16
 PUBLISH = 32
 AUDIT = 64
 MONITOR = 128
+# Erlaubt Bearer-Tokens für API-Clients auch außerhalb der in
+# `IFS_BEARER_ALLOWED_NETWORKS` freigegebenen Netze. Die Web-UI nutzt
+# ausschließlich HttpOnly-Cookies.
+API = 256
 
 # Eintragsrechte (ACL) und Systemrechte (system_permissions) sind getrennte
 # Namensräume; `ALL` bleibt die Summe beider für die Adminrolle.
 ALL_RESOURCE = READ | WRITE | DELETE | SHARE | PUBLISH | ADMIN
-ALL_SYSTEM = ADMIN | AUDIT | MONITOR
+ALL_SYSTEM = ADMIN | AUDIT | MONITOR | API
 ALL = ALL_RESOURCE | ALL_SYSTEM
 
 # Nur diese Bits dürfen direkt als System-Grant vergeben werden. ADMIN kommt
 # ausschließlich über die Adminrolle bzw. das Bootstrap-Flag `users.is_admin`.
-SYSTEM_ASSIGNABLE = AUDIT | MONITOR
+SYSTEM_ASSIGNABLE = AUDIT | MONITOR | API
 
 ENTRY_PERM_NAMES: dict[str, int] = {
     "read": READ,
@@ -70,6 +74,7 @@ SYSTEM_PERM_NAMES: dict[str, int] = {
     "admin": ADMIN,
     "audit": AUDIT,
     "monitor": MONITOR,
+    "api": API,
 }
 
 # Vereinigung beider Namensräume für Anzeigezwecke (z. B. Adminrolle).
@@ -86,6 +91,7 @@ ACTION_PERM: dict[str, int] = {
     # `ACTION_PERM`-Konsistenz und Fehlermeldungen erhalten.
     "audit": AUDIT,
     "monitor": MONITOR,
+    "api": API,
 }
 
 # Begrenzter Memo-Cache je Session (siehe Modul-Docstring).
@@ -199,7 +205,7 @@ def validate_entry_perms(perms: int) -> None:
 
 
 def validate_system_grant_perms(perms: int) -> None:
-    """System-Grants dürfen nur ``audit``/``monitor`` enthalten (kein ADMIN)."""
+    """System-Grants dürfen nur ``audit``/``monitor``/``api`` enthalten (kein ADMIN)."""
     if perms & ~SYSTEM_ASSIGNABLE:
         raise ValueError("System-Grants erlauben nur 'audit' und 'monitor'")
 

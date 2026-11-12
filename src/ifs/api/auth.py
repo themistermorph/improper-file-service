@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, lazyload
 
@@ -12,8 +12,15 @@ from ..db import session_scope
 from ..models import User
 from ..security import create_access_token, verify_password_safe
 from ..utils import utcnow
-from .deps import client_ip, get_current_user, get_db
-from .schemas import LoginRequest, MeOut, TokenResponse
+from .deps import (
+    bearer_allowed,
+    client_ip,
+    get_current_user,
+    get_current_user_optional,
+    get_db,
+    is_secure_request,
+)
+from .schemas import LoginRequest, MeOut, SessionStatus, TokenResponse
 
 router = APIRouter(tags=["auth"])
 
@@ -31,7 +38,13 @@ def _audit_failure(request: Request, username: str, result: str = "denied") -> N
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+def login(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    issue_token: bool = True,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
     account_key, ip_key = ratelimit.keys(client_ip(request), payload.username)
     retry = ratelimit.retry_after(account_key, ip_key)
     if retry:
@@ -70,7 +83,53 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         str(user.id),
         {"username": user.username, "admin": user.is_admin, "tv": user.token_version},
     )
-    return TokenResponse(access_token=token, expires_in=settings.access_token_ttl_seconds)
+    # Die Web-UI erhaelt die Sitzung ausschliesslich als HttpOnly-Cookie. Das
+    # Cookie wird immer gesetzt; der Token im Response-Body ist ein Opt-in fuer
+    # API-Clients (Standard) und wird nur aus freigegebenen Netzen bzw. fuer
+    # Konten mit Systemrecht `api` ausgeliefert.
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=token,
+        max_age=settings.access_token_ttl_seconds,
+        httponly=True,
+        secure=is_secure_request(request),
+        samesite="strict",
+        path="/",
+    )
+    if not issue_token or not bearer_allowed(db, user, request):
+        return TokenResponse(
+            access_token=None,
+            token_type="cookie",
+            expires_in=settings.access_token_ttl_seconds,
+        )
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=settings.access_token_ttl_seconds,
+    )
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: Request) -> Response:
+    """Loescht das Sitzungs-Cookie (idempotent, auch ohne gueltige Sitzung)."""
+    settings = get_settings()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        path="/",
+        httponly=True,
+        secure=is_secure_request(request),
+        samesite="strict",
+    )
+    return response
+
+
+@router.get("/auth/session", response_model=SessionStatus)
+def session_status(
+    user: User | None = Depends(get_current_user_optional),
+) -> SessionStatus:
+    """Prueft die Cookie-Session ohne 401, damit der Login-Screen ruhig bleibt."""
+    return SessionStatus(authenticated=user is not None)
 
 
 @router.get("/me", response_model=MeOut)

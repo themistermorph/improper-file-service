@@ -49,7 +49,9 @@ def test_zeilenmenue_nutzt_entry_permissions():
 
 
 def test_logout_setzt_alle_menues_zurueck():
-    block = _function_block(_html(), "logout")
+    # logout() loescht nur noch das Server-Cookie; die UI-Aufraeumarbeit
+    # steckt in resetSessionUI() und wird auch bei 401 genutzt.
+    block = _function_block(_html(), "resetSessionUI")
     for element_id in ("menu-users", "menu-system", "menu-audit"):
         assert element_id in block
 
@@ -83,11 +85,13 @@ def test_benutzerdialog_verwaltet_audit_und_monitor():
     assert '"/api/users/" + u.id + "/permissions"' in edit
     assert 'id="eu-audit"' in edit
     assert 'id="eu-monitor"' in edit
+    assert 'id="eu-api"' in edit
 
     submit = _function_block(_html(), "submitUserEdit")
     assert 'apiJson("PUT", "/api/users/" + id + "/permissions"' in submit
     assert 'systemPerms.push("audit")' in submit
     assert 'systemPerms.push("monitor")' in submit
+    assert 'systemPerms.push("api")' in submit
     assert "refreshMe()" in submit
 
 

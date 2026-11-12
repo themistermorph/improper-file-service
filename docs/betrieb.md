@@ -193,7 +193,7 @@ Empfohlener Ablauf auf dem Testsystem:
    `users.is_admin` → Adminrolle, keine ACL-Duplikate.
 4. Neuen Code ausrollen (`api`, `worker`, `ftp` neu starten).
 5. Matrix mit echten Benutzern prüfen (Eigentümer/Zugriff, Link, publish,
-   audit, monitor, Admin ohne Dateizugriff).
+   audit, monitor, api, Admin ohne Dateizugriff).
 6. Erst danach `0013` anwenden.
 7. Regression: `ruff`, volle Testsuite, `scripts/check-doc-links.py`.
 

@@ -22,9 +22,10 @@ def test_berechtigungsbits_sind_stabil_und_getrennt():
     assert authz.PUBLISH == 32
     assert authz.AUDIT == 64
     assert authz.MONITOR == 128
+    assert authz.API == 256
     assert authz.ALL_RESOURCE == 63
-    assert authz.ALL_SYSTEM == 208
-    assert authz.ALL == 255
+    assert authz.ALL_SYSTEM == 464  # admin|audit|monitor|api
+    assert authz.ALL == 511
 
 
 def test_rechte_namen_sind_namensraumgetrennt():
@@ -47,7 +48,7 @@ def test_rechte_namen_sind_namensraumgetrennt():
 
 def test_acl_und_system_grant_validierung():
     authz.validate_entry_perms(authz.ALL_RESOURCE)
-    authz.validate_system_grant_perms(authz.AUDIT | authz.MONITOR)
+    authz.validate_system_grant_perms(authz.AUDIT | authz.MONITOR | authz.API)
     with pytest.raises(ValueError):
         authz.validate_entry_perms(authz.AUDIT)
     with pytest.raises(ValueError):

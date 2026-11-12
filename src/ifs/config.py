@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import secrets
 from functools import lru_cache
@@ -47,6 +48,15 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_ttl_seconds: int = 3600
+    # Name des HttpOnly-Session-Cookies der Web-UI. Empfehlung für Produktion:
+    # ein `__Host-`-Präfix (erzwingt Secure, Path=/ und keinen Domain-Attribut);
+    # der Default bleibt ohne Präfix, damit HTTP-Entwicklungsumgebungen nutzbar
+    # bleiben.
+    auth_cookie_name: str = "ifs_session"
+    # Bearer-Tokens werden nur akzeptiert, wenn die Client-IP in einem dieser
+    # Netze (CIDR, kommagetrennt) liegt ODER das Konto das Systemrecht `api`
+    # besitzt. Leer = kein IP-basierter Zugriff (nur noch das Recht).
+    bearer_allowed_networks: str = "127.0.0.1/32,::1/128"
     login_max_attempts: int = 5
     login_ip_max_attempts: int = 20
     login_window_seconds: int = 300
@@ -170,6 +180,27 @@ class Settings(BaseSettings):
                 "Kein ausreichend starkes IFS_JWT_SECRET gesetzt – es wurde ein zufälliges "
                 "erzeugt. Tokens werden bei jedem Neustart ungültig. Bitte in .env setzen."
             )
+
+        # Cookie-Name muss ein gültiger HTTP-Token sein; Semikolons/Whitespace
+        # würden den Set-Cookie-Header zerlegen.
+        if (
+            not self.auth_cookie_name
+            or any(c.isspace() or c in ";=," for c in self.auth_cookie_name)
+        ):
+            raise ValueError(
+                "IFS_AUTH_COOKIE_NAME ist ungültig (keine Leerzeichen, ';', '=' oder ',')."
+            )
+
+        for part in (self.bearer_allowed_networks or "").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                ipaddress.ip_network(part, strict=False)
+            except ValueError as exc:
+                raise ValueError(
+                    f"IFS_BEARER_ALLOWED_NETWORKS enthält kein gültiges Netz: {part!r}"
+                ) from exc
 
         if self.jwt_algorithm not in ALLOWED_JWT_ALGORITHMS:
             if production:

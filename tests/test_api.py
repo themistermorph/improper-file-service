@@ -57,6 +57,9 @@ def test_api_flow(monkeypatch):
         assert response.status_code == 200
         assert response.headers["content-length"] == "11"
 
+        # Login setzt seit der Cookie-Session ein HttpOnly-Cookie; fuer den
+        # Test eines unauthentifizierten Requests muss es entfernt werden.
+        client.cookies.clear()
         assert client.get("/api/entries").status_code == 401
 
 

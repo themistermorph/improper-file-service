@@ -15,14 +15,23 @@ Alle Endpunkte außer Login, Health, Version, öffentlicher Galerie (`/api/publi
 Vanity-Links (`/published/...`), Freigabe-Download (`/api/shares/{token}/content`)
 sowie der tokenbasierten Vorschau- und
 Archiv-Endpunkte (`/api/preview/{token}`, `/api/archive/{token}`,
-`/api/archive/jobs/{token}`) benötigen einen Bearer-Token:
+`/api/archive/jobs/{token}`) benötigen eine Sitzung – entweder ein
+`HttpOnly`-Session-Cookie (Web-UI) oder einen Bearer-Token (API-Clients):
 
 ```
 Authorization: Bearer <access_token>
 ```
 
-Der Token wird über `POST /api/auth/login` bezogen und läuft nach
-`IFS_ACCESS_TOKEN_TTL_SECONDS` (Standard 3600 s) ab.
+Das Cookie setzt `POST /api/auth/login` automatisch (`HttpOnly`,
+`SameSite=Strict`, `Path=/`, `Secure` bei HTTPS, `Max-Age` =
+`IFS_ACCESS_TOKEN_TTL_SECONDS`). Die Web-UI ruft den Login mit
+`?issue_token=false` auf und erhält dann **kein** JWT im Response-Body.
+
+Bearer-Tokens werden nur akzeptiert, wenn die Client-IP in
+`IFS_BEARER_ALLOWED_NETWORKS` (CIDR, Standard Loopback) liegt **oder** das Konto
+das Systemrecht `api` besitzt. Token und Cookie laufen nach
+`IFS_ACCESS_TOKEN_TTL_SECONDS` (Standard 3600 s) ab; Passwortänderung,
+Admin-Reset und Deaktivierung invalidieren beide sofort über `token_version`.
 
 ### Datentypen
 
@@ -97,11 +106,35 @@ Validierungs- und Framework-Fehler (FastAPI) liefern:
 |---|---|---|---|
 | `username` | string | ja | Benutzername |
 | `password` | string | ja | Passwort |
+| `issue_token` | bool | nein | Query-Parameter. `false` liefert kein JWT im Body (Web-UI); das Cookie wird trotzdem gesetzt. |
 
-Antwort `200`:
+Antwort `200` (Standard, API-Client aus freigegebenem Netz oder mit `api`-Recht):
 
 ```json
 { "access_token": "eyJ...", "token_type": "bearer", "expires_in": 3600 }
+```
+
+Antwort `200` mit `?issue_token=false` (oder ohne Bearer-Berechtigung):
+
+```json
+{ "access_token": null, "token_type": "cookie", "expires_in": 3600 }
+```
+
+In beiden Fällen setzt die Antwort ein `Set-Cookie` mit der Session. Die
+Web-UI speichert bewusst **kein** JWT in `localStorage`/`sessionStorage`.
+
+### `POST /api/auth/logout`
+
+Löscht das Session-Cookie (idempotent, auch ohne gültige Sitzung) und antwortet
+mit `204`.
+
+### `GET /api/auth/session`
+
+Session-Probe für die Web-UI. Antwortet immer mit `200`, damit der Login-Screen
+keine 401-Fehler in der Browser-Konsole erzeugt:
+
+```json
+{ "authenticated": false }
 ```
 
 ```bash
@@ -729,7 +762,7 @@ Ausführlich: [Tutorial 11](../tutorials/11-veroeffentlichungen.md).
 | `GET /api/quota` | Eigene Quota: `{ limit_bytes, usage_bytes }` |
 
 `MeOut` enthält `id`, `username`, `display_name`, `email`, `is_admin`, `is_active`,
-`last_login_at`, `created_at` und `permissions` (Liste aus `audit`/`monitor`).
+`last_login_at`, `created_at` und `permissions` (Liste aus `audit`/`monitor`/`api`).
 `is_admin` ist **effektiv**: Adminrolle oder `users.is_admin`.
 
 `EntryOut` (alle Eintrags-Antworten) enthält zusätzlich `permissions` mit den
@@ -761,7 +794,7 @@ effektiven Eintragsrechten des anfragenden Benutzers (`read`, `write`, `delete`,
 | `GET /api/users/{id}/groups` | Gruppen des Benutzers |
 | `POST /api/users/{id}/groups/{group_id}` · `DELETE …` | Gruppe zuweisen/entfernen → `204` |
 | `GET /api/users/{id}/permissions` | Systemrechte (`permissions`, `permission_names`) |
-| `PUT /api/users/{id}/permissions` | Systemrechte exakt setzen (`permissions: ["audit"\|"monitor"]`) |
+| `PUT /api/users/{id}/permissions` | Systemrechte exakt setzen (`permissions: ["audit"\|"monitor"\|"api"]`) |
 
 **Regeln:** Der **letzte aktive Administrator** kann nicht deaktiviert oder gelöscht
 werden (`409`). Deaktivieren invalidiert alle Tokens des Benutzers. Besitzt der Benutzer
@@ -773,7 +806,7 @@ Dateien, verlangt das Löschen `transfer_to` (`409` sonst).
 |---|---|
 | `GET /api/groups` · `POST /api/groups` | Gruppen auflisten/anlegen (`name`) |
 | `POST /api/groups/{group_id}/members` | Mitglied hinzufügen (`user_id`) → `204` |
-| `GET /api/groups/{id}/permissions` · `PUT …` | Systemrechte der Gruppe (`audit`/`monitor`) |
+| `GET /api/groups/{id}/permissions` · `PUT …` | Systemrechte der Gruppe (`audit`/`monitor`/`api`) |
 | `GET /api/entries/{id}/acl` | ACL-Grants des Eintrags (Recht `admin` am Eintrag) |
 | `POST /api/entries/{id}/acl` | Kompatibler Upsert (`principal_type`, `principal_id`, `perms[]`) → `201`; Bits werden vereinigt |
 | `PUT /api/entries/{id}/acl` | Upsert, ersetzt Rechte exakt (`principal_type`, `principal_id`, `permissions[]`) |
@@ -810,8 +843,8 @@ Intervall (2/5/10/30 s) dar.
 ```
 
 `perms`/`permissions` sind eine Liste aus `read`, `write`, `delete`, `share`,
-`publish`, `admin`. System-Grants erlauben ausschließlich `audit` und `monitor`;
-`admin` kann dort nicht vergeben werden (`400`).
+`publish`, `admin`. System-Grants erlauben ausschließlich `audit`, `monitor`
+und `api`; `admin` kann dort nicht vergeben werden (`400`).
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
