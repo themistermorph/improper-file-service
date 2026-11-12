@@ -278,7 +278,7 @@
           <thead>
             <tr>
               <th class="w-34px">
-                <input type="checkbox" id="select-all" data-stop
+                <input type="checkbox" id="select-all"
                        data-change="toggleSelectAll" />
               </th>
               <th data-action="sortBy" data-column="name" class="w-48pct">Name <span class="arrow" id="a-name"></span></th>
@@ -1181,12 +1181,16 @@
         <div class="top">
           <span class="name" title="${esc(archiveJob.name)}">ZIP: ${esc(archiveJob.name)}</span>
           <button class="close" title="Abbrechen"
-            data-action="cancelArchiveJob" data-stop>✕</button>
+            data-action="cancelArchiveJob">✕</button>
         </div>
         <div class="bar ${archiveJob.status === "failed" ? "err" : ""}"><i data-width="${archivePercent()}"></i></div>
         <div class="muted fs-12 mt-6">${esc(archiveStatusText())}</div>`;
       applyWidths(el);
-      el.onclick = () => restoreArchiveModal();
+      // Klicks auf den Abbrechen-Button nicht als "Mini wiederherstellen" werten.
+      el.onclick = (ev) => {
+        if (ev.target.closest("button")) return;
+        restoreArchiveModal();
+      };
     }
 
     function updateArchiveUI() {
@@ -3616,9 +3620,6 @@
       scheduleLoadAccessPrincipals: () => scheduleLoadAccessPrincipals(),
     };
     document.addEventListener("click", (ev) => {
-      // Manche Controls (z. B. "Alle auswaehlen") stoppen nur die Weitergabe,
-      // damit der globale Menue-Schliesser nicht anspringt.
-      if (ev.target.closest("[data-stop]")) ev.stopPropagation();
       const el = ev.target.closest("[data-action]");
       if (!el) return;
       const fn = clickActions[el.dataset.action];
@@ -3654,6 +3655,8 @@
 
     // ---------- Start ----------
     document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+    // "Alle auswaehlen" soll den globalen Menue-Schliesser nicht ausloesen.
+    document.getElementById("select-all").addEventListener("click", e => e.stopPropagation());
     // Die Sitzung steckt im HttpOnly-Cookie. Die Probe antwortet auch ohne
     // Anmeldung mit 200 (authenticated=false), damit die Konsole sauber bleibt.
     fetch("/api/auth/session")
