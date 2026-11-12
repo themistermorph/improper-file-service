@@ -60,8 +60,10 @@ def _cross_origin(request: Request) -> bool:
             return True
         parsed = urlsplit(origin)
         host = (request.headers.get("host") or "").lower()
-        scheme = "https" if is_secure_request(request) else "http"
-        return parsed.scheme != scheme or parsed.netloc.lower() != host
+        # Nur den Host vergleichen: Hinter einem TLS-terminierenden Proxy ist
+        # das Schemes der Anfrage intern http, waehrend der Browser https sendet.
+        # Fuer CSRF zaehlt die Origin, nicht das Transport-Schema.
+        return parsed.netloc.lower() != host
     site = (request.headers.get("sec-fetch-site") or "").lower()
     return site in {"cross-site", "same-site"}
 

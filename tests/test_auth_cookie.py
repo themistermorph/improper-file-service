@@ -175,6 +175,15 @@ def test_fremder_origin_wird_bei_cookie_posts_abgelehnt():
         )
         assert fetched.status_code == 201, fetched.text
 
+        # TLS-terminierender Proxy: Der Browser sendet https, die API sieht
+        # intern http. Der Host muss trotzdem uebereinstimmen.
+        proxied = client.post(
+            "/api/folders",
+            json={"name": "csrf-proxied"},
+            headers={"Origin": "https://testserver"},
+        )
+        assert proxied.status_code == 201, proxied.text
+
 
 def test_cross_site_fetch_metadata_wird_abgelehnt():
     with TestClient(main.app) as client:
