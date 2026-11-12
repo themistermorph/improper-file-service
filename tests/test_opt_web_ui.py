@@ -136,12 +136,14 @@ def test_debounce_helper_exists():
 
 def test_debounced_handlers_are_wired():
     source = _html()
-    assert 'oninput="scheduleRender()"' in source, "Suche rendert weiter pro Tastendruck"
-    assert 'oninput="scheduleLoadUsers()"' in source, "Benutzersuche lädt weiter pro Tastendruck"
-    assert 'oninput="scheduleRenderAudit()"' in source, "Audit-Filter rendert weiter pro Tastendruck"
-    assert "oninput=\"render()\"" not in source
-    assert "oninput=\"loadUsers()\"" not in source
-    assert "oninput=\"renderAudit()\"" not in source
+    # Seit der CSP-Haertung gibt es keine Inline-Handler mehr: die Verdrahtung
+    # laeuft ueber data-Attribute und die zentrale Event-Delegation.
+    assert 'data-input="scheduleRender"' in source, "Suche rendert weiter pro Tastendruck"
+    assert 'data-input="scheduleLoadUsers"' in source, "Benutzersuche lädt weiter pro Tastendruck"
+    assert 'data-input="scheduleRenderAudit"' in source, "Audit-Filter rendert weiter pro Tastendruck"
+    assert 'data-input="render"' not in source
+    assert 'data-input="loadUsers"' not in source
+    assert 'data-input="renderAudit"' not in source
     assert "const scheduleRender = debounce(" in source
     assert "const scheduleLoadUsers = debounce(" in source
     assert "const scheduleRenderAudit = debounce(" in source

@@ -6,6 +6,18 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Security
+- **Strikte Content-Security-Policy:** Die Web-Oberfläche (`/`, `/mobile`,
+  `/published`) wird ohne `'unsafe-inline'` ausgeliefert. Die Inline-`<script>`-
+  und `<style>`-Blöcke werden per SHA-256-Hash freigegeben; Inline-Event-Handler
+  und `style=`-Attribute wurden vollständig entfernt (`script-src-attr 'none'`,
+  `style-src-attr 'none'`). Dynamische Fortschrittsbreiten setzt die UI per
+  CSSOM. Die HTML-Vorschau läuft über den sandboxed
+  `/api/preview/{token}`-Endpunkt; auch dort gilt kein `'unsafe-inline'`.
+- **CSP-Hashes zur Laufzeit:** Die Hashes werden beim Start aus den tatsächlich
+  ausgelieferten HTML-Dateien berechnet (`src/ifs/security_headers.py`). Nach
+  Änderungen an den HTML-Dateien ist ein Neustart des API-Prozesses nötig.
+
 ### Added
 - **Log-Panel:** Das Admin-Menü „Logs“ zeigt die letzten Zeilen der Prozess-Logs
   von API, FTPS und Worker (Auswahl der Zeilenzahl, Auto-Refresh, Statuszeile).

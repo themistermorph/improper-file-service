@@ -257,6 +257,25 @@ Weiter: [Betrieb](betrieb.md) · [Konfiguration](konfiguration.md)
   `X-Content-Type-Options`, HSTS bei HTTPS); Token im `sessionStorage` statt `localStorage`
   (verbleibendes XSS-Risiko dokumentiert).
 
+**Content-Security-Policy der Web-Oberfläche:**
+
+- `default-src 'self'`; `script-src` und `style-src` erlauben nur `'self'` plus die
+  **SHA-256-Hashes** der Inline-Blöcke. Es gibt kein `'unsafe-inline'` und kein
+  `'unsafe-hashes'`.
+- `script-src-attr 'none'` und `style-src-attr 'none'`: Inline-Event-Handler
+  (`onclick=…`) und `style=`-Attribute sind vollständig entfernt. Die UI nutzt
+  `data-action`/`data-change`/`data-input` mit zentraler Event-Delegation; dynamische
+  Breiten werden per CSSOM (`element.style.width`) gesetzt (von CSP nicht blockiert).
+- `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'self'`,
+  `form-action 'self'`, `connect-src 'self'`.
+- Die Hashes berechnet `src/ifs/security_headers.py` beim Start aus den drei
+  HTML-Dateien. Änderungen an Inline-Blöcken erfordern einen Neustart des
+  API-Prozesses (im Container: `docker compose up -d api`).
+- **Vorschau/aktive Inhalte:** `/api/preview/{token}` und der generische
+  Content-Endpunkt liefern aktive Typen mit `Content-Security-Policy: sandbox;
+  default-src 'none'; style-src 'none'; img-src data: blob:`. Das Dokument darf
+  keine Skripte ausführen; eingebettete Styles werden bewusst ignoriert.
+
 ---
 
 ## 14. Härtungsmaßnahmen (Runde 1)

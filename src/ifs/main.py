@@ -23,19 +23,13 @@ from .db import create_all, session_scope
 from .errors import IFSError
 from .models import Entry, PublishedEntry, User
 from .security import hash_password
+from .security_headers import content_security_policy
 
 logger = logging.getLogger("ifs")
 
-CONTENT_SECURITY_POLICY = (
-    "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
-    "style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data: blob:; "
-    "media-src 'self' blob:; "
-    "frame-src 'self' blob:; "
-    "connect-src 'self'; "
-    "object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'"
-)
+# Hashes der Inline-<script>/<style>-Blöcke werden beim Start aus den
+# ausgelieferten HTML-Dateien berechnet; es gibt kein 'unsafe-inline'.
+CONTENT_SECURITY_POLICY = content_security_policy()
 
 # Statische Security-Header (Reihenfolge wie zuvor gesetzt).
 _STATIC_SECURITY_HEADERS = (

@@ -80,7 +80,11 @@ def preview(token: str, request: Request, db: Session = Depends(get_db)) -> Resp
 
     response = stream_blob(db, entry, resolve_blob(db, entry), request, actor_id=user.id, inline_active=True)
     if (entry.mime or "").lower() in SANDBOXED_TYPES:
+        # Bewusst ohne 'unsafe-inline' (auch fuer Styles): Das Dokument ist
+        # vollstaendig sandboxed, darf keine Skripte ausfuehren und laedt keine
+        # externen Ressourcen. Eingebettete Styles werden dadurch ignoriert –
+        # der Inhalt bleibt lesbar, aktive Inhalte bleiben wirkungslos.
         response.headers["Content-Security-Policy"] = (
-            "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:"
+            "sandbox; default-src 'none'; style-src 'none'; img-src data: blob:"
         )
     return response

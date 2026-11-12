@@ -80,7 +80,7 @@ def test_shares_nav_item_next_to_publications():
     assert 'id="nav-shares"' in page
     assert page.index('id="nav-published"') < page.index('id="nav-shares"')
     # Nicht mehr zusätzlich im Kontomenü: genau eine Verwendung.
-    assert page.count("showView('shares')") == 1
+    assert page.count('data-view="shares"') == 1
 
 
 def test_gallery_page_defines_hidden_helper():

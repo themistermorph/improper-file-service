@@ -35,7 +35,7 @@ def test_account_menue_nutzt_systemrechte():
 def test_rollen_menue_ist_entfernt():
     source = _html()
     assert 'id="menu-roles"' not in source
-    assert "showView('roles')" not in source
+    assert 'data-view="roles"' not in source
 
 
 def test_zeilenmenue_nutzt_entry_permissions():
@@ -94,7 +94,7 @@ def test_benutzerdialog_verwaltet_audit_und_monitor():
 def test_geteilt_ansicht_zeigt_ausgehende_acls():
     source = _html()
     assert 'id="nav-shared-out"' in source
-    assert "showView('shared-out')" in source
+    assert 'data-view="shared-out"' in source
     assert 'id="shared-out-rows"' in source
 
     load = _function_block(source, "loadSharedOut")
@@ -126,7 +126,7 @@ def test_geteilt_menue_verwaltet_bestehende_links():
 
     dialog = _function_block(_html(), "entryShareDialog")
     assert '"/api/shares?entry_id=" + entry.id' in dialog
-    assert "shareDialog(entryShareEntry)" in dialog
+    assert 'data-action="shareDialogEntry"' in dialog
     assert "copyEntryShare" in dialog
     assert "editEntryShare" in dialog
     assert "revokeEntryShare" in dialog

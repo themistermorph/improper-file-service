@@ -170,6 +170,41 @@
              max-width: 380px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
     .toast.err { border-left-color: var(--danger); }
     .toast.ok { border-left-color: var(--ok); }
+
+    /* Utility-Klassen ersetzen Inline-Style-Attribute. Die App-CSP erlaubt
+       bewusst kein 'unsafe-inline' (auch nicht fuer style-Attribute); dynamische
+       Werte werden per CSSOM (element.style.*) gesetzt. */
+    .fs-13 { font-size: 13px; }
+    .fs-12 { font-size: 12px; }
+    .mt-0 { margin-top: 0; }
+    .mt-6 { margin-top: 6px; }
+    .mt-14 { margin-top: 14px; }
+    .m-0 { margin: 0; }
+    .p-0 { padding: 0; }
+    .p-20 { padding: 20px; }
+    .mb-8 { margin: 0 0 8px; }
+    .w-34px { width: 34px; }
+    .w-48pct { width: 48%; }
+    .w-42pct { width: 42%; }
+    .w-24pct { width: 24%; }
+    .w-22pct { width: 22%; }
+    .w-14pct { width: 14%; }
+    .w-10pct { width: 10%; }
+    .w-8pct { width: 8%; }
+    .w-full { width: 100%; }
+    .justify-start { justify-content: flex-start; }
+    .divider { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+    .divider-lg { margin: 24px 0; }
+    .plain-fieldset { border: 0; padding: 0; margin: 8px 0; }
+    .preview-frame { width: 100%; height: 70vh; background: #fff;
+                     border: 1px solid var(--border); border-radius: 8px; }
+    .preview-frame-lg { width: 100%; height: 74vh;
+                        border: 1px solid var(--border); border-radius: 8px; }
+    .preview-pre { margin: 0; max-height: 70vh; overflow: auto; background: #0b0e13;
+                   border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+                   font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+    .preview-media { max-width: 100%; max-height: 72vh; border-radius: 8px; }
+    .center { text-align: center; margin: 6px 0; }
   </style>
 </head>
 <body>
@@ -178,20 +213,20 @@
     <div class="account">
       <a class="btn secondary small" id="nav-gallery" href="/published"
          target="_blank" rel="noopener" title="Öffentlich veröffentlichte Dateien ansehen">🌐 Veröffentlichungen</a>
-      <button class="btn ghost small hidden" id="btn-refresh" onclick="refreshCurrent()" title="Aktualisieren">⟳</button>
-      <button class="btn secondary small hidden" id="account-btn" onclick="toggleAccountMenu(event)">
+      <button class="btn ghost small hidden" id="btn-refresh" data-action="refreshCurrent" title="Aktualisieren">⟳</button>
+      <button class="btn secondary small hidden" id="account-btn" data-action="toggleAccountMenu">
         <span id="who">…</span> ▾
       </button>
       <div id="account-menu" class="menu hidden">
-        <button onclick="showView('trash')">🗑 Papierkorb <span id="trash-badge" class="badge hidden"></span></button>
-        <button onclick="showView('profile')">👤 Profil</button>
-        <button onclick="window.location.href='/mobile'">📱 Mobile Ansicht</button>
-        <button id="menu-users" class="hidden" onclick="showView('users')">👥 Benutzer</button>
-        <button id="menu-system" class="hidden" onclick="showView('system')">📊 System</button>
-        <button id="menu-audit" class="hidden" onclick="showView('audit')">🧾 Audit</button>
-        <button id="menu-logs" class="hidden" onclick="showView('logs')">📜 Logs</button>
+        <button data-action="showView" data-view="trash">🗑 Papierkorb <span id="trash-badge" class="badge hidden"></span></button>
+        <button data-action="showView" data-view="profile">👤 Profil</button>
+        <button data-action="goMobile">📱 Mobile Ansicht</button>
+        <button id="menu-users" class="hidden" data-action="showView" data-view="users">👥 Benutzer</button>
+        <button id="menu-system" class="hidden" data-action="showView" data-view="system">📊 System</button>
+        <button id="menu-audit" class="hidden" data-action="showView" data-view="audit">🧾 Audit</button>
+        <button id="menu-logs" class="hidden" data-action="showView" data-view="logs">📜 Logs</button>
         <hr />
-        <button class="danger" onclick="logout()">Abmelden</button>
+        <button class="danger" data-action="logout">Abmelden</button>
       </div>
     </div>
   </header>
@@ -202,39 +237,39 @@
       <div class="sub">Weboberfläche des IFS-Dateisystems</div>
       <input id="username" type="text" placeholder="Benutzername" autocomplete="username" />
       <input id="password" type="password" placeholder="Passwort" autocomplete="current-password" />
-      <button class="btn" id="btn-login" onclick="login()">Anmelden</button>
+      <button class="btn" id="btn-login" data-action="login">Anmelden</button>
       <div id="login-error" class="muted"></div>
     </section>
 
     <section id="app" class="hidden">
       <div class="nav">
-        <button class="btn small active" id="nav-files" onclick="showView('files')">📁 Dateien</button>
-        <button class="btn small secondary" id="nav-shared" onclick="showView('shared')">📥 Mit mir geteilt</button>
-        <button class="btn small secondary" id="nav-shared-out" onclick="showView('shared-out')">🤝 Geteilt</button>
-        <button class="btn small secondary" id="nav-published" onclick="showView('published')">📤 Meine Veröffentlichungen</button>
-        <button class="btn small secondary" id="nav-shares" onclick="showView('shares')">🔗 Freigaben</button>
+        <button class="btn small active" id="nav-files" data-action="showView" data-view="files">📁 Dateien</button>
+        <button class="btn small secondary" id="nav-shared" data-action="showView" data-view="shared">📥 Mit mir geteilt</button>
+        <button class="btn small secondary" id="nav-shared-out" data-action="showView" data-view="shared-out">🤝 Geteilt</button>
+        <button class="btn small secondary" id="nav-published" data-action="showView" data-view="published">📤 Meine Veröffentlichungen</button>
+        <button class="btn small secondary" id="nav-shares" data-action="showView" data-view="shares">🔗 Freigaben</button>
       </div>
 
       <div id="files-view">
       <div class="crumbs" id="crumbs"></div>
 
       <div class="toolbar">
-        <button class="btn secondary" onclick="newFolder()">＋ Neuer Ordner</button>
-        <button class="btn" onclick="fileInput.click()">⬆ Hochladen</button>
-        <button class="btn secondary" onclick="folderInput.click()">📁 Ordner hochladen</button>
+        <button class="btn secondary" data-action="newFolder">＋ Neuer Ordner</button>
+        <button class="btn" data-action="fileInputClick">⬆ Hochladen</button>
+        <button class="btn secondary" data-action="folderInputClick">📁 Ordner hochladen</button>
         <input type="file" id="fileInput" multiple class="hidden" />
         <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" />
-        <input class="grow" id="search" type="text" placeholder="Im aktuellen Ordner filtern…" oninput="scheduleRender()" />
+        <input class="grow" id="search" type="text" placeholder="Im aktuellen Ordner filtern…" data-input="scheduleRender" />
       </div>
 
       <div id="uploads"></div>
 
       <div id="bulkbar" class="toolbar hidden">
         <strong id="bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
-        <button class="btn secondary" onclick="bulkDownload()">Download (.zip)</button>
-        <button class="btn secondary" onclick="bulkMoveDialog()">Verschieben</button>
-        <button class="btn danger" onclick="bulkDelete()">Löschen</button>
-        <button class="btn ghost" onclick="clearSelection()">Auswahl aufheben</button>
+        <button class="btn secondary" data-action="bulkDownload">Download (.zip)</button>
+        <button class="btn secondary" data-action="bulkMoveDialog">Verschieben</button>
+        <button class="btn danger" data-action="bulkDelete">Löschen</button>
+        <button class="btn ghost" data-action="clearSelection">Auswahl aufheben</button>
       </div>
 
       <div class="card dropzone" id="dropzone">
@@ -242,85 +277,85 @@
         <table>
           <thead>
             <tr>
-              <th style="width:34px">
-                <input type="checkbox" id="select-all" onclick="event.stopPropagation()"
-                       onchange="toggleSelectAll(this.checked)" />
+              <th class="w-34px">
+                <input type="checkbox" id="select-all" data-stop
+                       data-change="toggleSelectAll" />
               </th>
-              <th onclick="sortBy('name')" style="width:48%">Name <span class="arrow" id="a-name"></span></th>
-              <th onclick="sortBy('size')" class="right" style="width:14%">Größe <span class="arrow" id="a-size"></span></th>
-              <th onclick="sortBy('updated_at')" style="width:24%">Geändert <span class="arrow" id="a-updated_at"></span></th>
-              <th style="width:10%"></th>
+              <th data-action="sortBy" data-column="name" class="w-48pct">Name <span class="arrow" id="a-name"></span></th>
+              <th data-action="sortBy" data-column="size" class="right w-14pct">Größe <span class="arrow" id="a-size"></span></th>
+              <th data-action="sortBy" data-column="updated_at" class="w-24pct">Geändert <span class="arrow" id="a-updated_at"></span></th>
+              <th class="w-10pct"></th>
             </tr>
           </thead>
           <tbody id="entries"></tbody>
         </table>
         <div class="empty hidden" id="empty">Dieser Ordner ist leer.</div>
       </div>
-      <p class="muted" id="status" style="font-size:13px"></p>
+      <p class="muted fs-13" id="status"></p>
       </div><!-- /files-view -->
 
       <div id="trash-view" class="hidden">
         <div class="toolbar">
-          <button class="btn secondary" onclick="loadTrash()">Aktualisieren</button>
-          <button class="btn danger" onclick="emptyTrash()">Papierkorb leeren</button>
+          <button class="btn secondary" data-action="loadTrash">Aktualisieren</button>
+          <button class="btn danger" data-action="emptyTrash">Papierkorb leeren</button>
         </div>
         <div id="trash-bulkbar" class="toolbar hidden">
           <strong id="trash-bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
-          <button class="btn secondary" onclick="bulkRestoreTrash()">Wiederherstellen</button>
-          <button class="btn danger" onclick="bulkPurgeTrash()">Endgültig löschen</button>
-          <button class="btn ghost" onclick="clearTrashSelection()">Auswahl aufheben</button>
+          <button class="btn secondary" data-action="bulkRestoreTrash">Wiederherstellen</button>
+          <button class="btn danger" data-action="bulkPurgeTrash">Endgültig löschen</button>
+          <button class="btn ghost" data-action="clearTrashSelection">Auswahl aufheben</button>
         </div>
         <div class="card">
           <table>
             <thead>
               <tr>
-                <th style="width:34px">
+                <th class="w-34px">
                   <input type="checkbox" id="trash-select-all"
-                         onchange="trashSelectAll(this.checked)" />
+                         data-change="trashSelectAll" />
                 </th>
-                <th style="width:42%">Name</th>
-                <th class="right" style="width:14%">Größe</th>
-                <th style="width:22%">Gelöscht</th>
-                <th class="right" style="width:10%">Resttage</th>
-                <th style="width:8%"></th>
+                <th class="w-42pct">Name</th>
+                <th class="right w-14pct">Größe</th>
+                <th class="w-22pct">Gelöscht</th>
+                <th class="right w-10pct">Resttage</th>
+                <th class="w-8pct"></th>
               </tr>
             </thead>
             <tbody id="trash-entries"></tbody>
           </table>
           <div class="empty hidden" id="trash-empty">Der Papierkorb ist leer.</div>
         </div>
-        <p class="muted" style="font-size:13px">Einträge werden nach Ablauf der Aufbewahrungsfrist automatisch endgültig gelöscht.</p>
+        <p class="muted fs-13">Einträge werden nach Ablauf der Aufbewahrungsfrist automatisch endgültig gelöscht.</p>
       </div>
 
       <div id="users-view" class="hidden">
         <div class="toolbar">
-          <input id="user-q" class="grow" type="text" placeholder="Benutzer suchen (Name, E-Mail)…" oninput="scheduleLoadUsers()" />
-          <select id="user-active" onchange="loadUsers()">
+          <input id="user-q" class="grow" type="text" placeholder="Benutzer suchen (Name, E-Mail)…" data-input="scheduleLoadUsers" />
+          <select id="user-active" data-change="loadUsers">
             <option value="">Alle Status</option>
             <option value="true">Aktiv</option>
             <option value="false">Inaktiv</option>
           </select>
-          <select id="user-admin" onchange="loadUsers()">
+          <select id="user-admin" data-change="loadUsers">
             <option value="">Alle Konten</option>
             <option value="true">Administratoren</option>
             <option value="false">Benutzer</option>
           </select>
-          <button class="btn" onclick="userCreateDialog()">＋ Neuer Benutzer</button>
+          <button class="btn" data-action="userCreateDialog">＋ Neuer Benutzer</button>
         </div>
         <div id="user-bulkbar" class="toolbar hidden">
           <strong id="user-bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
-          <button class="btn secondary" onclick="bulkUserActive(true)">Aktivieren</button>
-          <button class="btn secondary" onclick="bulkUserActive(false)">Deaktivieren</button>
-          <button class="btn danger" onclick="bulkUserDeleteDialog()">Löschen</button>
-          <button class="btn ghost" onclick="clearUserSelection()">Auswahl aufheben</button>
+          <button class="btn secondary" data-action="bulkUserActive" data-active="true">Aktivieren</button>
+          <button class="btn secondary" data-action="bulkUserActive" data-active="false">Deaktivieren</button>
+          <button class="btn danger" data-action="bulkUserDeleteDialog">Löschen</button>
+          <button class="btn ghost" data-action="clearUserSelection">Auswahl aufheben</button>
         </div>
         <div class="card">
           <table>
             <thead>
               <tr>
-                <th style="width:34px">
+                <th class="w-34px">
                   <input type="checkbox" id="user-select-all"
-                         onchange="userSelectAll(this.checked)" />
+                         data-change="userSelectAll" />
                 </th>
                 <th>Benutzername</th><th>Anzeigename</th><th>E-Mail</th>
                 <th>Status</th><th>Admin</th><th>Letzter Login</th><th></th>
@@ -330,26 +365,26 @@
           </table>
           <div class="empty hidden" id="user-empty">Keine Benutzer gefunden.</div>
         </div>
-        <p class="muted" id="user-status" style="font-size:13px"></p>
+        <p class="muted fs-13" id="user-status"></p>
       </div>
 
       <div id="shares-view" class="hidden">
         <div class="toolbar">
-          <button class="btn secondary" onclick="loadShares()">Aktualisieren</button>
-          <span class="muted" style="font-size:13px">Links erzeugst du im Dateimanager über „…“ → „Link“.</span>
+          <button class="btn secondary" data-action="loadShares">Aktualisieren</button>
+          <span class="muted fs-13">Links erzeugst du im Dateimanager über „…“ → „Link“.</span>
         </div>
         <div id="share-bulkbar" class="toolbar hidden">
           <strong id="share-bulk-count">0</strong><span class="muted">&nbsp;ausgewählt</span>
-          <button class="btn danger" onclick="bulkRevokeShares()">Widerrufen</button>
-          <button class="btn ghost" onclick="clearShareSelection()">Auswahl aufheben</button>
+          <button class="btn danger" data-action="bulkRevokeShares">Widerrufen</button>
+          <button class="btn ghost" data-action="clearShareSelection">Auswahl aufheben</button>
         </div>
         <div class="card">
           <table>
             <thead>
               <tr>
-                <th style="width:34px">
+                <th class="w-34px">
                   <input type="checkbox" id="share-select-all"
-                         onchange="shareSelectAll(this.checked)" />
+                         data-change="shareSelectAll" />
                 </th>
                 <th>Ziel</th><th>Erstellt von</th><th>Läuft ab</th>
                   <th class="right">Downloads</th><th>Schutz</th><th></th></tr>
@@ -362,9 +397,9 @@
 
       <div id="shared-view" class="hidden">
         <div class="toolbar">
-          <button class="btn secondary hidden" id="shared-back" onclick="sharedBack()">← Zurück</button>
-          <button class="btn secondary" onclick="loadShared()">Aktualisieren</button>
-          <span class="muted" id="shared-crumbs" style="font-size:13px">Einträge, die dir per Recht freigegeben wurden.</span>
+          <button class="btn secondary hidden" id="shared-back" data-action="sharedBack">← Zurück</button>
+          <button class="btn secondary" data-action="loadShared">Aktualisieren</button>
+          <span class="muted fs-13" id="shared-crumbs">Einträge, die dir per Recht freigegeben wurden.</span>
         </div>
         <div class="card">
           <table>
@@ -379,8 +414,8 @@
 
       <div id="shared-out-view" class="hidden">
         <div class="toolbar">
-          <button class="btn secondary" onclick="loadSharedOut()">Aktualisieren</button>
-          <span class="muted" style="font-size:13px">Berechtigungen, die du auf deinen Einträgen vergeben hast.</span>
+          <button class="btn secondary" data-action="loadSharedOut">Aktualisieren</button>
+          <span class="muted fs-13">Berechtigungen, die du auf deinen Einträgen vergeben hast.</span>
         </div>
         <div class="card">
           <table>
@@ -395,9 +430,9 @@
 
       <div id="published-view" class="hidden">
         <div class="toolbar">
-          <button class="btn secondary" onclick="loadPublished()">Aktualisieren</button>
+          <button class="btn secondary" data-action="loadPublished">Aktualisieren</button>
           <a class="btn secondary" href="/published" target="_blank" rel="noopener">🌐 Öffentliche Galerie</a>
-          <span class="muted" style="font-size:13px">Dateien veröffentlichst du im Dateimanager über „…“ → „Veröffentlichen“.</span>
+          <span class="muted fs-13">Dateien veröffentlichst du im Dateimanager über „…“ → „Veröffentlichen“.</span>
         </div>
         <div class="card">
           <table>
@@ -414,8 +449,8 @@
       <div id="audit-view" class="hidden">
         <div class="toolbar">
           <input id="audit-q" class="grow" type="text"
-                 placeholder="Filtern (Aktion, Benutzer, IP, Ziel)…" oninput="scheduleRenderAudit()" />
-          <button class="btn secondary" onclick="loadAudit()">Aktualisieren</button>
+                 placeholder="Filtern (Aktion, Benutzer, IP, Ziel)…" data-input="scheduleRenderAudit" />
+          <button class="btn secondary" data-action="loadAudit">Aktualisieren</button>
         </div>
         <div class="card">
           <table>
@@ -430,57 +465,57 @@
 
       <div id="system-view" class="hidden">
         <div class="toolbar">
-          <label class="muted" style="font-size:13px">Intervall</label>
-          <select id="monitor-interval" onchange="setMonitorInterval()">
+          <label class="muted fs-13">Intervall</label>
+          <select id="monitor-interval" data-change="setMonitorInterval">
             <option value="2000">2 s</option>
             <option value="5000" selected>5 s</option>
             <option value="10000">10 s</option>
             <option value="30000">30 s</option>
           </select>
-          <button class="btn secondary" onclick="loadSystem()">Aktualisieren</button>
+          <button class="btn secondary" data-action="loadSystem">Aktualisieren</button>
         </div>
         <div class="grid" id="system-cards"></div>
       </div>
 
       <div id="logs-view" class="hidden">
         <div class="toolbar">
-          <select id="log-service" onchange="loadLogs()">
+          <select id="log-service" data-change="loadLogs">
             <option value="api">API</option>
             <option value="ftp">FTPS</option>
             <option value="worker">Worker</option>
           </select>
-          <select id="log-lines" onchange="loadLogs()">
+          <select id="log-lines" data-change="loadLogs">
             <option value="100">100 Zeilen</option>
             <option value="200" selected>200 Zeilen</option>
             <option value="500">500 Zeilen</option>
             <option value="1000">1000 Zeilen</option>
           </select>
-          <button class="btn secondary" onclick="loadLogs()">Aktualisieren</button>
-          <label class="checkline" style="margin:0">
-            <input type="checkbox" id="log-follow" checked onchange="syncLogsTimer()" />
+          <button class="btn secondary" data-action="loadLogs">Aktualisieren</button>
+          <label class="checkline m-0">
+            <input type="checkbox" id="log-follow" checked data-change="syncLogsTimer" />
             Automatisch
           </label>
-          <span class="muted" id="log-status" style="font-size:12px"></span>
+          <span class="muted fs-12" id="log-status"></span>
         </div>
-        <div class="card" style="padding:0">
+        <div class="card p-0">
           <pre id="log-output" class="logbox"></pre>
         </div>
       </div>
 
       <div id="profile-view" class="hidden">
-        <div class="card" style="padding:20px">
-          <h2 style="margin-top:0">Mein Profil</h2>
+        <div class="card p-20">
+          <h2 class="mt-0">Mein Profil</h2>
           <div class="field"><label>Benutzername</label><input id="me-username" readonly /></div>
           <div class="field"><label>Anzeigename</label><input id="me-display" /></div>
           <div class="field"><label>E-Mail</label><input id="me-email" /></div>
-          <button class="btn" onclick="saveProfile()">Speichern</button>
+          <button class="btn" data-action="saveProfile">Speichern</button>
 
-          <hr style="border:0;border-top:1px solid var(--border);margin:24px 0" />
+          <hr class="divider divider-lg" />
           <h2>Passwort ändern</h2>
           <div class="field"><label>Aktuelles Passwort</label><input id="pw-current" type="password" autocomplete="current-password" /></div>
           <div class="field"><label>Neues Passwort (min. 8 Zeichen)</label><input id="pw-new" type="password" autocomplete="new-password" /></div>
-          <button class="btn secondary" onclick="changeMyPassword()">Passwort ändern</button>
-          <p class="muted" style="font-size:13px">Nach der Änderung wirst du abgemeldet und meldest dich mit dem neuen Passwort neu an.</p>
+          <button class="btn secondary" data-action="changeMyPassword">Passwort ändern</button>
+          <p class="muted fs-13">Nach der Änderung wirst du abgemeldet und meldest dich mit dem neuen Passwort neu an.</p>
         </div>
       </div>
     </section>
@@ -1120,12 +1155,12 @@
       hideArchiveMini();
       openModal(`
         <h2>ZIP wird erstellt</h2>
-        <p class="muted" style="font-size:13px">${esc(archiveJob.name)} · ${archiveJob.totalFiles} Datei(en) · ${fmtSize(archiveJob.totalBytes)}</p>
-        <div class="bar ${archiveJob.status === "failed" ? "err" : ""}" id="zip-bar"><i style="width:${archivePercent()}%"></i></div>
-        <div class="muted" id="zip-status" style="font-size:13px;margin-top:6px">${esc(archiveStatusText())}</div>
+        <p class="muted fs-13">${esc(archiveJob.name)} · ${archiveJob.totalFiles} Datei(en) · ${fmtSize(archiveJob.totalBytes)}</p>
+        <div class="bar ${archiveJob.status === "failed" ? "err" : ""}" id="zip-bar"><i data-width="${archivePercent()}"></i></div>
+        <div class="muted fs-13 mt-6" id="zip-status">${esc(archiveStatusText())}</div>
         <div class="actions">
-          <button class="btn secondary" onclick="minimizeArchive()">Im Hintergrund</button>
-          <button class="btn ghost" onclick="cancelArchiveJob()">Abbrechen</button>
+          <button class="btn secondary" data-action="minimizeArchive">Im Hintergrund</button>
+          <button class="btn ghost" data-action="cancelArchiveJob">Abbrechen</button>
         </div>`);
       archiveModalOpen = true;
     }
@@ -1144,10 +1179,11 @@
         <div class="top">
           <span class="name" title="${esc(archiveJob.name)}">ZIP: ${esc(archiveJob.name)}</span>
           <button class="close" title="Abbrechen"
-            onclick="event.stopPropagation();cancelArchiveJob()">✕</button>
+            data-action="cancelArchiveJob" data-stop>✕</button>
         </div>
-        <div class="bar ${archiveJob.status === "failed" ? "err" : ""}"><i style="width:${archivePercent()}%"></i></div>
-        <div class="muted" style="font-size:12px;margin-top:6px">${esc(archiveStatusText())}</div>`;
+        <div class="bar ${archiveJob.status === "failed" ? "err" : ""}"><i data-width="${archivePercent()}"></i></div>
+        <div class="muted fs-12 mt-6">${esc(archiveStatusText())}</div>`;
+      applyWidths(el);
       el.onclick = () => restoreArchiveModal();
     }
 
@@ -1531,7 +1567,7 @@
     function shareDialog(entry) {
       const isFolder = entry.type === "folder";
       const hint = isFolder
-        ? `<p class="muted" style="font-size:13px">Der Ordnerinhalt wird beim Öffnen des Links als ZIP-Datei bereitgestellt.</p>`
+        ? `<p class="muted fs-13">Der Ordnerinhalt wird beim Öffnen des Links als ZIP-Datei bereitgestellt.</p>`
         : "";
       const uploadField = isFolder
         ? `<label class="checkline"><input type="checkbox" id="sh-upload" /> ` +
@@ -1546,7 +1582,7 @@
         <div class="field"><label>Gültig (Tage, optional)</label><input id="sh-days" type="number" min="1" /></div>
         <div class="field"><label>Max. Downloads (optional)</label><input id="sh-max" type="number" min="1" /></div>
         ${uploadField}
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
         <button class="btn" id="sh-create">Link erstellen</button></div>
         <div id="sh-result"></div>`);
       if (isFolder) {
@@ -1579,7 +1615,7 @@
           const link = location.origin + "/api/shares/" + share.token + "/content/" +
             encodeURIComponent(filename);
           document.getElementById("sh-result").innerHTML = `
-            <div class="field" style="margin-top:14px"><label>Öffentlicher Link</label>
+            <div class="field mt-14"><label>Öffentlicher Link</label>
             <div class="linkbox"><input id="sh-link" readonly value="${esc(link)}" />
             <button class="btn secondary" id="sh-copy">Kopieren</button></div></div>`;
           document.getElementById("sh-copy").onclick = () => {
@@ -1613,18 +1649,18 @@
                   : "",
               ].join("");
               return `<div class="checkline"><span class="grow">${shareLink(s)} ${chips}</span>` +
-                `<button class="btn small secondary" onclick="copyEntryShare('${s.token}')">Kopieren</button>` +
-                `<button class="btn small secondary" onclick="editEntryShare('${s.token}')">Bearbeiten</button>` +
-                `<button class="btn small danger" onclick="revokeEntryShare('${s.token}')">Widerrufen</button></div>`;
+                `<button class="btn small secondary" data-action="copyEntryShare" data-token="${s.token}">Kopieren</button>` +
+                `<button class="btn small secondary" data-action="editEntryShare" data-token="${s.token}">Bearbeiten</button>` +
+                `<button class="btn small danger" data-action="revokeEntryShare" data-token="${s.token}">Widerrufen</button></div>`;
             }).join("")
           : '<p class="muted">Dieser Eintrag ist noch nicht geteilt.</p>';
         openModal(`
           <h2>Geteilt – ${esc(entry.name)}</h2>
           ${list}
-          <div class="actions" style="justify-content:flex-start;margin-top:14px">
-            <button class="btn" onclick="shareDialog(entryShareEntry)">＋ Neuer Link</button>
-            <button class="btn secondary" onclick="entryShareDialog(entryShareEntry)">Aktualisieren</button>
-            <button class="btn secondary" onclick="closeModal()">Schließen</button>
+          <div class="actions justify-start mt-14">
+            <button class="btn" data-action="shareDialogEntry">＋ Neuer Link</button>
+            <button class="btn secondary" data-action="entryShareDialog">Aktualisieren</button>
+            <button class="btn secondary" data-action="closeModal">Schließen</button>
           </div>`);
       } catch (e) { toast("Geteilt laden fehlgeschlagen: " + e.message, "err"); }
     }
@@ -1656,7 +1692,7 @@
       openModal(`
         <h2>Details</h2>
         <div class="kv">${rows.map(([k, v]) => `<div class="k">${k}</div><div>${esc(v)}</div>`).join("")}</div>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Schließen</button></div>`);
     }
 
     // ---------- Papierkorb ----------
@@ -2078,8 +2114,8 @@
         <p class="muted">Besitzen Benutzer Dateien, muss der Besitz übertragen werden.</p>
         <div class="field"><label>Besitz übertragen an (optional)</label>
           <select id="bud-transfer"><option value="">– nicht übertragen –</option>${options}</select></div>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn danger" onclick="submitBulkUserDelete()">Endgültig löschen</button></div>`);
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+        <button class="btn danger" data-action="submitBulkUserDelete">Endgültig löschen</button></div>`);
     }
 
     async function submitBulkUserDelete() {
@@ -2108,8 +2144,8 @@
         <div class="field"><label>E-Mail (optional)</label><input id="nu-email" /></div>
         <div class="field"><label>Passwort (min. 8 Zeichen)</label><input id="nu-password" type="password" /></div>
         <label class="checkline"><input type="checkbox" id="nu-admin" /> Administrator</label>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn" onclick="submitUserCreate()">Anlegen</button></div>`);
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+        <button class="btn" data-action="submitUserCreate">Anlegen</button></div>`);
     }
 
     async function submitUserCreate() {
@@ -2146,13 +2182,13 @@
         <div class="field"><label>Anzeigename</label><input id="eu-display" value="${esc(u.display_name || "")}" /></div>
         <div class="field"><label>E-Mail</label><input id="eu-email" value="${esc(u.email || "")}" /></div>
         <label class="checkline"><input type="checkbox" id="eu-admin" ${u.is_admin ? "checked" : ""} /> Administrator</label>
-        <fieldset style="border:0;padding:0;margin:8px 0">
-          <legend class="muted" style="font-size:13px">Systemberechtigungen</legend>
+        <fieldset class="plain-fieldset">
+          <legend class="muted fs-13">Systemberechtigungen</legend>
           <label class="checkline"><input type="checkbox" id="eu-audit" ${hasPerm("audit") ? "checked" : ""} /> Audit-Log lesen</label>
           <label class="checkline"><input type="checkbox" id="eu-monitor" ${hasPerm("monitor") ? "checked" : ""} /> Systemmonitor</label>
         </fieldset>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn" onclick="submitUserEdit('${u.id}')">Speichern</button></div>`);
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+        <button class="btn" data-action="submitUserEdit" data-id="${u.id}">Speichern</button></div>`);
     }
 
     async function submitUserEdit(id) {
@@ -2180,8 +2216,8 @@
       openModal(`
         <h2>Passwort zurücksetzen – ${esc(personName(u.display_name, u.username))}</h2>
         <div class="field"><label>Neues Passwort (min. 8 Zeichen)</label><input id="pu-password" type="password" /></div>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn" onclick="submitUserPassword('${u.id}')">Zurücksetzen</button></div>`);
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+        <button class="btn" data-action="submitUserPassword" data-id="${u.id}">Zurücksetzen</button></div>`);
     }
 
     async function submitUserPassword(id) {
@@ -2220,8 +2256,8 @@
         <p class="muted">Besitzt der Benutzer Dateien, muss der Besitz übertragen werden.</p>
         <div class="field"><label>Besitz übertragen an (optional)</label>
           <select id="du-transfer"><option value="">– nicht übertragen –</option>${options}</select></div>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn danger" onclick="submitUserDelete('${u.id}')">Endgültig löschen</button></div>`);
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+        <button class="btn danger" data-action="submitUserDelete" data-id="${u.id}">Endgültig löschen</button></div>`);
     }
 
     async function submitUserDelete(id) {
@@ -2251,8 +2287,8 @@
         openModal(`
           <h2>Gruppen – ${esc(personName(u.display_name, u.username))}</h2>
           ${rows}
-          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-          <button class="btn" onclick="submitUserGroups('${u.id}')">Speichern</button></div>`);
+          <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+          <button class="btn" data-action="submitUserGroups" data-id="${u.id}">Speichern</button></div>`);
       } catch (e) { toast("Gruppen laden fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -2360,37 +2396,37 @@
                 .map(p => `<span class="chip">${esc(ENTRY_PERM_LABELS[p] || p)}</span>`)
                 .join("");
               return `<div class="checkline"><span class="grow">${esc(kind)}: ${esc(who)} ${chips}</span>` +
-                `<button class="btn small danger" onclick="removeEntryAcl('${a.id}')">Entfernen</button></div>`;
+                `<button class="btn small danger" data-action="removeEntryAcl" data-id="${a.id}">Entfernen</button></div>`;
             }).join("")
           : '<p class="muted">Keine Berechtigungen vergeben.</p>';
         const links = shares.length
           ? shares.map(s =>
               `<div class="checkline"><span class="grow">${shareLink(s)}` +
               `${s.has_password ? ' <span class="chip">Passwort</span>' : ""}</span>` +
-              `<button class="btn small secondary" onclick="copyAccessLink('${s.token}')">Kopieren</button>` +
-              `<button class="btn small secondary" onclick="editAccessLink('${s.token}')">Bearbeiten</button>` +
-              `<button class="btn small danger" onclick="revokeAccessLink('${s.token}')">Widerrufen</button></div>`
+              `<button class="btn small secondary" data-action="copyAccessLink" data-token="${s.token}">Kopieren</button>` +
+              `<button class="btn small secondary" data-action="editAccessLink" data-token="${s.token}">Bearbeiten</button>` +
+              `<button class="btn small danger" data-action="revokeAccessLink" data-token="${s.token}">Widerrufen</button></div>`
             ).join("")
           : '<p class="muted">Keine Links vorhanden.</p>';
         openModal(`
           <h2>Zugriff – ${esc(entry.name)}</h2>
           ${list}
-          <hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
-          <h3 style="margin:0 0 8px">Berechtigung zuweisen</h3>
+          <hr class="divider" />
+          <h3 class="mb-8">Berechtigung zuweisen</h3>
           <div class="field"><label>Typ</label>
-            <select id="ea-type" onchange="loadAccessPrincipals()">
+            <select id="ea-type" data-change="loadAccessPrincipals">
               <option value="user">Benutzer</option><option value="group">Gruppe</option>
             </select></div>
           <div class="field"><label>Empfänger suchen</label>
-            <input id="ea-q" type="text" placeholder="Benutzername oder Gruppe…" oninput="scheduleLoadAccessPrincipals()" /></div>
+            <input id="ea-q" type="text" placeholder="Benutzername oder Gruppe…" data-input="scheduleLoadAccessPrincipals" /></div>
           <div class="field"><label>Benutzer/Gruppe</label><select id="ea-principal"></select></div>
           <div class="field"><label>Rechte</label>${entryPermCheckboxes([])}</div>
-          <button class="btn" onclick="submitEntryAccess()">Speichern</button>
-          <hr style="border:0;border-top:1px solid var(--border);margin:16px 0" />
-          <h3 style="margin:0 0 8px">Links</h3>
+          <button class="btn" data-action="submitEntryAccess">Speichern</button>
+          <hr class="divider" />
+          <h3 class="mb-8">Links</h3>
           ${links}
-          <button class="btn secondary" onclick="shareDialog(accessEntry)">＋ Neuer Link</button>
-          <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
+          <button class="btn secondary" data-action="shareDialogAccess">＋ Neuer Link</button>
+          <div class="actions"><button class="btn secondary" data-action="closeModal">Schließen</button></div>`);
         loadAccessPrincipals();
       } catch (e) { toast("Zugriff laden fehlgeschlagen: " + e.message, "err"); }
     }
@@ -2491,9 +2527,9 @@
 
     function previewActions() {
       return `<div class="actions">
-        <button class="btn secondary" onclick="download(previewEntry)">Herunterladen</button>
-        <button class="btn secondary" onclick="details(previewEntry)">Details</button>
-        <button class="btn" onclick="closeModal()">Schließen</button>
+        <button class="btn secondary" data-action="downloadPreview">Herunterladen</button>
+        <button class="btn secondary" data-action="detailsPreview">Details</button>
+        <button class="btn" data-action="closeModal">Schließen</button>
       </div>`;
     }
 
@@ -2501,12 +2537,14 @@
       previewEntry = entry;
       try {
         const kind = previewKind(entry);
-        if (kind === "text" || kind === "html") await openTextPreview(entry, kind === "html");
+        // HTML läuft über den sandboxed Vorschau-Endpunkt: eigene Response-CSP,
+        // keine Skriptausführung und kein 'unsafe-inline' in der App-CSP nötig.
+        if (kind === "text") await openTextPreview(entry);
         else await openMediaPreview(entry, kind);
       } catch (e) { toast("Vorschau fehlgeschlagen: " + e.message, "err"); }
     }
 
-    async function openTextPreview(entry, asHtml) {
+    async function openTextPreview(entry) {
       const headers = { "Authorization": "Bearer " + state.token };
       // Bei 0-Byte-Dateien kein Range senden – der Server antwortet sonst mit 416.
       if (entry.size > 0) headers["Range"] = "bytes=0-" + (PREVIEW_TEXT_LIMIT - 1);
@@ -2514,11 +2552,9 @@
       if (!response.ok) throw new Error("HTTP " + response.status);
       const text = await response.text();
       const truncated = response.status === 206;
-      const body = asHtml
-        ? `<iframe sandbox="" style="width:100%;height:70vh;background:#fff;border:1px solid var(--border);border-radius:8px" srcdoc="${esc(text)}"></iframe>`
-        : `<pre style="margin:0;max-height:70vh;overflow:auto;background:#0b0e13;border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12.5px;white-space:pre-wrap;word-break:break-word">${esc(text)}</pre>`;
+      const body = `<pre class="preview-pre">${esc(text)}</pre>`;
       const note = truncated
-        ? `<p class="muted" style="font-size:12px">Nur die ersten ${PREVIEW_TEXT_LIMIT / 1024} KB werden angezeigt.</p>`
+        ? `<p class="muted fs-12">Nur die ersten ${PREVIEW_TEXT_LIMIT / 1024} KB werden angezeigt.</p>`
         : "";
       openModal(`<h2>${esc(entry.name)}</h2>${body}${note}${previewActions()}`);
     }
@@ -2528,16 +2564,16 @@
       const url = token.url;
       let body;
       if (kind === "image") {
-        body = `<img src="${url}" alt="${esc(entry.name)}" style="max-width:100%;max-height:72vh;border-radius:8px" />`;
+        body = `<img src="${url}" alt="${esc(entry.name)}" class="preview-media" />`;
       } else if (kind === "video") {
-        body = `<video controls preload="metadata" src="${url}" style="max-width:100%;max-height:72vh;border-radius:8px"></video>`;
+        body = `<video controls preload="metadata" src="${url}" class="preview-media"></video>`;
       } else if (kind === "audio") {
-        body = `<audio controls src="${url}" style="width:100%"></audio>`;
+        body = `<audio controls src="${url}" class="w-full"></audio>`;
       } else {
-        body = `<iframe src="${url}" style="width:100%;height:74vh;border:1px solid var(--border);border-radius:8px"></iframe>`;
+        body = `<iframe src="${url}" class="preview-frame-lg"></iframe>`;
       }
       openModal(`<h2>${esc(entry.name)}</h2>
-        <div style="text-align:center;margin:6px 0">${body}</div>${previewActions()}`);
+        <div class="center">${body}</div>${previewActions()}`);
     }
 
     // ---------- Freigaben ----------
@@ -2831,7 +2867,7 @@
       shareEditShare = share;
       openModal(`
         <h2>Freigabe bearbeiten</h2>
-        <p class="muted" style="font-size:13px">${esc(share.entry_path || share.entry_name || "")}</p>
+        <p class="muted fs-13">${esc(share.entry_path || share.entry_name || "")}</p>
         <div class="field"><label>Passwort (leer = kein Passwort)</label>
           <input id="se-pass" type="text" placeholder="${share.has_password ? "gesetzt – leer lassen zum Behalten" : "kein Passwort"}" /></div>
         <label class="checkline"><input type="checkbox" id="se-remove-pass" /> Passwort entfernen</label>
@@ -2846,8 +2882,8 @@
             `<label class="checkline"><input type="checkbox" id="se-overwrite" ${share.overwrite ? "checked" : ""} /> ` +
             `Vorhandene Dateien überschreiben</label>`
           : ""}
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-        <button class="btn" onclick="submitShareEdit('${share.token}')">Speichern</button></div>`);
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+        <button class="btn" data-action="submitShareEdit" data-token="${share.token}">Speichern</button></div>`);
       if (share.entry_type === "folder") {
         const uploadBox = document.getElementById("se-upload");
         const overwriteBox = document.getElementById("se-overwrite");
@@ -3010,16 +3046,16 @@
     function openPublishNameModal({ title, submitLabel, internalName, value, suffixValue = "", onSubmit }) {
       openModal(`
         <h2>${esc(title)}</h2>
-        <p class="muted" style="font-size:13px">Intern: ${esc(internalName)}</p>
+        <p class="muted fs-13">Intern: ${esc(internalName)}</p>
         <div class="field"><label>Öffentlicher Dateiname</label>
           <input id="pub-name" type="text" maxlength="255" value="${esc(value || "")}"
                  placeholder="${esc(internalName)}" /></div>
-        <p class="muted" style="font-size:12px">Leer lassen = der interne Name wird angezeigt.</p>
+        <p class="muted fs-12">Leer lassen = der interne Name wird angezeigt.</p>
         <div class="field"><label>Eigener Link-Suffix (ohne /)</label>
           <input id="pub-suffix" type="text" maxlength="200" value="${esc(suffixValue || "")}"
                  placeholder="z. B. file.txt" /></div>
-        <p class="muted" style="font-size:12px">Pfad: /published/&lt;Benutzername&gt;/&lt;Suffix&gt;. Leer = kein eigener Link.</p>
-        <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
+        <p class="muted fs-12">Pfad: /published/&lt;Benutzername&gt;/&lt;Suffix&gt;. Leer = kein eigener Link.</p>
+        <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
         <button class="btn" id="pub-submit">${esc(submitLabel)}</button></div>`);
       const nameInput = document.getElementById("pub-name");
       const suffixInput = document.getElementById("pub-suffix");
@@ -3191,8 +3227,8 @@
         openModal(`
           <h2>Verschieben – ${esc(entry.name)}</h2>
           <div class="field"><label>Zielordner</label><select id="mv-target">${options}</select></div>
-          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-          <button class="btn" onclick="submitMoveEntry('${entry.id}')">Verschieben</button></div>`);
+          <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+          <button class="btn" data-action="submitMoveEntry" data-id="${entry.id}">Verschieben</button></div>`);
       } catch (e) { toast("Ordner laden fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -3216,8 +3252,8 @@
         openModal(`
           <h2>${ids.length} Einträge verschieben</h2>
           <div class="field"><label>Zielordner</label><select id="bm-target">${options}</select></div>
-          <div class="actions"><button class="btn secondary" onclick="closeModal()">Abbrechen</button>
-          <button class="btn" onclick="submitBulkMove()">Verschieben</button></div>`);
+          <div class="actions"><button class="btn secondary" data-action="closeModal">Abbrechen</button>
+          <button class="btn" data-action="submitBulkMove">Verschieben</button></div>`);
       } catch (e) { toast("Ordner laden fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -3247,14 +3283,14 @@
           const meta = `Version ${v.seq}${v.is_current ? " (aktuell)" : ""} · ${fmtSize(v.size)} · ${fmtDate(v.created_at)}`;
           const actions = v.is_current
             ? ""
-            : `<button class="btn small secondary" onclick="downloadVersion('${v.id}')">Herunterladen</button>` +
-              `<button class="btn small" onclick="restoreVersion('${v.id}')">Wiederherstellen</button>`;
+            : `<button class="btn small secondary" data-action="downloadVersion" data-id="${v.id}">Herunterladen</button>` +
+              `<button class="btn small" data-action="restoreVersion" data-id="${v.id}">Wiederherstellen</button>`;
           return `<div class="checkline"><span class="grow">${meta}</span>${actions}</div>`;
         }).join("");
         openModal(`
           <h2>Versionen – ${esc(entry.name)}</h2>
           ${rows || '<p class="muted">Keine Versionen.</p>'}
-          <div class="actions"><button class="btn secondary" onclick="closeModal()">Schließen</button></div>`);
+          <div class="actions"><button class="btn secondary" data-action="closeModal">Schließen</button></div>`);
       } catch (e) { toast("Versionen laden fehlgeschlagen: " + e.message, "err"); }
     }
 
@@ -3421,7 +3457,7 @@
     function statCard(label, value, sub, percent) {
       const bar = percent == null
         ? ""
-        : `<div class="bar"><i style="width:${Math.min(100, Math.max(0, percent))}%"></i></div>`;
+        : `<div class="bar"><i data-width="${Math.min(100, Math.max(0, percent))}"></i></div>`;
       return `<div class="card stat"><div class="label">${esc(label)}</div>` +
         `<div class="value">${value}</div>${bar}<div class="sub">${sub || ""}</div></div>`;
     }
@@ -3471,15 +3507,135 @@
         statCard("Benutzer", ifs.users ?? "–", "", null),
         statCard("Einträge", ifs.entries ?? "–", `belegt: ${bytes(ifs.stored_bytes)}`, null),
       ].join("");
+      applyWidths(document.getElementById("system-cards"));
     }
 
     // ---------- Modal ----------
+    // Fortschrittsbalken erhalten ihren Prozentwert als data-Attribut und werden
+    // hier per CSSOM gesetzt; Inline-Style-Attribute verbietet die CSP.
+    function applyWidths(root) {
+      if (!root) return;
+      for (const el of root.querySelectorAll("[data-width]")) {
+        el.style.width = el.dataset.width + "%";
+      }
+    }
     function openModal(html) {
-      document.getElementById("modal-root").innerHTML =
-        `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+      const root = document.getElementById("modal-root");
+      root.innerHTML =
+        `<div class="modal-backdrop" data-action="modalBackdrop"><div class="modal">${html}</div></div>`;
+      applyWidths(root);
     }
     function closeModal() { document.getElementById("modal-root").innerHTML = ""; }
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+    // ---------- Event-Delegation ----------
+    // Die CSP erlaubt keine Inline-Handler (script-src-attr 'none'). Die frueheren
+    // onclick/onchange/oninput-Attribute sind durch data-Attribute ersetzt; die
+    // Listener haengen einmal am Dokument und funktionieren auch fuer spaeter
+    // per innerHTML erzeugte Knoten.
+    const clickActions = {
+      refreshCurrent: () => refreshCurrent(),
+      toggleAccountMenu: (el, ev) => toggleAccountMenu(ev),
+      goMobile: () => { window.location.href='/mobile'; },
+      logout: () => logout(),
+      login: () => login(),
+      newFolder: () => newFolder(),
+      fileInputClick: () => document.getElementById("fileInput").click(),
+      folderInputClick: () => document.getElementById("folderInput").click(),
+      bulkDownload: () => bulkDownload(),
+      bulkMoveDialog: () => bulkMoveDialog(),
+      bulkDelete: () => bulkDelete(),
+      clearSelection: () => clearSelection(),
+      loadTrash: () => loadTrash(),
+      emptyTrash: () => emptyTrash(),
+      bulkRestoreTrash: () => bulkRestoreTrash(),
+      bulkPurgeTrash: () => bulkPurgeTrash(),
+      clearTrashSelection: () => clearTrashSelection(),
+      userCreateDialog: () => userCreateDialog(),
+      bulkUserActive: (el) => bulkUserActive(el.dataset.active === "true"),
+      bulkUserDeleteDialog: () => bulkUserDeleteDialog(),
+      clearUserSelection: () => clearUserSelection(),
+      loadShares: () => loadShares(),
+      bulkRevokeShares: () => bulkRevokeShares(),
+      clearShareSelection: () => clearShareSelection(),
+      sharedBack: () => sharedBack(),
+      loadShared: () => loadShared(),
+      loadSharedOut: () => loadSharedOut(),
+      loadPublished: () => loadPublished(),
+      loadLogs: () => loadLogs(),
+      loadAudit: () => loadAudit(),
+      loadSystem: () => loadSystem(),
+      saveProfile: () => saveProfile(),
+      changeMyPassword: () => changeMyPassword(),
+      minimizeArchive: () => minimizeArchive(),
+      cancelArchiveJob: () => cancelArchiveJob(),
+      closeModal: () => closeModal(),
+      modalBackdrop: (el, ev) => { if (ev.target === el) closeModal(); },
+      copyEntryShare: (el) => copyEntryShare(el.dataset.token),
+      editEntryShare: (el) => editEntryShare(el.dataset.token),
+      revokeEntryShare: (el) => revokeEntryShare(el.dataset.token),
+      shareDialogEntry: () => shareDialog(entryShareEntry),
+      entryShareDialog: () => entryShareDialog(entryShareEntry),
+      submitBulkUserDelete: () => submitBulkUserDelete(),
+      submitUserCreate: () => submitUserCreate(),
+      submitUserEdit: (el) => submitUserEdit(el.dataset.id),
+      submitUserPassword: (el) => submitUserPassword(el.dataset.id),
+      submitUserDelete: (el) => submitUserDelete(el.dataset.id),
+      submitUserGroups: (el) => submitUserGroups(el.dataset.id),
+      removeEntryAcl: (el) => removeEntryAcl(el.dataset.id),
+      copyAccessLink: (el) => copyAccessLink(el.dataset.token),
+      editAccessLink: (el) => editAccessLink(el.dataset.token),
+      revokeAccessLink: (el) => revokeAccessLink(el.dataset.token),
+      submitEntryAccess: () => submitEntryAccess(),
+      shareDialogAccess: () => shareDialog(accessEntry),
+      downloadPreview: () => download(previewEntry),
+      detailsPreview: () => details(previewEntry),
+      submitShareEdit: (el) => submitShareEdit(el.dataset.token),
+      submitMoveEntry: (el) => submitMoveEntry(el.dataset.id),
+      submitBulkMove: () => submitBulkMove(),
+      downloadVersion: (el) => downloadVersion(el.dataset.id),
+      restoreVersion: (el) => restoreVersion(el.dataset.id),
+      sortBy: (el) => sortBy(el.dataset.column),
+      showView: (el) => showView(el.dataset.view),
+    };
+    const changeActions = {
+      loadUsers: () => loadUsers(),
+      loadLogs: () => loadLogs(),
+      syncLogsTimer: () => syncLogsTimer(),
+      setMonitorInterval: () => setMonitorInterval(),
+      loadAccessPrincipals: () => loadAccessPrincipals(),
+      toggleSelectAll: (el) => toggleSelectAll(el.checked),
+      trashSelectAll: (el) => trashSelectAll(el.checked),
+      userSelectAll: (el) => userSelectAll(el.checked),
+      shareSelectAll: (el) => shareSelectAll(el.checked),
+    };
+    const inputActions = {
+      scheduleRender: () => scheduleRender(),
+      scheduleLoadUsers: () => scheduleLoadUsers(),
+      scheduleRenderAudit: () => scheduleRenderAudit(),
+      scheduleLoadAccessPrincipals: () => scheduleLoadAccessPrincipals(),
+    };
+    document.addEventListener("click", (ev) => {
+      // Manche Controls (z. B. "Alle auswaehlen") stoppen nur die Weitergabe,
+      // damit der globale Menue-Schliesser nicht anspringt.
+      if (ev.target.closest("[data-stop]")) ev.stopPropagation();
+      const el = ev.target.closest("[data-action]");
+      if (!el) return;
+      const fn = clickActions[el.dataset.action];
+      if (fn) fn(el, ev);
+    });
+    document.addEventListener("change", (ev) => {
+      const el = ev.target.closest("[data-change]");
+      if (!el) return;
+      const fn = changeActions[el.dataset.change];
+      if (fn) fn(el, ev);
+    });
+    document.addEventListener("input", (ev) => {
+      const el = ev.target.closest("[data-input]");
+      if (!el) return;
+      const fn = inputActions[el.dataset.input];
+      if (fn) fn(el, ev);
+    });
 
     // ---------- Sichtbarkeit ----------
     // Hintergrund-Timer stoppen; beim Zurückkehren die aktive Ansicht frisch
