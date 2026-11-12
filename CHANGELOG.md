@@ -33,6 +33,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   invalidieren Cookie und Bearer sofort über `token_version`.
 
 ### Changed
+- **`SECURITY.md` neu geschrieben:** Meldeweg, Scope, Sicherheitsarchitektur
+  (Cookie-Session, Bearer-Policy, CSP, CSRF), Restrisiken und Betriebs-Checkliste
+  sind jetzt an einer Stelle dokumentiert. Ergänzend beschreibt
+  `docs/sicherheit.md` die Runde 5 (CSP-/Session-Härtung) im Detail.
 - **Login-Antwort:** `POST /api/auth/login?issue_token=false` liefert kein JWT
   im Body (`access_token: null`, `token_type: "cookie"`); das Cookie wird
   trotzdem gesetzt. Ohne den Parameter bleibt die bisherige Bearer-Antwort für

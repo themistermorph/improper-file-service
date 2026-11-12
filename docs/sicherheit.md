@@ -607,3 +607,60 @@ verankert.
 **Grenzen:** Die Nachweise betreffen den **Anwendungscode**. Dependency-/CVE-Scans
 und Container-Härtung (non-root, `cap_drop`, `no-new-privileges`, ggf. `read_only`)
 bleiben separate Aufgaben; das aktuelle Image läuft als root im Container.
+
+---
+
+## 21. CSP- und Session-Härtung (Runde 5)
+
+**Ausgangslage:** Die App-CSP erlaubte `'unsafe-inline'` für Skripte und Styles;
+die Web-UI legte das Access-Token in `sessionStorage` ab. Beides ist behoben.
+
+**Content-Security-Policy:**
+
+- Die drei HTML-Dateien (`index`, `mobile`, `published`) enthalten weiterhin
+  genau einen Inline-`<script>`- und einen `<style>`-Block (die mobile Ansicht
+  bleibt bewusst eine Single-File-App). Die Blöcke werden beim Start per
+  SHA-256 gehasht; `script-src`/`style-src` erlauben nur `'self'` plus diese
+  Hashes.
+- `script-src-attr 'none'` und `style-src-attr 'none'` verbieten Inline-Handler
+  und `style=`-Attribute. 104 `onclick`/`onchange`/`oninput`-Attribute wurden
+  durch `data-action`/`data-change`/`data-input` und eine zentrale
+  Event-Delegation ersetzt; 56 Style-Attribute durch Utility-Klassen bzw.
+  CSSOM (`element.style.width`).
+- Die HTML-Vorschau nutzt den sandboxed `/api/preview/{token}`-Endpunkt. Auch
+  dort gilt `style-src 'none'`; aktive Inhalte führen keine Skripte aus.
+- Hashes werden bei jedem Start neu berechnet (`src/ifs/security_headers.py`).
+  Nach HTML-Änderungen: `docker compose up -d api` (Neustart erforderlich).
+
+**Session und CSRF:**
+
+- Login setzt `IFS_AUTH_COOKIE_NAME` als `HttpOnly`, `SameSite=Strict`,
+  `Path=/`, `Secure` bei HTTPS, `Max-Age=IFS_ACCESS_TOKEN_TTL_SECONDS`.
+- `POST /api/auth/logout` löscht das Cookie; `GET /api/auth/session` liefert
+  `{"authenticated": bool}` mit `200` und vermeidet 401-Rauschen im Login-Screen.
+- Bei unsafe Methoden mit Session-Cookie prüft die Middleware `Origin` und
+  `Sec-Fetch-Site`; fremde Aufrufe enden mit `403`.
+- Die UI speichert nichts in `localStorage`/`sessionStorage`; ein XSS kann die
+  Sitzung nicht auslesen.
+
+**Bearer-Policy:**
+
+- Bearer wird nur aus `IFS_BEARER_ALLOWED_NETWORKS` oder für Konten mit dem
+  Systemrecht `api` (Bit 256) akzeptiert.
+- Das Recht ist über `PUT /api/users/{id}/permissions` bzw. Gruppenrechte
+  vergebbar und im Benutzerdialog als „API-Tokens (Bearer)“ sichtbar.
+- `api` ist ein Systemrecht und gewährt keine Dateizugriffe.
+
+**Verifikation:**
+
+- `tests/test_content_security.py`: CSP-Header ohne `unsafe-inline`, Hashes
+  stimmen mit den Inline-Blöcken überein, keine Inline-Handler/-Styles, jedes
+  `data-*` hat eine Implementierung.
+- `tests/test_auth_cookie.py`: Cookie-Attribute, `issue_token=false`, Logout,
+  Cookie-only-Auth, CSRF-Origin-Check, Bearer-Policy, `token_version`.
+- Browser-Smoke-Test: kein `sessionStorage`/`localStorage`, `document.cookie`
+  leer (HttpOnly), Session übersteht Reload, Logout löscht sie, keine
+  CSP-Violations in der Konsole.
+
+**Keine Datenbankmigration nötig.** Das neue Systemrecht ist ein weiteres Bit in
+der bestehenden Integer-Spalte `system_permissions.permissions`.
