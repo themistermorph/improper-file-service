@@ -1,7 +1,7 @@
 # Cache-freundliche Reihenfolge: Abhängigkeiten zuerst (eigene Schicht), Quellcode danach.
 # Der Code wird über PYTHONPATH eingebunden – reine Code-/UI-Änderungen lösen damit
 # KEINE pip-Installation mehr aus (nur COPY src + Image-Export).
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
